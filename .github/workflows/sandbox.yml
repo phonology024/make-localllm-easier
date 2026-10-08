@@ -1,0 +1,40 @@
+name: sandbox
+# Proves the codegen Docker sandbox (localllm/sandbox.py) on a real Linux engine: attack programs are blocked for the
+# right reason, and every EvalPlus canonical solution passes through codegen_program() + sandbox.run(). Linux only:
+# Windows runners have a Windows-container engine and macOS runners have no Docker (the tests skip there).
+on:
+  push:
+    paths: ["localllm/sandbox.py", "localllm/bench.py", "tests/test_sandbox.py", ".github/workflows/sandbox.yml"]
+  pull_request:
+    paths: ["localllm/sandbox.py", "localllm/bench.py", "tests/test_sandbox.py", ".github/workflows/sandbox.yml"]
+  workflow_dispatch:
+env:
+  LOCALLLM_SANDBOX_CI: "1"     # a missing Docker engine fails the tests here instead of skipping them
+jobs:
+  attacks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e . pytest
+      - run: docker info --format '{{.OSType}} engine {{.ServerVersion}}, cgroup v{{.CgroupVersion}}, {{.NCPU}} CPUs'
+      - name: build localllm-sandbox:1
+        run: python -c "from localllm import sandbox; sandbox.ensure_image(sandbox.docker() or 'no docker')"
+      - run: python -m pytest -v -s -rs tests/test_sandbox.py
+  canonical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LOCALLLM_CANONICAL: "1"    # downloads HumanEval+ / MBPP+ (Hugging Face datasets-server)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e . pytest
+      - name: build localllm-sandbox:1
+        run: python -c "from localllm import sandbox; sandbox.ensure_image(sandbox.docker() or 'no docker')"
+      - run: python -m pytest -v -s -rs tests/test_sandbox.py -k canonical

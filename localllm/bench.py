@@ -318,8 +318,8 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                     [codegen_program(it, ask_codegen(url, it)) for it in items]
                 gen.write_text(json.dumps(programs), encoding="utf-8")
                 if not sandbox.docker():
-                    print(f"  {lang:3} {suite:9} generated {len(programs)} programs; start Docker and rerun to test them "
-                          f"(saved in {gen})", flush=True)
+                    print(f"  {lang:3} {suite:9} generated {len(programs)} programs; start Docker (Linux containers) "
+                          f"and rerun to test them (saved in {gen})", flush=True)
                     continue
                 ok = sum(r["ok"] for r in sandbox.run(programs))
                 acc = round(100 * ok / len(items), 1)
