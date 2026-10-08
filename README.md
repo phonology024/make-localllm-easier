@@ -1,5 +1,7 @@
 # make-localllm-easier — run the best local LLM your GPU can handle, in one command
 
+Read this in: English | [தமிழ்](docs/README.ta.md)
+
 **The leanest way to run local AI: least CPU, RAM and GPU memory, smallest files, measured quality.**
 
 `localllm` picks, downloads and runs the most accurate local AI model for your PC and your language, chosen from real
