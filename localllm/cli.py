@@ -86,7 +86,35 @@ class _PoolProc:
         self.gateway.shutdown()
 
 
-def _start(key: str | None, port: int, ctx: int, models: str | None = None):
+def _lan(host: str | None, api_key: str | None) -> tuple[str, str | None, str]:
+    """(bind address, API key, address to show). A non-loopback host always gets a key: given, from
+    LOCALLLM_API_KEY, or generated here and printed once."""
+    from . import gateway
+    host = host or "127.0.0.1"
+    api_key = api_key or os.environ.get("LOCALLLM_API_KEY") or None
+    if gateway.is_loopback(host):
+        return host, api_key, "127.0.0.1"
+    if not api_key:
+        import secrets
+        api_key = secrets.token_urlsafe(24)
+        _say(f"API key for other devices (shown once, keep it secret): {api_key}")
+    shown = host
+    if host in ("0.0.0.0", "::"):
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            try:
+                sock.connect(("192.0.2.1", 9))        # no packet is sent: this only picks the LAN interface
+                shown = sock.getsockname()[0]
+            except OSError:
+                shown = socket.gethostname()
+    return host, api_key, shown
+
+
+def _start(key: str | None, port: int, ctx: int, models: str | None = None, host: str | None = None,
+           api_key: str | None = None):
+    host, api_key, shown = _lan(host, api_key)
+    if shown != "127.0.0.1":
+        _say(f"LAN mode: other devices use http://{shown}:{port} with the key; this PC needs none")
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
     ram_free = runtime.ram_available_gb()
@@ -107,13 +135,14 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None):
         _say(f"all {len(keys)} models fit in VRAM together ({need:.1f} GB): no swaps" if resident else
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
         p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctx, ram_free), dev["total_gb"], ram_free, first, resident)
-        return _PoolProc(p, gateway.serve(p, port=port, model_name="localllm-auto")), f"http://127.0.0.1:{port}"
+        return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key)),
+                f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
     proc, url = _launch(key, server, dev, ctx, ram_free)
     from . import gateway
-    proc.gateway = gateway.serve(url, port=port, model_name=key)
+    proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key)
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -155,7 +184,7 @@ def _launch(key: str, server, dev, ctx: int, ram_free: float) -> tuple[subproces
 
 
 def cmd_run(a) -> None:
-    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None))
+    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key)
     _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
@@ -325,6 +354,11 @@ def main() -> None:
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--models", metavar="auto|A,B", help="smart routing: pick the best of these models per message, "
                     "lazy-loading one at a time (auto = every model that fits this GPU)")
+    lan = [(("--host",), {"help": "listen address; 0.0.0.0 = other devices on your network (needs an API key)"}),
+           (("--api-key",), {"help": "key other devices must send (default: $LOCALLLM_API_KEY, else one is "
+                                     "generated and printed once)"})]
+    for flags, kw in lan:
+        ap.add_argument(*flags, **kw)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
@@ -342,6 +376,8 @@ def main() -> None:
     s = sub.add_parser("serve"); s.add_argument("model", nargs="?", choices=list(catalog.MODELS))
     s.add_argument("--port", type=int, default=8080); s.add_argument("--ctx", type=int, default=8192)
     s.add_argument("--models", metavar="auto|A,B")
+    for flags, kw in lan:
+        s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)

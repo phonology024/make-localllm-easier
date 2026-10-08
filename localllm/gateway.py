@@ -7,10 +7,17 @@
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
+
+LAN mode: listening on anything but loopback needs an API key. Clients send it the way their SDK does -
+`Authorization: Bearer KEY` (OpenAI, Ollama), `x-api-key` (Anthropic), `x-goog-api-key` or `?key=` (Gemini). It is
+checked in constant time and stripped before forwarding, so it never reaches llama-server or a cloud provider. Requests
+from this PC itself need no key: any local program can already reach llama-server's private port.
 Standard library only.
 """
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import json
 import re
 import threading
@@ -19,6 +26,7 @@ from contextlib import nullcontext
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from . import router
 
@@ -27,6 +35,32 @@ PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/emb
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
+KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
+
+
+def is_loopback(host: str) -> bool:
+    try:
+        return host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def split_key(path: str) -> tuple[str, str | None]:
+    """Path without its ?key= parameter (Gemini's way of sending a key), and that key."""
+    url = urlsplit(path)
+    if not url.query:
+        return path, None
+    params = parse_qsl(url.query, keep_blank_values=True)
+    key = next((v for k, v in params if k == "key"), None)
+    rest = urlencode([(k, v) for k, v in params if k != "key"])
+    return url.path + ("?" + rest if rest else ""), key
+
+
+def presented_keys(headers, query_key: str | None) -> list[str]:
+    auth = headers.get("Authorization") or ""
+    keys = [auth[7:].strip() if auth.lower().startswith("bearer ") else "",
+            headers.get("x-api-key") or "", headers.get("x-goog-api-key") or "", query_key or ""]
+    return [k for k in keys if k]
 
 
 def _post(url: str, body: dict, headers: dict | None = None, timeout: int = 3600):
@@ -101,8 +135,9 @@ def openai_to_gemini(text: str, finish: str | None = None, usage: dict | None = 
 
 # ---- HTTP server ------------------------------------------------------------------------------------------------------
 
-def make_handler(upstream, model_name: str):
-    """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request."""
+def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True):
+    """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
+    With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback)."""
     def local(body: dict):
         return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body)
 
@@ -114,6 +149,20 @@ def make_handler(upstream, model_name: str):
 
         def log_message(self, *a):
             pass
+
+        def _authorized(self) -> bool:
+            """Strip ?key= from the path; check the key when one is required."""
+            self.path, query_key = split_key(self.path)
+            if not api_key or (trust_loopback and is_loopback(self.client_address[0])):
+                return True
+            want = api_key.encode()
+            return any(hmac.compare_digest(k.encode(), want) for k in presented_keys(self.headers, query_key))
+
+        def _deny(self):
+            self.close_connection = True                        # the unread request body must not become the next request
+            self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key for this "
+                                       "localllm gateway (Authorization: Bearer, x-api-key or ?key=)"}},
+                       {"WWW-Authenticate": "Bearer", "Connection": "close"})
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
@@ -159,8 +208,8 @@ def make_handler(upstream, model_name: str):
             self._send(method, base_url(), body, hdrs, route_hdr, None)
 
         def _send(self, method: str, target: str, body, hdrs: dict, route_hdr: str, model_hdr: str | None):
-            fwd = {k: v for k, v in self.headers.items()
-                   if k.lower() not in HOP_BY_HOP and not (hdrs and k.lower() in ("authorization", "x-api-key"))}
+            fwd = {k: v for k, v in self.headers.items()          # our own key never leaves this gateway
+                   if k.lower() not in HOP_BY_HOP and not ((hdrs or api_key) and k.lower() in KEY_HEADERS)}
             req = urllib.request.Request(target.rstrip("/") + self.path, data=body, method=method, headers={**fwd, **hdrs})
             try:
                 r = urllib.request.urlopen(req, timeout=3600)
@@ -180,6 +229,8 @@ def make_handler(upstream, model_name: str):
             self._stream_end()
 
         def do_GET(self):
+            if not self._authorized() and self.path != "/":      # the chat page is static; its API calls need the key
+                return self._deny()
             if self.path == "/api/tags":
                 return self._json(200, {"models": [{"name": model_name, "model": model_name, "size": 0,
                                                     "details": {"format": "gguf"}}]})
@@ -190,6 +241,8 @@ def make_handler(upstream, model_name: str):
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_POST(self):
+            if not self._authorized():
+                return self._deny()
             if self.path in ("/api/chat", "/api/generate"):
                 return self._ollama(self.path == "/api/chat")
             m = GEMINI.match(self.path)
@@ -249,7 +302,10 @@ def make_handler(upstream, model_name: str):
     return Handler
 
 
-def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local") -> ThreadingHTTPServer:
-    srv = ThreadingHTTPServer((host, port), make_handler(upstream, model_name))
+def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
+          trust_loopback: bool = True) -> ThreadingHTTPServer:
+    if not is_loopback(host) and not api_key:
+        raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC")
+    srv = ThreadingHTTPServer((host, port), make_handler(upstream, model_name, api_key, trust_loopback))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

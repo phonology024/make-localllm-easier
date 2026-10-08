@@ -59,6 +59,10 @@ conversation is remembered, `/save` writes it to a file, `/think` shows the mode
 `http://127.0.0.1:8080` speaks all four APIs, so existing apps and SDKs only need a new base URL. See
 [docs/apis.md](docs/apis.md).
 
+**Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
+and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
+See [LAN mode](docs/apis.md#use-it-from-another-device-on-your-network-lan-mode).
+
 **Can it fall back to my cloud API key?** Only if you turn it on. Routing is off by default; with your own key in an
 environment variable it sends a request to the cloud only when a rule says so (prompt too long, a cloud model asked for
 by name, or the local model scores below your floor in that language) and tells you where each answer came from.
