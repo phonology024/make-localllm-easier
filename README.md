@@ -217,12 +217,16 @@ Measured on real models with `--langs th,en` (GitHub CPU runner, 4 threads, llam
 | probability the original gave dropped tokens, Thai text | 0.19% (p99 1.6%) | 0.88% (p99 4.2%) | 0.08% (p99 1.0%) |
 | decode speed, CPU | 51.5 -> 55.8 tok/s (+8%) | 17.0 -> 19.0 tok/s (+12%) | 12.9 -> 14.3 tok/s (+11%) |
 | with `--keep-top 64000` | 0.50 GiB, 59.7 tok/s | 1.49 GiB, 21.0 tok/s | 2.56 GiB, 15.5 tok/s |
+| ... same most likely next text, en / code / math / th | 90.7 / 92.8 / 96.7 / 97.5% | 92.7 / 90.4 / 96.9 / 97.5% | 81.6 / 85.1 / 87.9 / 96.8% |
 
-Prompt speed doesn't change. A second Qwen3-0.6B run gave 49.8 -> 56.5 tok/s, so read the speed-ups as +-5%.
+Prompt speed doesn't change. Two more runs on other runner CPUs gave +9.6 to +12.8% for the lossless trim, so read the
+speed-ups as +-5%.
 ASCII alone is 57-62% of these vocabularies, so the lossless trim saves about a third; on Gemma 4 E2B that is 1 GB,
 because its per-layer embeddings have a row per token too. `--keep-top N` goes further by dropping the rarest
 ASCII/symbol tokens (latest BPE merges first; the languages' own letters are never capped), which splits rare English
 words and code identifiers into more pieces: English +3.8-7.6% tokens, code +2.4-4.6%, math +1.5-3.0%, Thai <= +0.1%.
+That is not lossless: compared where both models' tokens line up, the most likely next text differs at 3-18% of
+positions (worst on Gemma 4 English), so the cap needs a benchmark before anyone uses it; the default trim doesn't.
 Text in a dropped script (Chinese, Hindi, Arabic, ...) still works and decodes back exactly, but takes 2.5-9x more
 tokens.
 
