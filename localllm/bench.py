@@ -271,11 +271,19 @@ def code_block(text: str) -> str:
     return (m.group(1) if m else text).strip("\n")
 
 
+# The Hugging Face copy of HumanEval+ swaps _poly()'s arguments in HumanEval/32, so no find_zero() could pass (the
+# canonical one included); this is the check EvalPlus's own harness makes.
+POLY_FIX = ("assert _poly(*candidate(*inp), inp) <=", "assert abs(_poly(*inp, candidate(*inp))) <=")
+
+
 def codegen_program(item: dict, reply: str) -> str:
-    """Model code + the benchmark's tests. HumanEval prompts carry imports the model may not repeat, so they go first."""
-    head = item["head"]
-    prelude = "\n".join(l for l in head.splitlines() if l.startswith(("import ", "from "))) if head else ""
-    return f"{prelude}\n{code_block(reply)}\n\n{item['test']}"
+    """Model code + the benchmark's tests. The whole HumanEval prompt goes first: its imports and helpers (poly() in
+    HumanEval/32, is_palindrome() in /10) are given, so a model need not repeat them, and the model's own definitions
+    come after it and win. `from __future__` lines must open the file, so they move there."""
+    lines = code_block(reply).splitlines()
+    future = [l for l in lines if l.startswith("from __future__")]
+    code = "\n".join(l for l in lines if not l.startswith("from __future__"))
+    return "\n".join([*future, item["head"], code, "", item["test"].replace(*POLY_FIX)])
 
 
 def ask_codegen(url: str, item: dict) -> str:
@@ -313,10 +321,11 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                 continue
             if suite == "codegen":            # write everything first, then run the tests in the Docker sandbox
                 from . import sandbox
-                gen = HOME / "bench" / f"codegen-out-{name}-{len(items)}.json"   # generations are reusable
-                programs = json.loads(gen.read_text(encoding="utf-8")) if gen.exists() else \
-                    [codegen_program(it, ask_codegen(url, it)) for it in items]
-                gen.write_text(json.dumps(programs), encoding="utf-8")
+                gen = HOME / "bench" / f"codegen-replies-{name}-{len(items)}.json"   # replies are reusable
+                replies = json.loads(gen.read_text(encoding="utf-8")) if gen.exists() else \
+                    [ask_codegen(url, it) for it in items]
+                gen.write_text(json.dumps(replies), encoding="utf-8")
+                programs = [codegen_program(it, r) for it, r in zip(items, replies)]   # assembled fresh every run
                 if not sandbox.docker():
                     print(f"  {lang:3} {suite:9} generated {len(programs)} programs; start Docker (Linux containers) "
                           f"and rerun to test them (saved in {gen})", flush=True)

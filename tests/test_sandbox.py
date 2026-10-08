@@ -43,7 +43,8 @@ def test_sandbox_blocks_attacks_for_the_right_reason():
     progs = {
         "pass": "assert sum(range(10)) == 45\n",
         "posture": "import os\nassert os.getuid() == 10001\nst = open('/proc/self/status').read()\n"
-                   "assert 'CapEff:\\t0000000000000000' in st and 'NoNewPrivs:\\t1' in st, st\n"
+                   "assert 'CapEff:\\t0000000000000000' in st and 'CapBnd:\\t0000000000000000' in st, st\n"
+                   "assert 'NoNewPrivs:\\t1' in st, st\n"
                    "assert os.listdir('/sys/class/net') == ['lo']\n",
         "assert": "assert 1 + 1 == 3, 'wrong on purpose'\n",
         "loop": "while True:\n    pass\n",
@@ -122,5 +123,6 @@ def test_evalplus_canonical_solutions_pass(monkeypatch, tmp_path):
     print("  slowest:", ", ".join(f"{n} {t:.2f}s" for t, n in slow))
     bad = [(g, it["id"], r) for (g, it, _), r in zip(cases, res) if not r["ok"]]
     for g, i, r in bad:
-        print(f"  FAIL {g} {i}: rc={r.get('rc')} t={r.get('t')} {r['err'][-300:]!r}")
+        print(f"  FAIL {g} {i}: rc={r.get('rc')} oom={r.get('oom')} pids={r.get('pids')} t={r.get('t')} "
+              f"{r['err'][-300:]!r}")
     assert not bad, f"{len(bad)} canonical solutions failed"

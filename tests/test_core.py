@@ -205,3 +205,18 @@ def test_codegen_program_assembly_and_sandbox_flags():
     for flag in ("--network", "none", "--read-only", "ALL", "no-new-privileges", "--pids-limit", "/w:/work:ro"):
         assert flag in cmd
     assert cmd[cmd.index("--user") + 1] != "0"
+
+
+def test_codegen_program_keeps_prompt_helpers_and_future_imports():
+    from localllm import bench
+    head = ("import math\n\n\ndef poly(xs: list, x: float):\n    return sum(c * math.pow(x, i) for i, c in enumerate(xs))"
+            "\n\n\ndef find_zero(xs: list):\n    \"\"\"Find x such that poly(x) = 0.\"\"\"\n")
+    test = ("import math\ndef _poly(xs: list, x: float):\n    return sum(c * math.pow(x, i) for i, c in enumerate(xs))\n\n"
+            "def check(candidate):\n    for inp in [[[1, 2]], [[-6, 11, -6, 1]]]:\n"
+            "        assert _poly(*candidate(*inp), inp) <= 0.0001\n\ncheck(find_zero)\n")   # as in the HF HumanEval+ row
+    reply = ("```python\nfrom __future__ import annotations\n\ndef find_zero(xs: list) -> float:\n    lo, hi = -100.0, 100.0\n"
+             "    while hi - lo > 1e-10:\n        mid = (lo + hi) / 2\n"
+             "        lo, hi = (lo, mid) if poly(xs, lo) * poly(xs, mid) <= 0 else (mid, hi)\n    return lo\n```")
+    prog = bench.codegen_program({"head": head, "test": test}, reply)
+    assert prog.startswith("from __future__ import annotations\nimport math\n") and prog.count("__future__") == 1
+    exec(compile(prog, "p.py", "exec"), {"__name__": "p"})   # our own code, not a model's: it needs the prompt's poly()
