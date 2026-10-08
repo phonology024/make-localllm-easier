@@ -85,7 +85,7 @@ LANG_SCRIPTS = {**{c: ["latin"] for c in LATIN_LANGS},
                 "am": ["ethiopic"], "ko": ["hangul", "cjk-punct"], "zh": ["han", "cjk-punct"],
                 "ja": ["han", "kana", "cjk-punct"]}
 
-NORMAL, UNUSED, BYTE = 1, 5, 6   # llama_token_type; all but normal/unused (control, user-defined, unknown, byte) kept
+NORMAL, CONTROL, UNUSED, BYTE = 1, 3, 5, 6   # llama_token_type; all but normal/unused are always kept
 SPACE = "\u2581"        # SentencePiece-style space marker used by Gemma 4's BPE
 PLACEHOLDER = re.compile(r"<unused\d+>")
 
@@ -218,6 +218,9 @@ def select(tokens: list[str], types: list[int], merges: list[str], is_byte_level
     core = {i for i in range(n) if types[i] not in (NORMAL, UNUSED)} | set(forced) | set(extra)
     if is_byte_level:
         core |= {i for i in range(n) if len(token_bytes(tokens[i], True)) == 1}
+    else:                                               # base characters and Gemma's newline-run words, never capped
+        core |= {i for i in range(n) if types[i] == NORMAL and (len(tokens[i]) == 1 or not tokens[i].strip("\n"))
+                 and charset.bytes_ok(token_bytes(tokens[i], False))}
     for i in sorted(core):
         add(i)
     n_core = len(keep)
@@ -234,6 +237,9 @@ def select(tokens: list[str], types: list[int], merges: list[str], is_byte_level
         else:
             allowed.append(i)
     n_letters = len(keep) - n_core
+    if max_vocab is not None and len(keep) > max_vocab:
+        raise SystemExit(f"--keep-top {max_vocab:,} is below the {len(keep):,} tokens these languages need (special, "
+                         f"byte, base-character and letter tokens): raise it or keep fewer languages")
 
     def priority(i: int) -> tuple[int, int]:
         t = tokens[i]
@@ -267,9 +273,14 @@ def _field(reader: gguf.GGUFReader, key: str, default=None):
     return f.contents() if f is not None else default
 
 
+SUPPRESS = "tokenizer.ggml.suppress_tokens"   # ids the sampler bans; dropped ones simply leave the list
+
+
 def _token_id_fields(reader: gguf.GGUFReader) -> dict[str, object]:
+    """Metadata holding token ids: tokenizer.ggml.*_token_id(s) and arch keys such as {arch}.decoder_start_token_id,
+    {arch}.ple.eos_token_id or adapter token_ids_* lists. These tokens are always kept and renumbered."""
     return {k: f.contents() for k, f in reader.fields.items()
-            if k.startswith("tokenizer.ggml.") and (k.endswith("_token_id") or k.endswith("_token_ids"))}
+            if k.rsplit(".", 1)[-1].endswith("token_id") or "token_ids" in k}
 
 
 def vocab_tensors(reader: gguf.GGUFReader, n_vocab: int) -> list:
@@ -312,11 +323,14 @@ def trim(src: Path, dst: Path | None, langs: list[str], max_vocab: int | None = 
     if dry_run or dst is None:
         return report
 
+    if dst.exists() and dst.resolve() == src.resolve():
+        raise SystemExit("write the trimmed model to a new file: the original is still being read")
     arch = _field(reader, "general.architecture")
+    tmp = dst.with_name(dst.name + ".part")
     per_token = {key for key, f in reader.fields.items() if key.startswith("tokenizer.ggml.")
                  and key != "tokenizer.ggml.merges" and f.types and f.types[0] == gguf.GGUFValueType.ARRAY
                  and len(f.data) == n}
-    w = gguf.GGUFWriter(dst, arch=arch, endianess=reader.endianess)
+    w = gguf.GGUFWriter(tmp, arch=arch, endianess=reader.endianess)
     for key, f in reader.fields.items():
         if key.startswith("GGUF.") or key == "general.architecture":
             continue
@@ -333,6 +347,10 @@ def trim(src: Path, dst: Path | None, langs: list[str], max_vocab: int | None = 
         elif key in id_fields:
             remap = lambda v: new_id.get(int(v), int(v))   # noqa: E731
             val = [remap(v) for v in val] if isinstance(val, list) else remap(val)
+        elif key == SUPPRESS:
+            val = [new_id[int(v)] for v in val if int(v) in new_id]
+            if not val:
+                continue
         elif key == f"{arch}.vocab_size":
             val = k
         w.add_key_value(key, val, vtype, sub_type=sub)
@@ -351,6 +369,7 @@ def trim(src: Path, dst: Path | None, langs: list[str], max_vocab: int | None = 
     for data in datas:
         w.write_tensor_data(data)
     w.close()
+    tmp.replace(dst)                                    # never leave a half-written model under the final name
     report["out_gb"] = dst.stat().st_size / 2**30
     return report
 
@@ -391,6 +410,10 @@ class Vocab:
         ids = {t: i for i, t in enumerate(other.tokens)}
         return [ids.get(t) for t in self.tokens]
 
+    def pieces(self) -> list[bytes]:
+        """Text bytes of every token; control tokens (<bos>, <|im_start|>, ...) add no text."""
+        return [b"" if ty == CONTROL else self.detokenize([i]) for i, ty in enumerate(self.types)]
+
     def detokenize(self, ids: list[int]) -> bytes:
         """Bytes llama.cpp would print for these ids: byte-level text decoded, <0xXX> byte tokens, U+2581 -> space."""
         out = bytearray()
@@ -411,7 +434,7 @@ def check(orig: Path, trimmed: Path, texts: Path, tokenizer: Path) -> list[dict]
     vo, vt = Vocab(orig), Vocab(trimmed)
     old_to_new = vo.to(vt)
     rows = []
-    for txt in sorted(texts.glob("*.txt")):
+    for txt in _texts(texts):
         a, b = tokenize(tokenizer, orig, txt), tokenize(tokenizer, trimmed, txt)
         mapped = [old_to_new[i] for i in a]
         raw = txt.read_bytes()
@@ -420,6 +443,13 @@ def check(orig: Path, trimmed: Path, texts: Path, tokenizer: Path) -> list[dict]
                      "identical": mapped == b, "growth_pct": 100 * (len(b) / max(len(a), 1) - 1),
                      "roundtrip": vt.detokenize(b) == raw, "roundtrip_orig": vo.detokenize(a) == raw})
     return rows
+
+
+def _texts(folder: Path) -> list[Path]:
+    found = sorted(folder.glob("*.txt"))
+    if not found:
+        raise SystemExit(f"no .txt files in {folder}")
+    return found
 
 
 def read_logprobs(path: Path):
@@ -435,14 +465,19 @@ def read_logprobs(path: Path):
     return n_ctx, n_vocab, tokens, rows[: rows.size // nv * nv].reshape(-1, nv)
 
 
-def compare_logprobs(base_o: Path, base_t: Path, old_to_new: list[int | None], block: int = 64) -> dict:
-    """Position by position: same most-likely token? How much probability did the original give dropped tokens?
-    Tokens more than 16 nats below the top are stored without their value and count as 0 here."""
-    _, nvo, tok_o, rows_o = read_logprobs(base_o)
-    _, nvt, tok_t, rows_t = read_logprobs(base_t)
+def compare_logprobs(base_o: Path, base_t: Path, old_to_new: list[int | None], pieces_o: list[bytes] | None = None,
+                     pieces_t: list[bytes] | None = None, block: int = 64) -> dict:
+    """Same tokens on both sides: position by position, same most-likely token? How much probability did the original
+    give dropped tokens (tokens 16+ nats below the top are stored without a value and count as 0, a lower bound)?
+    Different tokens (a --keep-top trim, or a dropped script): compare at the token boundaries both runs share, with the
+    same context start, whether the most likely next piece of text is the same (or one is a prefix of the other)."""
+    n_ctx_o, nvo, tok_o, rows_o = read_logprobs(base_o)
+    n_ctx_t, nvt, tok_t, rows_t = read_logprobs(base_t)
     mapped = np.array([-1 if old_to_new[i] is None else old_to_new[i] for i in tok_o])
     if len(tok_o) != len(tok_t) or not np.array_equal(mapped, tok_t):
-        return {"comparable": False}
+        if pieces_o is None or pieces_t is None:
+            return {"comparable": False}
+        return _compare_aligned(n_ctx_o, tok_o, rows_o, pieces_o, n_ctx_t, tok_t, rows_t, pieces_t, block)
     new_to_old = np.full(nvt, -1)
     new_to_old[[n for n in old_to_new if n is not None]] = [o for o, n in enumerate(old_to_new) if n is not None]
     kept = np.zeros(nvo, bool)
@@ -462,18 +497,51 @@ def compare_logprobs(base_o: Path, base_t: Path, old_to_new: list[int | None], b
         p = np.where((q > 0) | ~clipped, p, 0.0)                          # count those as 0 (a lower bound)
         dropped_mass += list(p[:, ~kept].sum(1) / p.sum(1))
     n = len(rows_o)
-    return {"comparable": True, "positions": n, "same_top1_pct": 100 * same / n,
+    return {"comparable": True, "mode": "same tokens", "positions": n, "same_top1_pct": 100 * same / n,
             "orig_top1_kept_pct": 100 * top_kept / n, "dropped_mass_mean": float(np.mean(dropped_mass)),
             "dropped_mass_p99": float(np.percentile(dropped_mass, 99))}
+
+
+def _boundaries(n_ctx: int, tokens: np.ndarray, pieces: list[bytes], n_rows: int) -> dict[tuple[int, int], int]:
+    """(byte where the chunk's context starts, byte where the predicted token starts) -> row of the logits file.
+    llama-perplexity scores the second half of each n_ctx chunk: n_ctx - 1 - n_ctx // 2 rows per chunk."""
+    off = np.concatenate([[0], np.cumsum([len(pieces[i]) for i in tokens])])
+    first, per = n_ctx // 2, n_ctx - 1 - n_ctx // 2
+    out = {}
+    for r in range(n_rows):
+        c, j = divmod(r, per)
+        out[(int(off[c * n_ctx]), int(off[c * n_ctx + first + j + 1]))] = r
+    return out
+
+
+def _compare_aligned(n_ctx_o, tok_o, rows_o, pieces_o, n_ctx_t, tok_t, rows_t, pieces_t, block: int) -> dict:
+    bo = _boundaries(n_ctx_o, tok_o, pieces_o, len(rows_o))
+    bt = _boundaries(n_ctx_t, tok_t, pieces_t, len(rows_t))
+    pairs = sorted((r, bt[k]) for k, r in bo.items() if k in bt)
+    if not pairs:
+        return {"comparable": False}
+    same = compatible = 0
+    for s in range(0, len(pairs), block):
+        ro, rt = (np.array(x) for x in zip(*pairs[s:s + block]))
+        top_o = rows_o[ro][:, 4:4 + len(pieces_o)].argmax(1)
+        top_t = rows_t[rt][:, 4:4 + len(pieces_t)].argmax(1)
+        for a, b in zip(top_o, top_t):
+            po, pt = pieces_o[a], pieces_t[b]
+            same += po == pt
+            compatible += bool(po and pt and (po.startswith(pt) or pt.startswith(po)))
+    n = len(pairs)
+    return {"comparable": True, "mode": "aligned", "positions": n, "coverage_pct": 100 * n / len(rows_o),
+            "same_top1_pct": 100 * same / n, "compatible_pct": 100 * compatible / n}
 
 
 def agree(orig: Path, trimmed: Path, texts: Path, perplexity: Path, ctx: int = 512, chunks: int = 4,
           extra: list[str] = ()) -> list[dict]:
     """Run both models over each text with llama-perplexity and compare their next-token predictions."""
-    old_to_new = Vocab(orig).to(Vocab(trimmed))
+    vo, vt = Vocab(orig), Vocab(trimmed)
+    old_to_new, pieces_o, pieces_t = vo.to(vt), vo.pieces(), vt.pieces()
     rows = []
     with tempfile.TemporaryDirectory(prefix="trim-agree-") as d:
-        for txt in sorted(texts.glob("*.txt")):
+        for txt in _texts(texts):
             bases = []
             for tag, model in (("orig", orig), ("trim", trimmed)):
                 base = Path(d, f"{txt.stem}-{tag}.bin")
@@ -483,7 +551,7 @@ def agree(orig: Path, trimmed: Path, texts: Path, perplexity: Path, ctx: int = 5
                 if out.returncode or not base.exists():
                     raise SystemExit(f"llama-perplexity failed on {txt} ({tag}):\n{out.stderr[-1500:]}")
                 bases.append(base)
-            rows.append({"text": txt.stem, **compare_logprobs(*bases, old_to_new)})
+            rows.append({"text": txt.stem, **compare_logprobs(*bases, old_to_new, pieces_o, pieces_t)})
             for b in bases:
                 b.unlink()
     return rows
@@ -506,6 +574,9 @@ def main() -> None:
         p.add_argument("orig", type=Path)
         p.add_argument("trimmed", type=Path)
         p.add_argument("--texts", type=Path, required=True)
+        p.add_argument("--require", default="", help="comma-separated text names (e.g. th,en) that must tokenize "
+                       "identically (check) or agree on the top-1 token (agree); otherwise exit with an error")
+    g.add_argument("--min-agree", type=float, default=99.0, help="percent same top-1 that --require texts need")
     g.add_argument("--ctx", type=int, default=512)
     g.add_argument("--chunks", type=int, default=4)
     g.add_argument("--ppl-args", default="", help='extra llama-perplexity arguments, e.g. "-ngl 99 -dev Vulkan0"')
@@ -513,22 +584,41 @@ def main() -> None:
         p.add_argument("--bin-dir", help="folder with llama.cpp binaries (default: the build localllm downloaded)")
     a = ap.parse_args()
 
+    required = {x.strip() for x in getattr(a, "require", "").split(",") if x.strip()}
     if a.cmd == "check":
-        for r in check(a.orig, a.trimmed, a.texts, find_tool("llama-tokenize", a.bin_dir)):
+        bad = []
+        rows = check(a.orig, a.trimmed, a.texts, find_tool("llama-tokenize", a.bin_dir))
+        for r in rows:
+            if (r["text"] in required and not r["identical"]) or (r["roundtrip_orig"] and not r["roundtrip"]):
+                bad.append(r["text"])
             print(f"{r['text']:>10}: {r['tokens']:>7} -> {r['tokens_trimmed']:>7} tokens ({r['growth_pct']:+.1f}%), "
                   f"{r['kept_pct']:.1f}% of its tokens kept, {'identical' if r['identical'] else 'CHANGED'}, "
                   f"decodes back {'exactly' if r['roundtrip'] else 'DIFFERENTLY'}"
                   + ("" if r["roundtrip_orig"] else " (the original model doesn't round-trip it either)"))
+        missing = required - {r["text"] for r in rows}
+        if bad or missing:
+            sys.exit(f"FAILED: {', '.join(bad)} changed or didn't decode back" if bad else f"no text for {missing}")
         return
     if a.cmd == "agree":
-        for r in agree(a.orig, a.trimmed, a.texts, find_tool("llama-perplexity", a.bin_dir), a.ctx, a.chunks,
-                       shlex.split(a.ppl_args)):
+        rows = agree(a.orig, a.trimmed, a.texts, find_tool("llama-perplexity", a.bin_dir), a.ctx, a.chunks,
+                     shlex.split(a.ppl_args))
+        bad = [r["text"] for r in rows if r["text"] in required
+               and not (r["comparable"] and r["same_top1_pct"] >= a.min_agree)]
+        bad += sorted(required - {r["text"] for r in rows})
+        for r in rows:
             if not r["comparable"]:
-                print(f"{r['text']:>10}: tokenized differently after trimming, positions can't be compared")
+                print(f"{r['text']:>10}: tokenized too differently to compare (no shared scored positions)")
+                continue
+            if r["mode"] == "aligned":
+                print(f"{r['text']:>10}: tokenized differently; at {r['positions']} shared token boundaries "
+                      f"({r['coverage_pct']:.0f}% of positions) the most likely next text is the same "
+                      f"{r['same_top1_pct']:.2f}%, compatible (one a prefix of the other) {r['compatible_pct']:.2f}%")
                 continue
             print(f"{r['text']:>10}: same top-1 {r['same_top1_pct']:.2f}% of {r['positions']} positions, "
                   f"original's top-1 kept {r['orig_top1_kept_pct']:.2f}%, probability on dropped tokens "
                   f"mean {r['dropped_mass_mean']:.5f} / p99 {r['dropped_mass_p99']:.5f}")
+        if bad:
+            sys.exit(f"FAILED: top-1 agreement below {a.min_agree}% (or not measurable) for {', '.join(bad)}")
         return
     if a.out is None and not a.dry_run:
         ap.error("give OUT.gguf or --dry-run")
@@ -542,8 +632,6 @@ def main() -> None:
     print(f"  {r['n_core']:,} special/byte/forced + {r['n_letters']:,} with the languages' letters + "
           + (f"the most frequent of {r['n_ascii']:,} ASCII/symbol tokens up to {r['max_vocab']:,}" if r["max_vocab"]
              else f"{r['n_ascii']:,} ASCII/symbol tokens"))
-    if r["max_vocab"] and r["n_kept"] > r["max_vocab"]:
-        print(f"  (special tokens + the languages' own tokens alone are more than --max-vocab {r['max_vocab']:,})")
     print(f"merges {r['merges']:,} -> {r['merges_kept']:,}")
     for name, (qt, before, after) in r["tensors"].items():
         print(f"  {name:<40} {qt:<6} {before:8.1f} -> {after:8.1f} MiB")

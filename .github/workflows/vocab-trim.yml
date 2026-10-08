@@ -19,8 +19,12 @@ jobs:
           - {name: qwen3.5-2b, repo: unsloth/Qwen3.5-2B-GGUF, quant: Q8_0}
           - {name: gemma-4-e2b, repo: ggml-org/gemma-4-E2B-it-GGUF, quant: Q8_0}
     name: real-model (${{ matrix.name }})
+    defaults:
+      run:
+        shell: bash                     # -eo pipefail: a failing tool fails the step even when piped into tee
     env:
       GH_TOKEN: ${{ github.token }}
+      LLAMA_TAG: b11487                 # pinned: the numbers in the PR/README come from this build
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,15 +32,15 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install gguf numpy
 
-      - name: llama.cpp CPU binaries (latest release)
+      - name: llama.cpp CPU binaries (pinned release)
         run: |
           python - <<'EOF'
           import io, json, os, re, tarfile, urllib.request, zipfile
-          req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10",
-                                       headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
-          rels = json.load(urllib.request.urlopen(req))
-          rel, asset = next((r, a) for r in rels for a in r["assets"]
-                            if re.search(r"bin-ubuntu-x64\.(zip|tar\.gz)$", a["name"]))
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/{os.environ['LLAMA_TAG']}",
+              headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
+          rel = json.load(urllib.request.urlopen(req))
+          asset = next(a for a in rel["assets"] if re.search(r"bin-ubuntu-x64\.(zip|tar\.gz)$", a["name"]))
           print("llama.cpp", rel["tag_name"], asset["name"])
           data = urllib.request.urlopen(asset["browser_download_url"]).read()
           if asset["name"].endswith(".zip"):
@@ -93,13 +97,17 @@ jobs:
 
       - name: Tokenization and round trip
         run: |
-          python tools/trim_vocab.py check model.gguf trim-th-en.gguf --texts texts --bin-dir "$BIN" | tee check.txt
+          python tools/trim_vocab.py check model.gguf trim-th-en.gguf --texts texts --bin-dir "$BIN" \
+            --require th,en,code,math | tee check.txt
           python tools/trim_vocab.py check model.gguf trim-th-en-64k.gguf --texts texts --bin-dir "$BIN" | tee check64k.txt
 
       - name: Next-token agreement (logits of both models)
         run: |
           python tools/trim_vocab.py agree model.gguf trim-th-en.gguf --texts agree --ctx 512 --chunks 8 \
-            --bin-dir "$BIN" --ppl-args "-t 4" | tee agree.txt
+            --bin-dir "$BIN" --ppl-args "-t 4" --require th,en,code,math --min-agree 99 | tee agree.txt
+          # --keep-top changes tokenization: compare at the token boundaries both runs share (one 2048-token chunk)
+          python tools/trim_vocab.py agree model.gguf trim-th-en-64k.gguf --texts agree --ctx 2048 --chunks 1 \
+            --bin-dir "$BIN" --ppl-args "-t 4" | tee agree64k.txt
 
       - name: CPU speed
         run: |
@@ -111,7 +119,7 @@ jobs:
         run: |
           {
             echo "## ${{ matrix.repo }} / $MODEL_FILE, --langs th,en"
-            for f in trim.txt trim64k.txt check.txt check64k.txt agree.txt; do
+            for f in trim.txt trim64k.txt check.txt check64k.txt agree.txt agree64k.txt; do
               [ -f "$f" ] && { echo "### $f"; echo '```'; cat "$f"; echo '```'; }
             done
             [ -f bench.md ] && { echo "### llama-bench (CPU, 4 threads)"; cat bench.md; }

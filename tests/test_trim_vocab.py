@@ -76,10 +76,40 @@ def test_unknown_language_is_an_error():
 def test_select_keeps_every_piece_a_kept_word_is_built_from():
     tokens, types, merges = tiny_vocab()
     hello = tokens.index(enc(b"hello"))
-    sel = tv.select(tokens, types, merges, True, tv.scripts_for(["en"]), extra={hello}, max_vocab=0)
+    sel = tv.select(tokens, types, merges, True, tv.scripts_for(["en"]), extra={hello}, max_vocab=256 + 6)
     kept = {tokens[i] for i in sel["keep"]}
     assert {enc(b"hello"), enc(b"hell"), enc(b"he"), enc(b"ll"), "<|endoftext|>", "<|im_start|>"} <= kept
     assert enc("ส".encode()) not in kept and len(kept) == 256 + 6
+    with pytest.raises(SystemExit):                      # a cap below what the languages need is refused
+        tv.select(tokens, types, merges, True, tv.scripts_for(["en"]), extra={hello}, max_vocab=100)
+
+
+def test_capped_raw_utf8_vocab_keeps_base_characters_and_newline_runs():
+    """Gemma 4 style (no byte-level encoding, <0xXX> fallback): single characters and newline runs are never capped."""
+    tokens = [f"<0x{b:02X}>" for b in range(256)] + list("ab\n") + ["\n\n", "ab", "▁ab", "▁", "ส", "สส"]
+    types = [tv.BYTE] * 256 + [tv.NORMAL] * 9
+    merges = ["a b", "▁ ab", "ส ส"]
+    sel = tv.select(tokens, types, merges, False, tv.scripts_for(["th"]), max_vocab=256 + 7)
+    kept = {tokens[i] for i in sel["keep"]}
+    assert {"a", "b", "\n", "\n\n", "▁", "ส", "สส"} <= kept and len(kept) == 256 + 7   # ab, ▁ab capped
+
+
+def test_suppress_tokens_and_arch_token_ids_follow_their_tokens(tmp_path):
+    src, dst = tmp_path / "m.gguf", tmp_path / "t.gguf"
+    tokens, types, merges = tiny_vocab()
+    zh, im = tokens.index(enc("中".encode())), tokens.index("<|im_start|>")
+    w = gguf.GGUFWriter(src, arch="qwen2")
+    w.add_tokenizer_model("gpt2"); w.add_tokenizer_pre("qwen2")
+    w.add_token_list(tokens); w.add_token_types(types); w.add_token_merges(merges)
+    w.add_array("tokenizer.ggml.suppress_tokens", [im, zh])
+    w.add_uint32("qwen2.decoder_start_token_id", im)
+    w.add_tensor("token_embd.weight", np.zeros((len(tokens), 32), np.float32))
+    w.write_header_to_file(); w.write_kv_data_to_file(); w.write_tensors_to_file(); w.close()
+    tv.trim(src, dst, ["th"])
+    r = gguf.GGUFReader(dst)
+    new = tv._field(r, "tokenizer.ggml.tokens")
+    assert [new[i] for i in tv._field(r, "tokenizer.ggml.suppress_tokens")] == ["<|im_start|>"]   # 中 is gone
+    assert new[tv._field(r, "qwen2.decoder_start_token_id")] == "<|im_start|>"
 
 
 def test_trim_writes_a_consistent_smaller_model(tmp_path):
@@ -164,3 +194,53 @@ def test_compare_logprobs_counts_top1_agreement_and_dropped_mass(tmp_path):
 
     write_logprobs(tmp_path / "t2.bin", trimmed, [0, 2, 2])  # different tokens: not comparable
     assert not tv.compare_logprobs(tmp_path / "o.bin", tmp_path / "t2.bin", old_to_new)["comparable"]
+
+
+def test_compare_logprobs_aligns_differently_tokenized_runs(tmp_path):
+    """Original splits "hello" as one token, the trimmed vocab as "he" + "llo": positions are compared where both runs
+    have a token boundary, by the text of the most likely next token."""
+    pieces_o = [b"a", b" ", b"hello", b"he", b"llo"]
+    pieces_t = [b"a", b" ", b"he", b"llo"]
+    old_to_new = [0, 1, None, 2, 3]
+    # text "a a a hello a a" ; orig: a,_,a,_,a,_,hello,_,a,_,a ; trimmed: ..., he, llo, ...
+    tok_o = [0, 1, 0, 1, 0, 1, 2, 1, 0, 1, 0, 1]
+    tok_t = [0, 1, 0, 1, 0, 1, 2, 3, 1, 0, 1, 0]
+    n_rows_o = 5                                          # n_ctx 12 -> rows score tokens 7..11
+    # rows predict the token starting at byte 11, 12, 13, 14, 15 (orig) and 8, 11, 12, 13, 14 (trimmed)
+    lo = np.zeros((n_rows_o, 5), np.float32); lo[np.arange(5), [2, 0, 1, 0, 1]] = 9    # hello, a, " ", a, " "
+    lt = np.zeros((5, 4), np.float32); lt[np.arange(5), [1, 2, 0, 1, 3]] = 9          # " ", he, a, " ", llo
+    write_logprobs(tmp_path / "o.bin", lo, tok_o)
+    write_logprobs(tmp_path / "t.bin", lt, tok_t)
+    r = tv.compare_logprobs(tmp_path / "o.bin", tmp_path / "t.bin", old_to_new, pieces_o, pieces_t)
+    assert r["comparable"] and r["mode"] == "aligned"
+    assert r["positions"] == 4 and r["coverage_pct"] == 80.0                 # bytes 11-14 are boundaries in both
+    assert r["same_top1_pct"] == 50.0 and r["compatible_pct"] == 75.0       # hello~he, a=a, " "=" ", a!=llo
+
+
+def test_raw_utf8_vocab_trim_drops_placeholders_and_decodes_byte_fallback(tmp_path):
+    """Gemma 4 style GGUF: space marker, <0xXX> byte tokens, <unusedN> placeholders."""
+    tokens = [f"<0x{b:02X}>" for b in range(256)] + ["<bos>", "<unused0>", "▁", "a", "b", "ab", "▁ab", "ส", "中"]
+    types = [tv.BYTE] * 256 + [3] + [tv.NORMAL] * 8
+    src, dst = tmp_path / "g.gguf", tmp_path / "t.gguf"
+    w = gguf.GGUFWriter(src, arch="gemma4")
+    w.add_tokenizer_model("gemma4")
+    w.add_token_list(tokens); w.add_token_types(types); w.add_token_merges(["a b", "▁ ab"])
+    w.add_bos_token_id(256)
+    w.add_tensor("token_embd.weight", np.arange(len(tokens) * 32, dtype=np.float32).reshape(len(tokens), 32))
+    w.write_header_to_file(); w.write_kv_data_to_file(); w.write_tensors_to_file(); w.close()
+    tv.trim(src, dst, ["th"])
+    v = tv.Vocab(dst)
+    assert "<unused0>" not in v.tokens and "中" not in v.tokens and "ส" in v.tokens
+    ids = {t: i for i, t in enumerate(v.tokens)}
+    pieces = ["▁ab", "ส", "▁"] + [f"<0x{b:02X}>" for b in "中".encode()]
+    assert v.detokenize([ids[x] for x in pieces]).decode() == " abส 中"
+    assert v.tokens[tv._field(gguf.GGUFReader(dst), "tokenizer.ggml.bos_token_id")] == "<bos>"
+
+
+def test_trim_refuses_to_overwrite_its_input(tmp_path):
+    src = tmp_path / "m.gguf"
+    write_model(src)
+    before = src.read_bytes()
+    with pytest.raises(SystemExit):
+        tv.trim(src, src, ["th"])
+    assert src.read_bytes() == before

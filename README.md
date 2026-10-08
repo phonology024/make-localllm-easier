@@ -193,27 +193,47 @@ lower in Arabic, Thai and Hindi than in English - the same order as the benchmar
 ### Trimming the vocabulary to your languages (research)
 
 `tools/trim_vocab.py` drops the tokens of scripts you don't use, removes the BPE merges that build them (so other text
-still encodes, in smaller pieces) and slices every per-token tensor. Measured on the real Gemma 4 tokenizer (262k
-tokens) and llama.cpp's Qwen test vocabulary (152k; Qwen3.8's own has 248k), with 1,000 parallel news/Wikipedia
-sentences per language (UD PUD), 400 GSM8K problems and 400 KB of Python, keeping Thai + English:
+still encodes, in smaller pieces) and slices every per-token tensor: embeddings, output layer, Gemma's per-layer
+embeddings. Text written in the kept scripts tokenizes exactly as before.
 
-| `--langs th,en` | Qwen vocab kept | Gemma 4 vocab kept | Thai / English / math tokens after trimming |
+```
+pip install gguf numpy
+python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en --dry-run     # what would go, sizes saved
+python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en               # keep every Thai/Latin/symbol token
+python tools/trim_vocab.py check MODEL.gguf OUT.gguf --texts DIR --require th,en # same tokens, decodes back exactly
+python tools/trim_vocab.py agree MODEL.gguf OUT.gguf --texts DIR --require th,en # same next-token pick
+```
+
+Measured on real models with `--langs th,en` (GitHub CPU runner, 4 threads, llama.cpp b11487, Q8_0;
+[vocab-trim workflow](.github/workflows/vocab-trim.yml)). Texts: the same 1,000 news/Wikipedia sentences per language
+(UD PUD), 400 GSM8K problems, 400 KB of Python.
+
+| | Qwen3-0.6B | Qwen3.5-2B (Qwen3.8's 248k vocabulary) | Gemma 4 E2B |
 |---|---|---|---|
-| every Thai, Latin and symbol token | 70.0% | 62.0% | identical (checked token by token) |
-| `--max-vocab 80000` | 52.7% | 30.5% | Thai <= +0.1%, English +1.7% / +4.6%, math +0.7% / +1.7% |
-| `--max-vocab 64000` | 42.1% | 24.4% | Thai <= +0.1%, English +3.9% / +7.6%, math +1.5% / +3.0% |
+| vocabulary kept | 106,149 of 151,936 (69.9%) | 148,738 of 248,320 (59.9%) | 162,451 of 262,144 (62.0%) |
+| file | 0.60 -> 0.55 GiB | 1.87 -> 1.67 GiB | 4.63 -> 3.59 GiB |
+| Thai, English, code, math tokens | identical | identical | identical |
+| same most likely next token as the original | 100% (2,040 positions each) | 100% | 100% |
+| probability the original gave dropped tokens, Thai text | 0.19% (p99 1.6%) | 0.88% (p99 4.2%) | 0.08% (p99 1.0%) |
+| decode speed, CPU | 51.5 -> 55.8 tok/s (+8%) | 17.0 -> 19.0 tok/s (+12%) | 12.9 -> 14.3 tok/s (+11%) |
+| with `--keep-top 64000` | 0.50 GiB, 59.7 tok/s | 1.49 GiB, 21.0 tok/s | 2.56 GiB, 15.5 tok/s |
 
-ASCII alone is 57-62% of both vocabularies, so the lossless trim saves about a third; the cap goes further by
-dropping rare English words and code identifiers, which then split into more pieces. Text in a dropped script (Chinese,
-Hindi, Arabic, ...) still works but takes 2.5-9x more tokens.
+Prompt speed doesn't change. A second Qwen3-0.6B run gave 49.8 -> 56.5 tok/s, so read the speed-ups as +-5%.
+ASCII alone is 57-62% of these vocabularies, so the lossless trim saves about a third; on Gemma 4 E2B that is 1 GB,
+because its per-layer embeddings have a row per token too. `--keep-top N` goes further by dropping the rarest
+ASCII/symbol tokens (latest BPE merges first; the languages' own letters are never capped), which splits rare English
+words and code identifiers into more pieces: English +3.8-7.6% tokens, code +2.4-4.6%, math +1.5-3.0%, Thai <= +0.1%.
+Text in a dropped script (Chinese, Hindi, Arabic, ...) still works and decodes back exactly, but takes 2.5-9x more
+tokens.
 
-On a Qwen3-1.7B-shaped model (random weights, Q4_K_M, 4 CPU threads) the lossless trim took decode from 21.5 to
-24.8 tok/s (+15%) and the 64k cap to 26.5 tok/s (+23%), with the file 1.03 -> 0.96 / 0.89 GiB and prompt speed
-unchanged; logits for kept tokens were the same (max difference 7e-7). Still to measure on real weights, per language:
-how much probability the model puts on the dropped tokens when it writes Thai or English, and whether the cap's new
-splits cost accuracy ([#27](https://github.com/phonology024/make-localllm-easier/issues/27)). The gain shrinks with
-model size: on Qwen3.8-27B the output layer takes ~1.4 ms per token (measured), so expect a few percent faster plus a
-few hundred MB less VRAM and RAM.
+For the catalog models (estimate, not measured on the GPU yet): Qwen3.8-27B shares Qwen3.5's vocabulary, so about 60%
+of it stays: the output matrix (~0.87 GB of VRAM) and the CPU-mapped embeddings (~0.51 GB of RAM) shrink by ~40%, and
+the output layer's ~1.4 ms per token from the op profile in
+[#27](https://github.com/phonology024/make-localllm-easier/issues/27) by ~0.6 ms, a few percent of decode.
+
+Limitations: BPE vocabularies with merges only (Qwen, Llama 3, Gemma 4; SentencePiece/WordPiece files are refused). A
+trimmed file no longer shares token ids with separate draft models, LoRA adapters or anything else that stores ids.
+Measured on CPU with Q8_0 files; GPU speed and VRAM on the RX 9070 XT, and benchmark accuracy, are still to measure.
 
 ## How the benchmark works
 

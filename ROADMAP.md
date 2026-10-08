@@ -83,9 +83,10 @@ result at 3.5 bpw. Below ~3 bits the weights are effectively restructured, so ca
 - [ ] Better 2-bit formats on the multilingual set: IQ2_KT / IQ2_KL (ik_llama.cpp) and EXL3 ~2.5 bpw
 - [ ] LoRA self-distillation of a 2-bit 27B from its Q8 teacher (no one has measured this per language yet)
 - [ ] Vocabulary trimming per language for GGUF (no tool existed): smaller embedding/output and faster output layer,
-      most useful on 1-4B models. `tools/trim_vocab.py` done (#27): Thai + English keeps 70% of Qwen's / 62% of
-      Gemma 4's vocabulary with identical tokenization, +15% decode on a Qwen3-1.7B-shaped model (CPU). Next: answer
-      quality on real weights per language, then a `localllm` option
+      most useful on 1-4B models. `tools/trim_vocab.py` done (#27, #36): Thai + English keeps 60-70% of the
+      vocabulary with identical tokenization and the same top-1 next token at 100% of positions on Qwen3-0.6B,
+      Qwen3.5-2B and Gemma 4 E2B; files 8-22% smaller, decode +8-12% on CPU. Next: GPU speed/VRAM and benchmark
+      accuracy on the catalog models, then a `localllm` option
 - [ ] Publish every measured quant with its per-language scores on Hugging Face
 
 ## 0.6 - smart router: the right local model for each message (Laya-style)
