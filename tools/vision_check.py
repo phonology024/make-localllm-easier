@@ -41,18 +41,18 @@ IMG = base64.b64encode(png(256, 256, (40, 170, 60))).decode()
 
 def requests(img: str) -> list[tuple[str, str, dict]]:
     return [
-        ("openai", "/v1/chat/completions", {"max_tokens": 16, "messages": [{"role": "user", "content": [
+        ("openai", "/v1/chat/completions", {"max_tokens": 256, "messages": [{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}, {"type": "text", "text": ASK}]}]}),
-        ("anthropic", "/v1/messages", {"model": "local", "max_tokens": 16, "messages": [{"role": "user", "content": [
+        ("anthropic", "/v1/messages", {"model": "local", "max_tokens": 256, "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img}},
             {"type": "text", "text": ASK}]}]}),
-        ("ollama", "/api/chat", {"model": "local", "stream": False, "options": {"num_predict": 16},
+        ("ollama", "/api/chat", {"model": "local", "stream": False, "options": {"num_predict": 256},
                                  "messages": [{"role": "user", "content": ASK, "images": [img]}]}),
-        ("ollama-stream", "/api/chat", {"model": "local", "stream": True, "options": {"num_predict": 16},
+        ("ollama-stream", "/api/chat", {"model": "local", "stream": True, "options": {"num_predict": 256},
                                         "messages": [{"role": "user", "content": ASK, "images": [img]}]}),
-        ("gemini", "/v1beta/models/local:generateContent", {"generationConfig": {"maxOutputTokens": 16}, "contents": [
+        ("gemini", "/v1beta/models/local:generateContent", {"generationConfig": {"maxOutputTokens": 256}, "contents": [
             {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": img}}, {"text": ASK}]}]}),
-        ("gemini-stream", "/v1beta/models/local:streamGenerateContent", {"generationConfig": {"maxOutputTokens": 16},
+        ("gemini-stream", "/v1beta/models/local:streamGenerateContent", {"generationConfig": {"maxOutputTokens": 256},
             "contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": img}},
                                                      {"text": ASK}]}]}),
     ]
@@ -91,7 +91,7 @@ def mem(pid: int) -> dict:
 
 def start(server: str, model: str, mmproj: str | None, port: int) -> subprocess.Popen:
     args = runtime.server_args(Path(model), None, port, 4096, False, ram_total_gb=16)
-    args += ["-t", str(os.cpu_count() or 4), "--reasoning-budget", "0"] + (["--mmproj", mmproj] if mmproj else [])
+    args += ["-t", str(os.cpu_count() or 4), "--reasoning-budget", "0", "--jinja"] + (["--mmproj", mmproj] if mmproj else [])
     log = open(f"server-{'vision' if mmproj else 'text'}.log", "wb")
     p = subprocess.Popen([server, *args], stdout=log, stderr=subprocess.STDOUT)
     for _ in range(600):

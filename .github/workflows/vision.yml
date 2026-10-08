@@ -59,7 +59,7 @@ jobs:
             --name "${{ matrix.name }}" --json vision.jsonl | tee vision.txt
       - name: MaXM (en, th, zh; 30 questions each)
         run: |
-          "$BIN/llama-server" -m model.gguf --mmproj mmproj.gguf --port 8081 -c 4096 -t 4 --reasoning-budget 0 \
+          "$BIN/llama-server" -m model.gguf --mmproj mmproj.gguf --port 8081 -c 4096 -t 4 --jinja --reasoning-budget 0 \
             > server-eval.log 2>&1 &
           for i in $(seq 1 180); do curl -fs http://127.0.0.1:8081/health > /dev/null && break; sleep 1; done
           python -m localllm eval --url http://127.0.0.1:8081 --name "${{ matrix.name }}" --suites vision \
