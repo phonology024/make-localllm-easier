@@ -1,5 +1,5 @@
 """Generate short, everyday-style requests per task class in many languages with the local LLM (gemma-4 via localllm).
-The shared test set is never shown to the model; exact duplicates of it are dropped. Output: data/generated.jsonl
+The shared test set is never shown to the model; exact duplicates of it are dropped. Output: generated.jsonl (committed)
 Needs a GPU that runs gemma-4 (not possible in CI). Model folders: $LOCALLLM_MODELS, else the maintainer's."""
 import json, os, random, re, sys, time, urllib.request
 from pathlib import Path
@@ -34,8 +34,7 @@ def main():
     test = {json.loads(l)["text"] for l in open(D / "shared_test.jsonl", encoding="utf-8")}
     server, _d, dev, _r = cli._machine()
     proc, url = cli._launch("gemma4-26b-a4b-qat", server, dev, 8192, runtime.ram_available_gb())
-    (D / "data").mkdir(exist_ok=True)
-    out = open(D / "data" / "generated.jsonl", "w", encoding="utf-8")
+    out = open(D / "generated.jsonl", "w", encoding="utf-8")
     n = 0
     try:
         for code, lang in LANGS.items():

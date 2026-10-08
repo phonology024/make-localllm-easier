@@ -1,13 +1,13 @@
 """Embed the router data with e5-small (llama.cpp), train a logistic-regression head, evaluate vs the keyword rules,
 and export the head the package loads (localllm/taskclf.py).
 
-usage: train_router.py MODEL.gguf [--ngl 0|99] [--server llama-server] [--data DIR] [--extra FILE ...]
+usage: train_router.py MODEL.gguf [--ngl 0|99] [--server llama-server] [--data DIR] [--with-generated [FILE]]
                        [--test shared_test.jsonl] [--export router_head.json]
-  --data    folder with train.jsonl + heldout.jsonl from build_data.py (default: data/ next to this script)
-  --extra   more training files, e.g. data/generated.jsonl from gen_data.py
-  --server  default: $LOCALLLM_LLAMA_SERVER, the maintainer's Vulkan build if present, else localllm's own llama.cpp
+  --data            folder with train.jsonl + heldout.jsonl from build_data.py (default: data/ next to this script)
+  --with-generated  add gen_data.py's short requests (default: generated.jsonl next to this script), 85% to training
+  --server          default: $LOCALLLM_LLAMA_SERVER, the maintainer's Vulkan build if present, else localllm's llama.cpp
 """
-import argparse, hashlib, json, os, subprocess, sys, time, urllib.request
+import argparse, hashlib, json, os, random, subprocess, sys, time, urllib.error, urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -29,7 +29,7 @@ ap.add_argument("--ngl", default="0")
 ap.add_argument("--server", default=os.environ.get("LOCALLLM_LLAMA_SERVER")
                 or (WIN_SERVER if Path(WIN_SERVER).exists() else None))
 ap.add_argument("--data", type=Path, default=D / "data")
-ap.add_argument("--extra", type=Path, nargs="*", default=[])
+ap.add_argument("--with-generated", type=Path, nargs="?", const=D / "generated.jsonl", dest="generated")
 ap.add_argument("--test", type=Path, default=D / "shared_test.jsonl")
 ap.add_argument("--export", type=Path, default=D / "router_head.json")
 A = ap.parse_args()
@@ -54,7 +54,15 @@ def embed(recs, tag):
     out = []
     t = time.time()
     for i in range(0, len(recs), 32):
-        out += post([taskclf.PREFIX + r["text"][:taskclf.MAX_CHARS] for r in recs[i:i + 32]])
+        batch = [taskclf.PREFIX + r["text"][:taskclf.MAX_CHARS] for r in recs[i:i + 32]]
+        try:
+            out += post(batch)
+        except urllib.error.HTTPError:
+            for one in batch:                   # find and shorten the text the server rejected
+                try:
+                    out += post([one])
+                except urllib.error.HTTPError:
+                    print("  shortened:", repr(one[:80])); out += post([one[:150]])
     print(f"  embedded {len(recs)} {tag} texts in {time.time() - t:.1f}s")
     x = np.array(out, dtype=np.float32)
     x /= np.linalg.norm(x, axis=1, keepdims=True)
@@ -99,9 +107,12 @@ try:
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=1); break
         except OSError:
             time.sleep(0.2)
-    train = load(A.data / "train.jsonl") + [r for f in A.extra for r in load(f)]
-    held, test = load(A.data / "heldout.jsonl"), load(A.test)
-    print(f"train {len(train)} {dict(Counter(r['label'] for r in train))}  extra: {[str(f) for f in A.extra] or 'none'}")
+    train, held, test = load(A.data / "train.jsonl"), load(A.data / "heldout.jsonl"), load(A.test)
+    if A.generated:                             # short everyday requests written by the local LLM
+        gen = load(A.generated); random.Random(1).shuffle(gen)
+        cut = len(gen) * 85 // 100
+        train, held = train + gen[:cut], held + gen[cut:]
+    print(f"train {len(train)} {dict(Counter(r['label'] for r in train))}  generated: {A.generated or 'no'}")
     print(f"held-out {len(held)}, shared test {len(test)} ({A.test})")
     xtr, xho, xte = embed(train, "train"), embed(held, "heldout"), embed(test, "test")
     ytr, yho, yte = [r["label"] for r in train], [r["label"] for r in held], [r["label"] for r in test]

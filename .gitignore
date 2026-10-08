@@ -3,4 +3,3 @@ __pycache__/
 dist/
 build/
 tools/router/data/
-tools/router/router_head.json

@@ -7,7 +7,7 @@ smaller than Laya (614 MB), then let the measured catalog scores pick the model.
 |---|---|
 | `check_embed.py` | llama.cpp GGUF embeddings vs PyTorch (cosine 0.9998-0.9999 for e5-small Q8_0, see below) |
 | `build_data.py` | training data labelled by source (MGSM, GSM8K, MBPP, CRUXEval, FLORES, Aya, oasst2, Global-MMLU, ThaiExam) |
-| `gen_data.py` | short everyday-style requests per class in 15 languages, written by a local LLM |
+| `gen_data.py` | short everyday-style requests per class in 15 languages, written by a local LLM (`generated.jsonl`) |
 | `train_router.py` | embed with llama-server `--embedding --pooling mean`, logistic-regression head, eval vs keyword rules, `--export` the head |
 | `eval_package.py` | the router exactly as localllm runs it (`localllm/taskclf.py`): accuracy per order, latency, gateway reasons |
 | `eval_laya.py` | Laya (multilingual checkpoint, zero-shot choice) on the same test set |
@@ -20,7 +20,20 @@ is not enough with llama.cpp b11457: its converter reads the config through tran
 comes back - the log then says `context length = 511`. Measured on CI (cosine vs PyTorch, 6 texts): key deleted
 0.9922-0.9996, null 0.9998-0.9999. Q8_0 = 126 MB. Inputs need the `query: ` prefix, cap ~450 chars.
 
-First results (RX 9070 XT PC, CPU, shared test): Laya 77.8% (103 ms median) | embedding head 64.6% | embedding head with
+**Current result** (training data + 2,833 short everyday requests in 15 languages written by gemma-4 with `gen_data.py`;
+`train_router.py --with-generated`; head in `router_head.json`, 4 x 384 logistic regression on e5-small Q8_0):
+
+| | shared test (144) | items least like training (nearest cosine < 0.90, n=73) | latency, CPU | size |
+|---|---|---|---|---|
+| **embedding router** | **97.9%** | **98.6%** | 7.3 ms median | 126 MB |
+| Laya multilingual (zero-shot) | 77.8% | 71.2% | 103 ms median | 614 MB |
+| keyword rules (`detect_task`) | 56.9% | - | < 1 ms | 0 |
+
+Caveat: the shared test set is written by an AI (Claude) too, and generated training items are AI-written; 10 of 144 test
+items have a training item with cosine > 0.95 (the filtered column removes such cases). A human-written test set from
+native speakers is the next proof needed.
+
+First results, before the generated data (RX 9070 XT PC, CPU, shared test): Laya 77.8% (103 ms median) | embedding head 64.6% | embedding head with
 keyword rules first 72.2% (~6 ms) | keyword rules alone 56.9%. Held-out (same style as training) 98.6%: the gap is
 training-data style, being fixed with generated short requests.
 
@@ -45,17 +58,17 @@ Without them, or when the server fails, routing falls back to the keyword rules 
 
 ## Running the scripts
 
-`data/` (training data, embedding caches) is not committed. Paths come from arguments; the server from `--server`,
-`$LOCALLLM_LLAMA_SERVER`, the maintainer's Vulkan build if present, else localllm's own llama.cpp.
+`data/` (training data, embedding caches) is not committed; `generated.jsonl` is. Paths come from arguments; the server
+from `--server`, `$LOCALLLM_LLAMA_SERVER`, the maintainer's Vulkan build if present, else localllm's own llama.cpp.
 
 ```
 python build_data.py                                   # Hugging Face datasets-server -> data/train.jsonl, heldout.jsonl
-python gen_data.py                                     # needs a GPU running gemma-4 -> data/generated.jsonl
-python train_router.py e5-small-Q8_0.gguf --extra data/generated.jsonl --export router_head.json
+python gen_data.py                                     # needs a GPU running gemma-4 -> generated.jsonl
+python train_router.py e5-small-Q8_0.gguf --with-generated --export router_head.json
 python eval_package.py                                 # uses ~/.localllm/models/{multilingual-e5-small-Q8_0.gguf,router_head.json}
 ```
 
 CI (`.github/workflows/router.yml`, CPU runner): downloads e5-small, converts it with llama.cpp b11457 (same recipe),
-checks it against PyTorch, rebuilds the data with `build_data.py`, trains, runs `eval_package.py`, and uploads the head
-and the GGUF as artifacts. It cannot run `gen_data.py` (needs a local LLM), so its head is trained **without** the
-generated short requests.
+checks it against PyTorch, rebuilds the data with `build_data.py`, trains with the committed `generated.jsonl`, runs
+`eval_package.py` on its own head and on the committed `router_head.json`, and uploads the head and the GGUF as
+artifacts. It cannot rerun `gen_data.py` (needs a local LLM).

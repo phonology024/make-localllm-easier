@@ -57,7 +57,7 @@ jobs:
           path: tools/router/data/cache
           key: router-data-v1-${{ github.run_id }}
           restore-keys: router-data-v1-
-      - name: Training data from Hugging Face (build_data.py; generated.jsonl needs a local LLM and is not rebuilt here)
+      - name: Training data from Hugging Face (build_data.py; the committed generated.jsonl is used as is)
         timeout-minutes: 50
         run: python tools/router/build_data.py
       - uses: actions/cache/save@v4
@@ -65,20 +65,31 @@ jobs:
         with:
           path: tools/router/data/cache
           key: router-data-v1-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Train the head and export it (train_router.py --export)
-        run: python tools/router/train_router.py lh/models/multilingual-e5-small-Q8_0.gguf --export lh/models/router_head.json
-      - name: Measure the router as the package runs it (eval_package.py)
+      - name: Train the head with the generated requests and export it (train_router.py --with-generated --export)
+        run: |
+          python tools/router/train_router.py lh/models/multilingual-e5-small-Q8_0.gguf --with-generated \
+            --export lh/models/router_head.json
+      - name: Measure the router as the package runs it (eval_package.py), head trained here
         env:
           LOCALLLM_HOME: ${{ github.workspace }}/lh
         run: |
           ls -la lh/models
           python tools/router/eval_package.py --json router-eval.json
+      - name: Same with the committed tools/router/router_head.json (trained on the maintainer's GGUF)
+        env:
+          LOCALLLM_HOME: ${{ github.workspace }}/lh-committed
+        run: |
+          mkdir -p lh-committed/models
+          ln -s "$PWD/lh/models/multilingual-e5-small-Q8_0.gguf" lh-committed/models/
+          cp tools/router/router_head.json lh-committed/models/
+          python tools/router/eval_package.py --json router-eval-committed-head.json
       - uses: actions/upload-artifact@v4
         with:
           name: router-head
           path: |
             lh/models/router_head.json
             router-eval.json
+            router-eval-committed-head.json
       - uses: actions/upload-artifact@v4
         with:
           name: multilingual-e5-small-Q8_0-gguf
