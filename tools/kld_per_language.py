@@ -1,4 +1,4 @@
-"""Per-language quantization damage: KL divergence and top-1 agreement of a quant vs a reference model (issue #19).
+"""Per-language quantization damage: KL divergence and top-1 agreement of a quant vs a reference model (issue #22).
 
 English perplexity hides multilingual loss, so we measure each language separately with llama.cpp's
 `llama-perplexity --kl-divergence`:

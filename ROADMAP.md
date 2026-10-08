@@ -60,7 +60,7 @@ winner on RDNA4 differs between decode and prefill.
 - [x] `localllm tune`: measure candidate settings with real llama-server runs, keep only >= 1.1x wins, cache per GPU +
       model + llama.cpp build (#8). Multi-backend sweep waits for a machine with more than one backend
 - [x] Detect a small host-visible heap (Resizable BAR off) and set the Vulkan fix automatically, confirmed by A/B
-- [ ] `GGML_CUDA_GRAPH_OPT=1` on single-GPU NVIDIA - implemented in `tune`, needs an NVIDIA owner to measure (#22)
+- [ ] `GGML_CUDA_GRAPH_OPT=1` on single-GPU NVIDIA - implemented in `tune`, needs an NVIDIA owner to measure (#19)
 - [x] MTP only where it measures faster: A/B draft length 2/3/5 per GPU, keep it on above 1.1x
 - [ ] Pick the backend by workload: prefill-heavy (documents/RAG) vs decode-heavy (chat)
 - [x] DeltaNet recurrent-state copy overhead: it was the host-visible memory, fixed by the small-BAR fix (state ops 8.2 -> 0.9 ms per token) (#9)
