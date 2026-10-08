@@ -1,22 +1,25 @@
 name: vocab-trim
-# Real-model check for tools/trim_vocab.py (#36): trim a small GGUF to Thai + English, then measure tokenization,
+# Real-model check for tools/trim_vocab.py (#36): trim small GGUFs to Thai + English, then measure tokenization,
 # next-token agreement, file size and CPU speed against the original. Runs on GitHub's CPU runners, which can reach
-# Hugging Face.
+# Hugging Face. Qwen3.5 shares Qwen3.8's 248k vocabulary; Gemma 4 E2B has per-layer token embeddings.
 on:
   push:
     paths: [tools/trim_vocab.py, .github/workflows/vocab-trim.yml]
   workflow_dispatch:
-    inputs:
-      model_url:
-        description: GGUF to test (resolve URL on huggingface.co)
-        default: https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf
 
 jobs:
   real-model:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: qwen3-0.6b, repo: Qwen/Qwen3-0.6B-GGUF, quant: Q8_0}
+          - {name: qwen3.5-2b, repo: unsloth/Qwen3.5-2B-GGUF, quant: Q8_0}
+          - {name: gemma-4-e2b, repo: ggml-org/gemma-4-E2B-it-GGUF, quant: Q8_0}
+    name: real-model (${{ matrix.name }})
     env:
-      MODEL_URL: ${{ inputs.model_url || 'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -46,17 +49,15 @@ jobs:
           echo "BIN=$BIN" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$BIN" >> "$GITHUB_ENV"
 
-      - name: Small Qwen3.5 / Gemma 4 GGUFs on Hugging Face (for later runs)
-        continue-on-error: true
-        run: |
-          for q in Qwen3.5 gemma-4-E2B gemma-4-E4B; do
-            curl -fsS "https://huggingface.co/api/models?search=$q&filter=gguf&sort=downloads&limit=8" \
-              | python -c "import json,sys; print('$q:', [m['id'] for m in json.load(sys.stdin)])"
-          done
-
       - name: Model and test texts
         run: |
-          curl -fsSL -o model.gguf "$MODEL_URL"
+          FILE=$(curl -fsSL "https://huggingface.co/api/models/${{ matrix.repo }}" | python -c "
+          import json, sys
+          files = [s['rfilename'] for s in json.load(sys.stdin)['siblings']]
+          print(next(f for f in sorted(files) if f.endswith('${{ matrix.quant }}.gguf') and 'mmproj' not in f.lower()))")
+          echo "MODEL_FILE=$FILE" >> "$GITHUB_ENV"
+          echo "${{ matrix.repo }} / $FILE"
+          curl -fsSL -o model.gguf "https://huggingface.co/${{ matrix.repo }}/resolve/main/$FILE"
           ls -l model.gguf
           mkdir -p raw texts
           for p in English:en Thai:th Chinese:zh Hindi:hi Arabic:ar; do
@@ -109,7 +110,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## $(basename "$MODEL_URL"), --langs th,en"
+            echo "## ${{ matrix.repo }} / $MODEL_FILE, --langs th,en"
             for f in trim.txt trim64k.txt check.txt check64k.txt agree.txt; do
               [ -f "$f" ] && { echo "### $f"; echo '```'; cat "$f"; echo '```'; }
             done
