@@ -26,6 +26,7 @@ import json
 import locale
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -78,21 +79,38 @@ def available(lang: str, suites: tuple[str, ...] = ("global", "regional")) -> li
     return [s for s in suites if have[s]]
 
 
-def _rows(ds: str, cfg: str, split: str = "test", page: int = 100) -> list[dict]:
+def _get_json(url: str, tries: int = 6):
+    """datasets-server answers 429/5xx under load: back off and retry rather than lose the run."""
+    for i in range(tries):
+        try:
+            return json.load(urllib.request.urlopen(url, timeout=120))
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 502, 503, 504) or i == tries - 1:
+                raise
+        except urllib.error.URLError:
+            if i == tries - 1:
+                raise
+        time.sleep(min(60, 2 ** (i + 1)))
+
+
+def _rows(ds: str, cfg: str, split: str = "test", page: int = 100, limit: int = 0) -> list[dict]:
+    """All rows of a split, or the first `limit`."""
     out, off = [], 0
     while True:
         u = ROWS.format(ds=urllib.parse.quote(ds), cfg=urllib.parse.quote(cfg), split=split, off=off)
-        u = u.replace("length=100", f"length={page}")
-        d = json.load(urllib.request.urlopen(u, timeout=120))
+        n = min(page, limit - len(out)) if limit else page
+        d = _get_json(u.replace("length=100", f"length={n}"))
         out += [r["row"] for r in d["rows"]]
-        off += page
-        if off >= d.get("num_rows_total", 0) or not d["rows"]:
+        off += n
+        if off >= d.get("num_rows_total", 0) or not d["rows"] or (limit and len(out) >= limit):
             return out
 
 
-def load(suite: str, lang: str) -> list[dict]:
-    """[{'q': question, 'opts': [..], 'ans': index}] cached under ~/.localllm/bench/."""
-    cache = HOME / "bench" / f"{suite}-{lang}.json"
+def load(suite: str, lang: str, limit: int = 0) -> list[dict]:
+    """[{'q': question, 'opts': [..], 'ans': index}] cached under ~/.localllm/bench/. `limit` is honoured for the
+    vision suite only, whose rows carry photos (a whole split is ~100 MB through the rows API)."""
+    limit = limit if suite == "vision" else 0
+    cache = HOME / "bench" / (f"{suite}-{lang}-first{limit}.json" if limit else f"{suite}-{lang}.json")
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
     items = []
@@ -119,7 +137,8 @@ def load(suite: str, lang: str) -> list[dict]:
     elif suite == "vision" and lang in MAXM:
         img_dir = HOME / "bench" / "maxm"
         img_dir.mkdir(parents=True, exist_ok=True)
-        for r in _rows("floschne/maxm", "default", MAXM[lang], page=10):     # rows carry the image: small pages
+        # rows carry the photo, so small pages, and only as many as the run asks for
+        for r in _rows("floschne/maxm", "default", MAXM[lang], page=10, limit=limit):
             path = img_dir / f"{r['image_id']}.jpg"
             if not path.exists():
                 raw = (r.get("image") or {}).get("bytes")
@@ -282,7 +301,7 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
         if not mine:
             print(f"  {lang}: no {'/'.join(suites)} benchmark yet (contributions welcome)")
         for suite in mine:
-            items = load(suite, lang)
+            items = load(suite, lang, limit)
             items = items[:limit] if limit else items
             if suite == "translate":          # a chrF++ score, not a right/wrong count
                 scores = [ask_translate(url, it) for it in items]

@@ -1,4 +1,5 @@
 """Image input through all four APIs (#44), against a fake llama-server that may or may not have a projector."""
+import io
 import json
 import threading
 import urllib.error
@@ -142,3 +143,20 @@ def test_projector_file_is_named_per_repo(monkeypatch, tmp_path):
     (tmp_path / name).write_bytes(b"x")
     monkeypatch.setenv("LOCALLLM_MODELS", str(tmp_path))
     assert cli._mmproj_path(key) == tmp_path / name
+
+
+def test_rows_stop_at_the_limit_and_retry_server_errors(monkeypatch):
+    calls = []
+
+    def fake_urlopen(url, timeout=0):
+        calls.append(url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+        n = int(url.split("length=")[1])
+        return io.BytesIO(json.dumps({"rows": [{"row": {"i": k}} for k in range(n)],
+                                      "num_rows_total": 300}).encode())
+    monkeypatch.setattr(bench.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(bench.time, "sleep", lambda s: None)
+    rows = bench._rows("floschne/maxm", "default", "th", page=10, limit=25)
+    assert len(rows) == 25 and len(calls) == 4                              # 1 retry + pages of 10, 10, 5
+    assert calls[-1].endswith("length=5")
