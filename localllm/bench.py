@@ -16,8 +16,10 @@ Task suites (opt-in with --suites, they generate text so they are slower):
   code      CRUXEval-O (Gu et al. 2024, MIT): 800 short Python functions; the model predicts what f(input) returns.
             Nothing the model writes is executed: the answer is parsed with ast.literal_eval and compared to the
             recorded output. English only (code is the language).
-  codegen   HumanEval+ and MBPP+ (EvalPlus, Apache-2.0): 541 tasks; the model writes the function and the extended
+  codegen   HumanEval+ and MBPP+ (EvalPlus, Apache-2.0): 542 tasks; the model writes the function and the extended
             tests run inside a locked-down Docker container (see sandbox.py) - never on your PC. Needs Docker.
+            Two tests are repaired (CODEGEN_FIXES): HumanEval/32's check can't pass as published, and one of
+            Mbpp/255's 112 inputs needs 2.2 GB, over the sandbox's 1 GB cap.
 """
 from __future__ import annotations
 
@@ -60,7 +62,19 @@ CODE_SYSTEM = ("You are given a Python function and an input. Work out what the 
 CODEGEN_SYSTEM = ("Write a correct, self-contained Python solution. Reply with one ```python code block containing the "
                   "complete function (with any imports it needs) and nothing else.")
 CODEGEN_TIMEOUT = 60.0      # seconds per task: EvalPlus's own cap. Its slowest reference solution, Mbpp/599, takes ~28 s
-CODEGEN_SKIP = {"Mbpp/255"}  # its test holds two ~1 GB lists at once (2.2 GB peak): nothing passes in the 1 GB sandbox
+# Test repairs, task -> (regex, replacement), made when a program is assembled (so cached items and replies get them):
+# - HumanEval/32: the Hugging Face copy asserts _poly(*find_zero(xs), inp), splatting a float, so nothing could pass
+#   (the canonical solution included). Judge like EvalPlus's harness, |poly(out)| <= atol, or like every other task, by
+#   the recorded answer: on steep polynomials no float gets within 1e-4 of zero, the recorded root included.
+# - Mbpp/255: the combinations of 5 colours taken 77 at a time are 1,663,740 tuples, 1.1 GB per list, and the test
+#   holds the answer and the reference's at once (2.2 GB peak). No answer fits in the 1 GB sandbox (which must stop a
+#   2 GB allocation), so that one input of 112 is dropped; its other inputs go up to 82,160 tuples.
+CODEGEN_FIXES = {
+    "HumanEval/32": (r"assert _poly\(\*candidate\(\*inp\), inp\) <= (\S+)",
+                     r"out = candidate(*inp); assert abs(_poly(*inp, out)) <= \1 or math.isclose(out, exp, "
+                     r"rel_tol=1e-07, abs_tol=\1)"),
+    "Mbpp/255": (r"\[\['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'\], 77\], ", ""),
+}
 SUITES = ("global", "regional", "math", "translate", "code", "codegen")
 
 
@@ -120,8 +134,6 @@ def load(suite: str, lang: str) -> list[dict]:
             items.append({"id": r["task_id"], "prompt": r["prompt"], "head": r["prompt"],
                           "test": f"{r['test']}\n\ncheck({r['entry_point']})\n"})
         for r in _rows("evalplus/mbppplus", "default"):
-            if f"Mbpp/{r['task_id']}" in CODEGEN_SKIP:
-                continue
             tests = r["test_list"] if isinstance(r["test_list"], list) else ast.literal_eval(r["test_list"])
             items.append({"id": f"Mbpp/{r['task_id']}", "prompt": f"{r['prompt']}\nYour code should pass this test:\n"
                           f"{tests[0]}", "head": "", "test": r["test"]})
@@ -275,14 +287,6 @@ def code_block(text: str) -> str:
     return (m.group(1) if m else text).strip("\n")
 
 
-# HumanEval/32: the Hugging Face copy of HumanEval+ asserts _poly(*find_zero(xs), inp), splatting a float, so nothing
-# could pass (the canonical solution included). Judge like EvalPlus's harness, |poly(out)| <= atol, or like every other
-# task, by the recorded answer: on steep polynomials no float gets within 1e-4 of zero, the recorded root included.
-POLY_FIX = (r"assert _poly\(\*candidate\(\*inp\), inp\) <= (\S+)",
-            r"out = candidate(*inp); assert abs(_poly(*inp, out)) <= \1 or math.isclose(out, exp, rel_tol=1e-07, "
-            r"abs_tol=\1)")
-
-
 def codegen_program(item: dict, reply: str) -> str:
     """Model code + the benchmark's tests. The whole HumanEval prompt goes first: its imports and helpers (poly() in
     HumanEval/32, is_palindrome() in /10) are given, so a model need not repeat them, and the model's own definitions
@@ -291,7 +295,8 @@ def codegen_program(item: dict, reply: str) -> str:
     lines = code_block(reply).splitlines()
     future = [l for l in lines if l.startswith("from __future__")]
     code = "\n".join(l for l in lines if not l.startswith("from __future__"))
-    return "\n".join([*future, item["head"], code, "", re.sub(POLY_FIX[0], POLY_FIX[1], item["test"])])
+    fix = CODEGEN_FIXES.get(item.get("id", ""))
+    return "\n".join([*future, item["head"], code, "", re.sub(*fix, item["test"]) if fix else item["test"]])
 
 
 def ask_codegen(url: str, item: dict) -> str:

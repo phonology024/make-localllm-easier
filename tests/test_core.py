@@ -219,9 +219,49 @@ def test_codegen_program_keeps_prompt_helpers_and_future_imports():
     reply = ("```python\nfrom __future__ import annotations\n\ndef find_zero(xs: list) -> float:\n"
              "    lo, hi = -100.0, 100.0\n    while hi - lo > 1e-10:\n        mid = (lo + hi) / 2\n"
              "        lo, hi = (lo, mid) if poly(xs, lo) * poly(xs, mid) <= 0 else (mid, hi)\n    return lo\n```")
-    prog = bench.codegen_program({"head": head, "test": test}, reply)
+    item = {"id": "HumanEval/32", "head": head, "test": test}
+    prog = bench.codegen_program(item, reply)
     assert prog.startswith("from __future__ import annotations\nimport math\n") and prog.count("__future__") == 1
     exec(compile(prog, "p.py", "exec"), {"__name__": "p"})   # our own code, not a model's: it needs the prompt's poly()
-    wrong = bench.codegen_program({"head": head, "test": test}, "```python\ndef find_zero(xs):\n    return 0.25\n```")
+    wrong = bench.codegen_program(item, "```python\ndef find_zero(xs):\n    return 0.25\n```")
     with pytest.raises(AssertionError):
         exec(compile(wrong, "p.py", "exec"), {"__name__": "p"})
+    assert "assert _poly(*candidate(*inp), inp)" in bench.codegen_program({**item, "id": "HumanEval/31"}, reply)
+
+
+def test_codegen_drops_only_the_mbpp_255_input_no_sandbox_can_hold():
+    from localllm import bench
+    test = ("inputs = [[['Red', 'Green', 'Blue'], 1], [['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'], 77], [[84, 15], 2]]\n"
+            "for i, inp in enumerate(inputs):\n    assertion(combinations_colors(*inp), ref_func(*inp), 0)\n")
+    prog = bench.codegen_program({"id": "Mbpp/255", "head": "", "test": test}, "def combinations_colors(l, n): ...")
+    assert "inputs = [[['Red', 'Green', 'Blue'], 1], [[84, 15], 2]]\n" in prog
+    assert "77" in bench.codegen_program({"id": "Mbpp/256", "head": "", "test": test}, "")
+
+
+def test_codegen_passes_only_when_its_tests_ran_to_the_end(monkeypatch, tmp_path):
+    """sandbox.BOOT starts every program: as a module (not __main__, like EvalPlus's exec()), and a byte on the
+    runner's pipe after its last line. Run here in-process on our own programs, not a model's."""
+    import os
+    import sys
+    from localllm import bench, sandbox
+    item = {"id": "Mbpp/1", "head": "", "test": "assert add(2, 3) == 5\n"}
+    good = "def add(a, b):\n    return a + b\n"
+
+    def reached_the_end(reply: str) -> bool:
+        (tmp_path / "p.py").write_text(bench.codegen_program(item, f"```python\n{reply}```"), encoding="utf-8")
+        r, w = os.pipe()
+        monkeypatch.setattr(sys, "argv", ["-c", str(tmp_path / "p.py"), str(w)])
+        try:
+            exec(sandbox.BOOT, {"__name__": "__main__"})
+        except (AssertionError, SystemExit):
+            pass
+        finally:
+            os.close(w)
+        with os.fdopen(r, "rb") as f:
+            return f.read() == b"1"
+    assert reached_the_end(good)
+    assert reached_the_end(good + "if __name__ == '__main__':\n    raise SystemExit('the main block ran')\n")
+    assert not reached_the_end("def add(a, b):\n    return a - b\n")
+    assert not reached_the_end("def add(a, b):\n    return a - b\n\nif __name__ == '__main__':\n"
+                               "    import unittest\n    unittest.main()\n")      # it no longer skips the tests
+    assert not reached_the_end("def add(a, b):\n    return a - b\n\nimport sys\nsys.exit(0)\n")
