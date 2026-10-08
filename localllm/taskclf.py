@@ -26,11 +26,10 @@ from . import runtime
 
 GGUF_FILE = "multilingual-e5-small-Q8_0.gguf"
 HEAD_FILE = "router_head.json"
-# TODO(#35): the maintainer uploads both files to Hugging Face and puts the links here. Until then the URLs are empty:
-# nothing is downloaded and routing uses the keyword rules, unless both files are already in ~/.localllm/models/
-# (the "router" CI workflow builds them as artifacts: tools/router/README.md).
-GGUF_URL = ""   # e.g. https://huggingface.co/<user>/<repo>/resolve/main/multilingual-e5-small-Q8_0.gguf
-HEAD_URL = ""   # e.g. https://huggingface.co/<user>/<repo>/resolve/main/router_head.json
+# A matched pair (the head was trained on this exact GGUF): https://huggingface.co/phonology024/localllm-task-router
+_HF = "https://huggingface.co/phonology024/localllm-task-router/resolve/main/"
+GGUF_URL = _HF + GGUF_FILE
+HEAD_URL = _HF + HEAD_FILE
 PREFIX, MAX_CHARS = "query: ", 450   # e5 inputs need the prefix; the head was trained on the first 450 characters
 START_TIMEOUT_S = 60
 FIRST_WAIT_S = 5.0          # the message that starts the router waits this long for it, then falls back to keywords
