@@ -318,6 +318,9 @@ def cmd_report(a) -> None:
     print(json.dumps(rep, ensure_ascii=False, indent=1))
     url = report.issue_url(rep, out)
     _say(f"saved to {out} - no user names, paths or keys are in it")
+    names = [n for n in rep.get("results", {}) if not n.startswith("_")]
+    if names:
+        _say(f"your eval run names go in as typed: {', '.join(names)} - check none of them names you before posting")
     _say(f"share it (you review everything before submitting): {url}")
     if not a.no_browser:
         webbrowser.open(url)

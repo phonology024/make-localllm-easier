@@ -45,8 +45,11 @@ def scrub(obj, bits: list[str] | None = None):
         if ABS_PATH.match(obj):
             obj = re.split(r"[\\/]", obj.rstrip("\\/"))[-1]
         for b in bits:
-            obj = obj.replace(b, "~" if ("/" in b or "\\" in b) else "<user>")
-        return obj
+            if "/" in b or "\\" in b:                   # a home folder: anywhere in the string
+                obj = obj.replace(b, "~")
+            else:                                       # the user name: whole tokens only, so a name that is also
+                obj = re.sub(rf"(?<![\w.-]){re.escape(b)}(?![\w.-])", "<user>", obj)   # a word ("user") spares
+        return obj                                      # "username", "userland", "users"
     return obj
 
 

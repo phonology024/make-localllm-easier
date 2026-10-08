@@ -29,6 +29,9 @@ def test_scrub_removes_user_paths_and_secrets():
                         "win": "C:\\Users\\somchai\\.localllm\\llama.cpp\\b11457", "api_key": "sk-123",
                         "nested": [{"Authorization": "Bearer x", "ok": 1}]}, bits)
     assert out == {"model": "x.gguf", "note": "run by <user>", "win": "b11457", "nested": [{"ok": 1}]}
+    common = report.scrub({"a": "the user asked", "b": "username users userland", "c": "in /home/user/x, user's"},
+                          ["/home/user", "user"])
+    assert common == {"a": "the <user> asked", "b": "username users userland", "c": "in ~/x, <user>'s"}
 
 
 def test_collect_reports_machine_tune_and_scores_without_personal_data(tmp_path, monkeypatch):
