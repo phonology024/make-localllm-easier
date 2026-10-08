@@ -190,6 +190,31 @@ the same, on held-out Wikipedia text (8 x 512 tokens per language; `tools/kld_pe
 Going from 3 to 2 bits multiplies the KL divergence 4-6x in every language, and top-token agreement ends 2-9 points
 lower in Arabic, Thai and Hindi than in English - the same order as the benchmark losses.
 
+### Trimming the vocabulary to your languages (research)
+
+`tools/trim_vocab.py` drops the tokens of scripts you don't use, removes the BPE merges that build them (so other text
+still encodes, in smaller pieces) and slices every per-token tensor. Measured on the real Gemma 4 tokenizer (262k
+tokens) and llama.cpp's Qwen test vocabulary (152k; Qwen3.8's own has 248k), with 1,000 parallel news/Wikipedia
+sentences per language (UD PUD), 400 GSM8K problems and 400 KB of Python, keeping Thai + English:
+
+| `--langs th,en` | Qwen vocab kept | Gemma 4 vocab kept | Thai / English / math tokens after trimming |
+|---|---|---|---|
+| every Thai, Latin and symbol token | 70.0% | 62.0% | identical (checked token by token) |
+| `--max-vocab 80000` | 52.7% | 30.5% | Thai <= +0.1%, English +1.7% / +4.6%, math +0.7% / +1.7% |
+| `--max-vocab 64000` | 42.1% | 24.4% | Thai <= +0.1%, English +3.9% / +7.6%, math +1.5% / +3.0% |
+
+ASCII alone is 57-62% of both vocabularies, so the lossless trim saves about a third; the cap goes further by
+dropping rare English words and code identifiers, which then split into more pieces. Text in a dropped script (Chinese,
+Hindi, Arabic, ...) still works but takes 2.5-9x more tokens.
+
+On a Qwen3-1.7B-shaped model (random weights, Q4_K_M, 4 CPU threads) the lossless trim took decode from 21.5 to
+24.8 tok/s (+15%) and the 64k cap to 26.5 tok/s (+23%), with the file 1.03 -> 0.96 / 0.89 GiB and prompt speed
+unchanged; logits for kept tokens were the same (max difference 7e-7). Still to measure on real weights, per language:
+how much probability the model puts on the dropped tokens when it writes Thai or English, and whether the cap's new
+splits cost accuracy ([#27](https://github.com/phonology024/make-localllm-easier/issues/27)). The gain shrinks with
+model size: on Qwen3.8-27B the output layer takes ~1.4 ms per token (measured), so expect a few percent faster plus a
+few hundred MB less VRAM and RAM.
+
 ## How the benchmark works
 
 `localllm eval` asks each question with thinking off and reads the log-probability of every answer letter from the first
