@@ -43,7 +43,7 @@ jobs:
           c = json.load(open("e5-convert/config.json"))
           print("HF config:", c.get("architectures"), "pad_token_id =", c.get("pad_token_id"))
           c["architectures"] = ["XLMRobertaModel"]    # BERT body + XLM-R sentencepiece tokenizer
-          c.pop("pad_token_id", None)                 # keeping it would shift the position embeddings by one
+          c["pad_token_id"] = None    # else the converter drops the first position row (BertConfig's default is 0)
           json.dump(c, open("e5-convert/config.json", "w"), indent=2)
           EOF
           python llama-src/convert_hf_to_gguf.py e5-convert --outtype f16 --outfile e5-small-f16.gguf

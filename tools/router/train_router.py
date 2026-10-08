@@ -121,7 +121,7 @@ try:
     print(f"  package head math agrees with sklearn on {same}/{len(test)} shared-test messages")
     shared = {name: report(f"shared test: {name}", yte, [router.classify_task(r["text"], pc, o)[0] for r in test], test)
               for name, o in ORDERS.items()}
-    wrong = [(r["lang"], r["label"], p, r["text"][:60]) for r, p in zip(test, clf.predict(xte)) if p != r["label"]]
+    wrong = [(r["lang"], r["label"], str(p), r["text"][:60]) for r, p in zip(test, clf.predict(xte)) if p != r["label"]]
     print("\nshared-test mistakes (embedding only):", *wrong, sep="\n  ")
 
     # single-message latency (what a user feels): embed one text + classify with the package's head
