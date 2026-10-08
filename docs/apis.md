@@ -53,6 +53,36 @@ result back, get the final answer - every API, with and without streaming:
 
 (json / stream). Try your own model: `python tools/tool_check.py --llama http://127.0.0.1:8081 --name MODEL`.
 
+## Images (vision)
+
+Start with the model's vision projector: `localllm --vision` (or `localllm serve --vision`). It is downloaded once
+(gemma-4 26B: 1.1 GB, Qwen3.8-27B: 0.9 GB) and loaded only with this flag, so text-only use costs no extra memory.
+Then send images the way each API already does:
+
+| API | Image in the request |
+|---|---|
+| OpenAI | `{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}` content part |
+| Anthropic | `{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}` block |
+| Ollama | `"images": ["<base64>"]` on a message (or on `/api/generate`) |
+| Gemini | `{"inlineData": {"mimeType": "image/png", "data": "<base64>"}}` part (`fileData` URIs are not supported) |
+
+Without the projector, an image gets a `400` in that API's error format telling you to restart with `--vision`; text
+keeps working.
+
+Checked in CI (`.github/workflows/vision.yml`, `tools/vision_check.py`, CPU runner, llama.cpp b11487): every API, with
+and without streaming, answers "green" for a green picture; without the projector every API gets the `--vision` error.
+What the projector costs, and a first look at `localllm eval --suites vision` (MaXM, first 30 questions per language,
+so +-17 points):
+
+| Model (Q8_0) + projector | Extra RAM (CPU, peak RSS) | MaXM en | MaXM th | MaXM zh |
+|---|---|---|---|---|
+| Qwen3.5-2B + mmproj F16 | +0.65-0.80 GiB | 43.3% | 63.3% | 46.7% |
+| Gemma 4 E2B + mmproj Q8_0 | +0.62 GiB | 23.3%* | 56.7%* | 33.3%* |
+
+\* Gemma 4 E2B often starts its reply with a written-out "Thinking Process" on image questions in this build, even with
+thinking off, and such replies count as wrong, so its scores understate it. GPU VRAM with and without the projector
+still needs a measurement on a real card.
+
 ## Mixing in your own cloud keys (optional, off by default)
 
 Everything stays on your PC unless you create `~/.localllm/route.json` with `"enabled": true` and put a key in an

@@ -56,8 +56,8 @@ buffers in a 256 MB host-visible heap backed by system RAM and decode drops up t
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, Ctrl+C stops an answer.
 
 **Can I use it as an Ollama, OpenAI, Anthropic or Gemini replacement?** Yes. One local endpoint at
-`http://127.0.0.1:8080` speaks all four APIs, tool / function calling included, so existing apps and SDKs only need a new base URL. See
-[docs/apis.md](docs/apis.md).
+`http://127.0.0.1:8080` speaks all four APIs, tool / function calling and images (`--vision`) included, so existing apps
+and SDKs only need a new base URL. See [docs/apis.md](docs/apis.md).
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
 and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
