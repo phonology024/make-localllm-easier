@@ -93,7 +93,8 @@ def test_head_math_matches_numpy_fixture():
 def test_server_args_cpu_only_on_a_private_port():
     a = taskclf.server_args(Path("e5.gguf"), 4321)
     assert "--embedding" in a and a[a.index("--pooling") + 1] == "mean" and a[a.index("-ngl") + 1] == "0"
-    assert a[a.index("-dev") + 1] == "none" and a[a.index("--host") + 1] == "127.0.0.1" and a[a.index("--port") + 1] == "4321"
+    assert a[a.index("-dev") + 1] == "none" and a[a.index("--host") + 1] == "127.0.0.1"
+    assert a[a.index("--port") + 1] == "4321"
 
 
 def test_server_starts_lazily_once_and_gets_prefixed_capped_text(models, monkeypatch):

@@ -121,7 +121,7 @@ seconds.
 Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).
 
 The task (general / math / code / translate) comes from keyword rules first, then a small multilingual embedding
-classifier (multilingual-e5-small, 126 MB, on the CPU in its own llama-server, a few ms per message). Without its files
+classifier (multilingual-e5-small, 126 MB, on the CPU in its own llama-server, ~10 ms per message). Without its files
 in `~/.localllm/models/` the keyword rules decide alone and the header says why (`tools/router/README.md`).
 
 What we measured on an RX 9070 XT (16 GB) with 32 GB RAM, and why this is **not the default**:

@@ -26,7 +26,8 @@ ORDERS = {"embedding only": ("embedding",), "keyword first + embedding": ("keywo
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("model")
 ap.add_argument("--ngl", default="0")
-ap.add_argument("--server", default=os.environ.get("LOCALLLM_LLAMA_SERVER") or (WIN_SERVER if Path(WIN_SERVER).exists() else None))
+ap.add_argument("--server", default=os.environ.get("LOCALLLM_LLAMA_SERVER")
+                or (WIN_SERVER if Path(WIN_SERVER).exists() else None))
 ap.add_argument("--data", type=Path, default=D / "data")
 ap.add_argument("--extra", type=Path, nargs="*", default=[])
 ap.add_argument("--test", type=Path, default=D / "shared_test.jsonl")
@@ -90,7 +91,8 @@ class Precomputed:
 
 server = A.server or str(runtime.find_server())
 srv = subprocess.Popen([server, "-m", A.model, "--embedding", "--pooling", "mean", "-ngl", A.ngl, "--port", str(PORT),
-                        "-c", "8192", "-b", "8192", "-ub", "8192", "-np", "16"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        "-c", "8192", "-b", "8192", "-ub", "8192", "-np", "16"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     for _ in range(300):
         try:

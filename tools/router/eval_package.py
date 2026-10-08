@@ -15,8 +15,9 @@ D = Path(__file__).resolve().parent
 sys.path.insert(0, str(D.parents[1]))
 from localllm import gateway, pool, router, taskclf  # noqa: E402
 
-ORDERS = {"keyword rules alone": ("keyword",), "embedding only": ("embedding",),
-          "keyword first + embedding (shipped)": ("keyword", "embedding"), "embedding first + keyword": ("embedding", "keyword")}
+SHIPPED = "keyword first + embedding (shipped)"
+ORDERS = {"keyword rules alone": ("keyword",), "embedding only": ("embedding",), SHIPPED: ("keyword", "embedding"),
+          "embedding first + keyword": ("embedding", "keyword")}
 
 
 def pct(xs, q):
@@ -106,14 +107,14 @@ def main():
         print(f"  {name:38} {acc:5.1f}%  per class { {k: round(100 * sum(v) / len(v), 1) for k, v in per.items()} }"
               f"  decided by {dict(hows)}")
 
-    for name, order in (("embedding only", ("embedding",)), ("keyword first + embedding (shipped)", ("keyword", "embedding"))):
+    for name in ("embedding only", SHIPPED):
         lat = []
         for r in test:
             t = time.perf_counter()
-            router.classify_task(r["text"], clf, order)
+            router.classify_task(r["text"], clf, ORDERS[name])
             lat.append(1000 * (time.perf_counter() - t))
-        res.setdefault("latency_ms", {})[name] = {"median": round(statistics.median(lat), 2), "p95": round(pct(lat, 95), 2),
-                                                  "max": round(max(lat), 2)}
+        res.setdefault("latency_ms", {})[name] = {"median": round(statistics.median(lat), 2),
+                                                  "p95": round(pct(lat, 95), 2), "max": round(max(lat), 2)}
         print(f"  latency per message, {name}: median {statistics.median(lat):.1f} ms, p95 {pct(lat, 95):.1f} ms, "
               f"max {max(lat):.1f} ms")
     h = taskclf.load_head(head)
@@ -124,8 +125,8 @@ def main():
     res["head_math_ms"] = round(1000 * (time.perf_counter() - t) / 200, 3)
     print(f"  of which the pure-Python head: {res['head_math_ms']} ms")
 
-    probe = ["เขียนฟังก์ชัน Python เรียงลำดับรายการให้หน่อย", "What is 17 * 23?", "Comment dit-on « merci » en japonais ?",
-             "请用三句话解释为什么天空是蓝色的。"]
+    probe = ["เขียนฟังก์ชัน Python เรียงลำดับรายการให้หน่อย", "What is 17 * 23?",
+             "Comment dit-on « merci » en japonais ?", "请用三句话解释为什么天空是蓝色的。"]
     proc = clf.proc
     res["gateway_with_model"] = gateway_headers(clf, probe)
     with tempfile.TemporaryDirectory() as empty:
