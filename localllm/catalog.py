@@ -1,12 +1,14 @@
 """Models we have measured end to end. `scores` = accuracy (%) from `localllm eval` keyed "lang/suite" (see bench.py).
 gb = weights in GiB; kv_kb_per_token = KV cache per token at q8 (from the GGUF attention layout).
 Speeds: llama-server decode tok/s on an RX 9070 XT 16 GB (Windows, Vulkan) with the tuned launch in runtime.py.
+mmproj = the vision projector in the same repo (loaded only with --vision), mmproj_gb its size.
 Add a model only after measuring it with `localllm eval`."""
 
 MODELS = {
     "qwen3.8-27b-q3": {
         "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-Q3_K_XL.gguf", "gb": 12.2, "bpw": 3.8, "qat": False,
         "kv_kb_per_token": 34.8, "fixed_cache_gb": 0.15, "checkpoint_gb": 0.15, "max_ctx": 262144, "tok_s_9070xt": 50, "mtp": True, "vk_fix": True,
+        "mmproj": "mmproj-F16.gguf", "mmproj_gb": 0.86,
         "cpu_mapped_gb": 0.51,  # measured: ~521 MiB of the 12.2 GiB model stays CPU-mapped (large 248k vocab)
         "scores": {"en/global": 81.5, "zh/global": 76.2, "zh/regional": 74.7, "es/global": 80.2, "es/regional": 76.8, "hi/global": 69.0, "hi/regional": 74.3, "ar/global": 70.8, "ar/regional": 71.2, "ja/global": 73.5, "ja/regional": 87.6, "th/regional": 67.1,
                    "en/math": 94.4, "th/math": 87.2, "zh/math": 84.4,
@@ -16,6 +18,7 @@ MODELS = {
     "gemma4-26b-a4b-qat": {
         "repo": "unsloth/gemma-4-26B-A4B-it-qat-GGUF", "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf", "gb": 13.3, "bpw": 4.2, "qat": True,
         "kv_kb_per_token": 10.9, "fixed_cache_gb": 0.11, "checkpoint_gb": 0.11, "max_ctx": 262144, "tok_s_9070xt": 90, "mtp": False, "vk_fix": False,
+        "mmproj": "mmproj-F16.gguf", "mmproj_gb": 1.11,
         "moe": {"layers": 30, "expert_gb_per_layer": 0.4},  # from the GGUF: 11.96 GiB of experts over 30 layers
         "tok_s_offload": {8: 45, 13: 36, 18: 31},          # measured: layers' experts in RAM -> decode tok/s
         "scores": {"en/global": 82.2, "zh/global": 73.5, "zh/regional": 66.5, "es/global": 74.5, "es/regional": 75.2, "hi/global": 69.5, "hi/regional": 71.0, "ar/global": 71.5, "ar/regional": 73.6, "ja/global": 74.5, "ja/regional": 81.9, "th/regional": 65.7,
@@ -26,6 +29,7 @@ MODELS = {
     "qwen3.8-27b-iq2": {
         "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-IQ2_S.gguf", "gb": 7.8, "bpw": 2.5, "qat": False,
         "kv_kb_per_token": 34.8, "fixed_cache_gb": 0.15, "checkpoint_gb": 0.15, "max_ctx": 262144, "tok_s_9070xt": 40, "mtp": False, "vk_fix": True,
+        "mmproj": "mmproj-F16.gguf", "mmproj_gb": 0.86,
         "scores": {"en/global": 74.2, "zh/global": 67.8, "zh/regional": 67.8, "es/global": 70.8, "es/regional": 69.2, "hi/global": 56.2, "hi/regional": 55.5, "ar/global": 60.8, "ar/regional": 57.2, "ja/global": 65.8, "ja/regional": 77.9, "th/regional": 54.2},
         "note": "for 10-12 GB cards only: 2-bit costs 8-13 points, most in Hindi, Arabic, Thai",
     },

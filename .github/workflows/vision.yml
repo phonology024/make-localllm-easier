@@ -1,0 +1,74 @@
+name: vision
+# Real-model check for image input through localllm's OpenAI, Anthropic, Ollama and Gemini APIs, the memory the vision
+# projector costs, and a short MaXM run (#44). Small models on a CPU runner (Hugging Face reachable here).
+on:
+  push:
+    paths: [localllm/gateway.py, localllm/bench.py, tools/vision_check.py, .github/workflows/vision.yml]
+  workflow_dispatch:
+
+jobs:
+  real-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: gemma-4-e2b, repo: ggml-org/gemma-4-E2B-it-GGUF, model: gemma-4-E2B-it-Q8_0.gguf,
+             mmproj: mmproj-gemma-4-E2B-it-Q8_0.gguf}
+          - {name: qwen3.5-2b, repo: unsloth/Qwen3.5-2B-GGUF, model: Qwen3.5-2B-Q8_0.gguf, mmproj: mmproj-F16.gguf}
+    name: vision (${{ matrix.name }})
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LLAMA_TAG: b11487
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: llama.cpp CPU binaries (pinned release)
+        run: |
+          python - <<'PY'
+          import io, json, os, re, tarfile, urllib.request, zipfile
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/{os.environ['LLAMA_TAG']}",
+              headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
+          rel = json.load(urllib.request.urlopen(req))
+          asset = next(a for a in rel["assets"] if re.search(r"bin-ubuntu-x64\.(zip|tar\.gz)$", a["name"]))
+          data = urllib.request.urlopen(asset["browser_download_url"]).read()
+          if asset["name"].endswith(".zip"):
+              zipfile.ZipFile(io.BytesIO(data)).extractall("llama")
+          else:
+              tarfile.open(fileobj=io.BytesIO(data)).extractall("llama", filter="data")
+          PY
+          BIN=$(dirname "$(find "$PWD/llama" -name llama-server -type f | head -1)")
+          chmod +x "$BIN"/llama-*
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$BIN" >> "$GITHUB_ENV"
+      - name: Model and projector
+        run: |
+          curl -fsSL -o model.gguf "https://huggingface.co/${{ matrix.repo }}/resolve/main/${{ matrix.model }}"
+          curl -fsSL -o mmproj.gguf "https://huggingface.co/${{ matrix.repo }}/resolve/main/${{ matrix.mmproj }}"
+          ls -l model.gguf mmproj.gguf
+      - name: Images through all four APIs, memory with and without the projector
+        run: |
+          python tools/vision_check.py --server "$BIN/llama-server" --model model.gguf --mmproj mmproj.gguf \
+            --name "${{ matrix.name }}" --json vision.jsonl | tee vision.txt
+      - name: MaXM (en, th, zh; 30 questions each)
+        run: |
+          "$BIN/llama-server" -m model.gguf --mmproj mmproj.gguf --port 8081 -c 4096 -t 4 --reasoning-budget 0 \
+            > server-eval.log 2>&1 &
+          for i in $(seq 1 180); do curl -fs http://127.0.0.1:8081/health > /dev/null && break; sleep 1; done
+          python -m localllm eval --url http://127.0.0.1:8081 --name "${{ matrix.name }}" --suites vision \
+            --langs en,th,zh --limit 30 | tee eval.txt
+      - name: Summary
+        if: always()
+        run: |
+          { echo "## ${{ matrix.repo }} / ${{ matrix.model }} + ${{ matrix.mmproj }}"; echo '```'
+            cat vision.txt eval.txt 2>/dev/null; echo '```'
+            for f in server-text.log server-vision.log server-eval.log; do
+              echo "<details><summary>$f (tail)</summary>"; echo; echo '```'; tail -30 "$f" 2>/dev/null; echo '```'
+              echo '</details>'; done; } >> "$GITHUB_STEP_SUMMARY"

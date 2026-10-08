@@ -59,6 +59,23 @@ def _model_path(key: str) -> Path:
     return dest
 
 
+def _mmproj_path(key: str) -> Path | None:
+    """The model's vision projector, downloaded on first use. Repos name it alike (mmproj-F16.gguf), so the local copy
+    is prefixed with the repo name."""
+    m = catalog.MODELS[key]
+    if not m.get("mmproj"):
+        return None
+    name = f"{m['repo'].split('/')[-1]}-{m['mmproj']}"
+    for d in filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)):
+        if (Path(d) / name).exists():
+            return Path(d) / name
+    dest = runtime.HOME / "models" / name
+    if not dest.exists():
+        _say(f"downloading the vision projector for {key} ({m['mmproj_gb']} GB, one time) ...")
+        _download(f"https://huggingface.co/{m['repo']}/resolve/main/{m['mmproj']}", dest, name)
+    return dest
+
+
 def _machine():
     server = runtime.find_server()
     devs = runtime.devices(server)
@@ -86,7 +103,7 @@ class _PoolProc:
         self.gateway.shutdown()
 
 
-def _start(key: str | None, port: int, ctx: int, models: str | None = None):
+def _start(key: str | None, port: int, ctx: int, models: str | None = None, vision: bool = False):
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
     ram_free = runtime.ram_available_gb()
@@ -102,16 +119,17 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None):
         first = catalog.pick(dev["total_gb"], system_language(), ram_free, candidates=keys)
         _say(f"smart routing between {', '.join(keys)}")
         need = sum(catalog.MODELS[k]["gb"] + catalog.MODELS[k]["kv_kb_per_token"] * ctx / 2**20
-                   + catalog.MODELS[k]["fixed_cache_gb"] for k in keys) + 1.0     # + ~1 GB driver/compute buffers
+                   + catalog.MODELS[k]["fixed_cache_gb"] + (catalog.MODELS[k].get("mmproj_gb", 0) if vision else 0)
+                   for k in keys) + 1.0     # + ~1 GB driver/compute buffers
         resident = need <= dev["total_gb"]
         _say(f"all {len(keys)} models fit in VRAM together ({need:.1f} GB): no swaps" if resident else
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
-        p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctx, ram_free), dev["total_gb"], ram_free, first, resident)
+        p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctx, ram_free, vision), dev["total_gb"], ram_free, first, resident)
         return _PoolProc(p, gateway.serve(p, port=port, model_name="localllm-auto")), f"http://127.0.0.1:{port}"
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
-    proc, url = _launch(key, server, dev, ctx, ram_free)
+    proc, url = _launch(key, server, dev, ctx, ram_free, vision)
     from . import gateway
     proc.gateway = gateway.serve(url, port=port, model_name=key)
     return proc, f"http://127.0.0.1:{port}"
@@ -124,8 +142,9 @@ def _warn_spill(pid: int) -> None:
              "slower. Close other GPU-heavy apps or pick a smaller model (`localllm list`).")
 
 
-def _launch(key: str, server, dev, ctx: int, ram_free: float) -> tuple[subprocess.Popen, str]:
-    """Start llama-server for `key` on a private port; return once it answers /health."""
+def _launch(key: str, server, dev, ctx: int, ram_free: float, vision: bool = False) -> tuple[subprocess.Popen, str]:
+    """Start llama-server for `key` on a private port; return once it answers /health. The vision projector is loaded
+    only with `vision`, so text-only use costs no extra VRAM or RAM."""
     cpu_moe = (catalog.cpu_moe_layers(key, dev["total_gb"], ram_free) or 0) if dev else 0
     if cpu_moe:
         _say(f"{key} doesn't fit the GPU whole: keeping the experts of {cpu_moe} layers in system RAM")
@@ -135,6 +154,12 @@ def _launch(key: str, server, dev, ctx: int, ram_free: float) -> tuple[subproces
     mtp = (tuned["mtp"] if tuned else catalog.MODELS[key]["mtp"]) if catalog.MODELS[key]["mtp"] else False
     inner = _free_port()   # llama-server listens privately; the gateway on `port` speaks OpenAI/Anthropic/Ollama/Gemini
     args = runtime.server_args(model, dev["id"] if dev else None, inner, ctx, mtp, cpu_moe=cpu_moe)
+    if vision:
+        mmproj = _mmproj_path(key)
+        if mmproj:
+            args += ["--mmproj", str(mmproj)]
+        else:
+            _say(f"{key} has no vision projector: images will be refused")
     runtime.HOME.mkdir(parents=True, exist_ok=True)
     log = open(runtime.HOME / "llama-server.log", "ab")
     proc = subprocess.Popen([str(server), *args], env=runtime.server_env(tuned, catalog.MODELS[key].get("vk_fix", True)), stdout=log, stderr=subprocess.STDOUT)
@@ -155,7 +180,7 @@ def _launch(key: str, server, dev, ctx: int, ram_free: float) -> tuple[subproces
 
 
 def cmd_run(a) -> None:
-    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None))
+    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), getattr(a, "vision", False))
     _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
@@ -174,7 +199,7 @@ def cmd_chat(a) -> None:
         return
     if a.url:
         sys.exit(f"[localllm] nothing is answering at {a.url}")
-    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None))
+    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), getattr(a, "vision", False))
     try:
         chat.repl(url, a.model or "")
     finally:
@@ -316,6 +341,10 @@ def cmd_eval(a) -> None:
     bench.run(a.url, a.name, langs, a.limit, tuple(a.suites.split(",")))
 
 
+VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-1.1 GB of VRAM; off by default so "
+               "text-only use doesn't pay for it)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="localllm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
@@ -325,6 +354,7 @@ def main() -> None:
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--models", metavar="auto|A,B", help="smart routing: pick the best of these models per message, "
                     "lazy-loading one at a time (auto = every model that fits this GPU)")
+    ap.add_argument("--vision", action="store_true", help=VISION_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
@@ -334,20 +364,21 @@ def main() -> None:
     c = sub.add_parser("chat"); c.add_argument("model", nargs="?", choices=list(catalog.MODELS))
     c.add_argument("--url", help="chat with an already running OpenAI-compatible server instead")
     c.add_argument("--port", type=int, default=8080); c.add_argument("--ctx", type=int, default=8192)
-    c.add_argument("--models", metavar="auto|A,B")
+    c.add_argument("--models", metavar="auto|A,B"); c.add_argument("--vision", action="store_true", help=VISION_HELP)
     c.set_defaults(fn=cmd_chat)
     r = sub.add_parser("route", help="show routing config, or --test a prompt local vs cloud")
     r.add_argument("--test", metavar="PROMPT"); r.add_argument("--port", type=int, default=8080)
     r.set_defaults(fn=cmd_route)
     s = sub.add_parser("serve"); s.add_argument("model", nargs="?", choices=list(catalog.MODELS))
     s.add_argument("--port", type=int, default=8080); s.add_argument("--ctx", type=int, default=8192)
-    s.add_argument("--models", metavar="auto|A,B")
+    s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--vision", action="store_true", help=VISION_HELP)
     s.set_defaults(fn=cmd_serve)
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)
     e.add_argument("--langs", help="comma-separated ISO codes, default: en + this PC's language")
     e.add_argument("--suites", default="global,regional",
-                   help="global,regional (knowledge), math (MGSM), translate (FLORES, chrF++)")
+                   help="global,regional (knowledge), math (MGSM), translate (FLORES, chrF++), "
+                        "vision (MaXM image questions; the server needs a vision projector)")
     e.set_defaults(fn=cmd_eval)
     a = ap.parse_args()
     if a.fn is cmd_serve:

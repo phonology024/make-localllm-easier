@@ -61,6 +61,36 @@ def _call(i: int, name: str, args) -> dict:
             "function": {"name": name, "arguments": args if isinstance(args, str) else json.dumps(args)}}
 
 
+IMAGE_MAGIC = (("iVBOR", "image/png"), ("/9j/", "image/jpeg"), ("R0lGOD", "image/gif"), ("UklGR", "image/webp"),
+               ("Qk", "image/bmp"))
+
+
+def _data_url(b64: str, mime: str | None = None) -> str:
+    """Ollama sends bare base64 (no MIME type): guess it from the first bytes, as Ollama itself does."""
+    if b64.startswith("data:"):
+        return b64
+    mime = mime or next((m for head, m in IMAGE_MAGIC if b64.startswith(head)), "image/png")
+    return f"data:{mime};base64,{b64}"
+
+
+def _with_images(text: str, images: list[str]):
+    """OpenAI message content: the plain string, or text + image_url parts when there are images."""
+    if not images:
+        return text
+    return ([{"type": "text", "text": text}] if text else []) + \
+        [{"type": "image_url", "image_url": {"url": _data_url(i)}} for i in images]
+
+
+IMAGE_PARTS = ("image_url", "input_image", "image")     # OpenAI chat, OpenAI responses-style, Anthropic
+
+
+def has_image(body: dict) -> bool:
+    """True when an OpenAI or Anthropic request (or an Ollama/Gemini one after translation) carries an image."""
+    return any(isinstance(m.get("content"), list) and
+               any(isinstance(p, dict) and p.get("type") in IMAGE_PARTS for p in m["content"])
+               for m in body.get("messages") or [] if isinstance(m, dict))
+
+
 def ollama_to_openai(body: dict, chat: bool) -> dict:
     msgs = []
     if chat:
@@ -75,10 +105,11 @@ def ollama_to_openai(body: dict, chat: bool) -> dict:
                 msgs.append({"role": "tool", "content": m.get("content") or "",
                              "tool_call_id": pending.pop(0) if pending else "call_0"})
             else:
-                msgs.append({k: v for k, v in m.items() if k in ("role", "content")})
+                msgs.append({"role": m.get("role", "user"),
+                             "content": _with_images(m.get("content") or "", m.get("images") or [])})
     else:
         msgs = ([{"role": "system", "content": body["system"]}] if body.get("system") else []) + \
-               [{"role": "user", "content": body.get("prompt", "")}]
+               [{"role": "user", "content": _with_images(body.get("prompt", ""), body.get("images") or [])}]
     opts = body.get("options") or {}
     out = {"messages": msgs, "stream": bool(body.get("stream", True))}
     if chat and body.get("tools"):
@@ -129,6 +160,19 @@ def gemini_to_openai(body: dict) -> dict:
     for c in body.get("contents", []):
         parts = c.get("parts", [])
         text = "".join(p.get("text", "") for p in parts)
+        if any(p.get("fileData") or p.get("file_data") for p in parts):
+            raise ValueError("fileData (an uploaded-file URI) is not supported locally: send the image as inlineData")
+        if any(p.get("inlineData") or p.get("inline_data") for p in parts):
+            content = []                                # keep text and images in their order
+            for p in parts:
+                blob = p.get("inlineData") or p.get("inline_data")
+                if blob:
+                    url = _data_url(blob.get("data", ""), blob.get("mimeType") or blob.get("mime_type"))
+                    content.append({"type": "image_url", "image_url": {"url": url}})
+                elif p.get("text"):
+                    content.append({"type": "text", "text": p["text"]})
+            msgs.append({"role": "assistant" if c.get("role") == "model" else "user", "content": content})
+            continue
         calls = [p.get("functionCall") or p.get("function_call") for p in parts
                  if p.get("functionCall") or p.get("function_call")]
         answers = [p.get("functionResponse") or p.get("function_response") for p in parts
@@ -202,6 +246,33 @@ class ToolCalls:
 
 # ---- HTTP server ------------------------------------------------------------------------------------------------------
 
+NO_VISION = ("this model was started without its vision projector, so it can't read images. Restart with "
+             "`localllm --vision` (or `localllm serve --vision`); text-only use keeps the projector out of memory.")
+_vision: dict[str, bool] = {}
+
+
+def vision_ok(url: str) -> bool:
+    """Whether the llama-server at `url` loaded a projector (/props modalities). Unknown -> True: let it answer."""
+    if url not in _vision:
+        try:
+            props = json.load(urllib.request.urlopen(url.rstrip("/") + "/props", timeout=5))
+            _vision[url] = bool((props.get("modalities") or {}).get("vision", True))
+        except (OSError, ValueError):
+            return True
+    return _vision[url]
+
+
+def error_body(api: str, msg: str, code: int = 400) -> dict:
+    """An error in the shape each API's SDK parses."""
+    if api == "anthropic":
+        return {"type": "error", "error": {"type": "invalid_request_error", "message": msg}}
+    if api == "ollama":
+        return {"error": msg}
+    if api == "gemini":
+        return {"error": {"code": code, "message": msg, "status": "INVALID_ARGUMENT"}}
+    return {"error": {"message": msg, "type": "invalid_request_error", "code": code}}
+
+
 def make_handler(upstream, model_name: str):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request."""
     def local(body: dict):
@@ -255,7 +326,11 @@ def make_handler(upstream, model_name: str):
                 if cloud:
                     hdrs, body = cloud.headers(self.path), cloud.adapt(body, self.path)
                     return self._send(method, cloud.url_base, body, hdrs, route_hdr, None)
-                with local(json.loads(body or b"{}")) as (url, model_hdr):
+                req = json.loads(body or b"{}")
+                with local(req) as (url, model_hdr):
+                    if has_image(req) and not vision_ok(url):
+                        api = "anthropic" if self.path == "/v1/messages" else "openai"
+                        return self._json(400, error_body(api, NO_VISION))
                     return self._send(method, url, body, hdrs, route_hdr, model_hdr)
             self._send(method, base_url(), body, hdrs, route_hdr, None)
 
@@ -305,6 +380,8 @@ def make_handler(upstream, model_name: str):
             stream = req["stream"]
             req["stream"] = True
             with local(req) as (url, model_hdr):
+                if has_image(req) and not vision_ok(url):
+                    return self._json(400, error_body("ollama", NO_VISION))
                 self._ollama_reply(_post(url + "/v1/chat/completions", req), chat, stream,
                                    {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
@@ -329,8 +406,13 @@ def make_handler(upstream, model_name: str):
             self._json(200, openai_to_ollama("".join(text), model_name, chat, True, timings, calls), extra)
 
         def _gemini(self, stream: bool):
-            req = gemini_to_openai(self._body())
+            try:
+                req = gemini_to_openai(self._body())
+            except ValueError as e:
+                return self._json(400, error_body("gemini", str(e)))
             with local(req) as (url, model_hdr):
+                if has_image(req) and not vision_ok(url):
+                    return self._json(400, error_body("gemini", NO_VISION))
                 self._gemini_reply(url, req, stream, {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
         def _gemini_reply(self, url: str, req: dict, stream: bool, extra: dict | None):
