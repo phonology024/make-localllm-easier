@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 
 from localllm import pool, router
@@ -150,8 +151,40 @@ def test_idle_unload_frees_the_gpu_and_the_next_message_loads_again(monkeypatch)
         assert hdr.startswith(Q) and "loaded after idle" in hdr and "swapped" not in hdr   # best model, no swap cost
         assert launched == [G, Q] and len(p.swaps) == 1
         assert _wait(lambda: p.unloads == 2)
-        models = urllib.request.urlopen(gurl + "/health", timeout=10).read()               # non-chat request loads too
-        assert b"ok" in models and launched == [G, Q, Q]
+        assert json.load(urllib.request.urlopen(gurl + "/health", timeout=10)) == {"status": "ok", "model": "unloaded"}
+        ids = [m["id"] for m in json.load(urllib.request.urlopen(gurl + "/v1/models", timeout=10))["data"]]
+        page = urllib.request.urlopen(gurl + "/", timeout=10).read().decode()
+        try:
+            urllib.request.urlopen(gurl + "/props", timeout=10)
+            raise AssertionError("/props should not wake the model")
+        except urllib.error.HTTPError as e:
+            assert e.code == 503
+        assert ids == [Q, G] and "unloaded while idle" in page and launched == [G, Q]    # no GET loaded anything
+        _post(gurl + "/v1/chat/completions", {"messages": [{"role": "user", "content": ZH}]})
+        assert launched == [G, Q, Q]                                                       # a message does
+    finally:
+        p.close(); g.shutdown()
+
+
+def test_polling_gets_do_not_keep_the_model_loaded(monkeypatch):
+    import time
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    launched = []
+
+    def launch(key):
+        launched.append(key)
+        s, url = _up()
+        return FakeProc(s), url
+
+    p = pool.Pool([Q, G], launch, 15.9, first=G, idle_unload_s=0.3)
+    g, gurl = _gw(p)
+    try:
+        end = time.time() + 1.5
+        while time.time() < end and not p.unloads:     # a dashboard polling every 50 ms while the model is loaded
+            urllib.request.urlopen(gurl + "/health", timeout=10).read()
+            urllib.request.urlopen(gurl + "/v1/models", timeout=10).read()
+            time.sleep(0.05)
+        assert p.unloads == 1 and launched == [G]
     finally:
         p.close(); g.shutdown()
 

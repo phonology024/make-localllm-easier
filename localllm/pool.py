@@ -11,7 +11,8 @@ Resident mode: when all models fit in VRAM together (24 GB+ cards for a 12 + 13 
 each message goes straight to its best model - no swap, so no hysteresis either.
 
 Idle unload: after `idle_unload_s` without a request the loaded llama-server(s) stop, so the GPU and RAM are free for
-games or other apps; the next request loads the model it needs (reported as "loaded after idle in X s"). Requests hold
+games or other apps; the next message loads the model it needs (reported as "loaded after idle in X s"). GETs (health
+checks, model lists, a polling web page) are not activity: they neither reset the idle clock nor load a model. Requests hold
 the pool's lock, so nothing is ever unloaded in the middle of an answer.
 
 Stay: a request with `stay=True` (header `X-Localllm-Stay: 1`, `/stay` in `localllm chat`) keeps the loaded model even
@@ -114,8 +115,16 @@ class Pool:
             if prefetch(Path(p), stop):
                 self.prefetched.append(Path(p).name)
 
+    def peek_url(self) -> str | None:
+        """URL of the loaded model, or None while unloaded. No lock, no wake-up, not activity: for GETs such as /health
+        or a polling web page, which must neither reload a model nor keep one in memory."""
+        if self.resident:
+            return (self.loaded.get(self.current or self.first) or (None, None))[1]
+        return self.url
+
     def ensure_url(self) -> str:
-        """URL of the current model, loading it again if it was unloaded while idle (for non-chat requests)."""
+        """URL of the current model, loading it again if it was unloaded while idle (non-chat POSTs: completions,
+        embeddings, token counts - real work, so it counts as activity)."""
         with self.lock:
             self.last_used = time.time()
             if not self._is_loaded():

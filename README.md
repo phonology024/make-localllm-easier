@@ -120,8 +120,9 @@ one model is on the GPU at a time and it only swaps when the other is at least 3
 seconds.
 Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).
 To keep one model for a whole conversation, type `/stay` in `localllm chat` (or send `X-Localllm-Stay: 1`). After 15
-minutes without a request the models are unloaded, so the GPU is free for games and other apps; the next message loads
-what it needs (`--idle-unload MIN`, 0 = never).
+minutes without a message the models are unloaded, so the GPU is free for games and other apps; the next message loads
+what it needs (`--idle-unload MIN`, 0 = never). Health checks, model lists and open browser tabs neither keep a model
+loaded nor load one: while unloaded, `/health` says so and `/v1/models` lists the pool's models.
 
 What we measured on an RX 9070 XT (16 GB) with 32 GB RAM, and why this is **not the default**:
 
