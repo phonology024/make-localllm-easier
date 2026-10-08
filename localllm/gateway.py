@@ -103,17 +103,21 @@ def openai_to_gemini(text: str, finish: str | None = None, usage: dict | None = 
 
 def make_handler(upstream, model_name: str):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request."""
-    def local(body: dict):
-        return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body)
+    def local(body: dict, stay: bool = False):
+        return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body, stay=stay)
 
     def base_url() -> str:
-        return upstream if isinstance(upstream, str) else upstream.url
+        return upstream if isinstance(upstream, str) else upstream.ensure_url()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, *a):
             pass
+
+        def _stay(self) -> bool:
+            """X-Localllm-Stay: 1 keeps the loaded model for this request (no swap)."""
+            return (self.headers.get("X-Localllm-Stay") or "").strip().lower() in ("1", "true", "yes")
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
@@ -154,7 +158,7 @@ def make_handler(upstream, model_name: str):
                 if cloud:
                     hdrs, body = cloud.headers(self.path), cloud.adapt(body, self.path)
                     return self._send(method, cloud.url_base, body, hdrs, route_hdr, None)
-                with local(json.loads(body or b"{}")) as (url, model_hdr):
+                with local(json.loads(body or b"{}"), self._stay()) as (url, model_hdr):
                     return self._send(method, url, body, hdrs, route_hdr, model_hdr)
             self._send(method, base_url(), body, hdrs, route_hdr, None)
 
@@ -203,7 +207,7 @@ def make_handler(upstream, model_name: str):
             req = ollama_to_openai(self._body(), chat)
             stream = req["stream"]
             req["stream"] = True
-            with local(req) as (url, model_hdr):
+            with local(req, self._stay()) as (url, model_hdr):
                 self._ollama_reply(_post(url + "/v1/chat/completions", req), chat, stream,
                                    {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
@@ -227,7 +231,7 @@ def make_handler(upstream, model_name: str):
 
         def _gemini(self, stream: bool):
             req = gemini_to_openai(self._body())
-            with local(req) as (url, model_hdr):
+            with local(req, self._stay()) as (url, model_hdr):
                 self._gemini_reply(url, req, stream, {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
         def _gemini_reply(self, url: str, req: dict, stream: bool, extra: dict | None):

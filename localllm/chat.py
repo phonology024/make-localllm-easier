@@ -1,7 +1,7 @@
 """Terminal chat against the local server (or any OpenAI-compatible URL).
 
   localllm chat                 start the recommended model if nothing is running, then chat
-  /clear  /think  /save FILE  /exit       (Ctrl+C stops the current answer, Ctrl+C again at the prompt exits)
+  /clear  /think  /stay  /save FILE  /exit   (Ctrl+C stops the current answer, Ctrl+C again at the prompt exits)
 """
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-HELP = "commands: /clear new chat  /think show or hide reasoning  /save FILE  /exit   (Ctrl+C stops an answer)"
+HELP = ("commands: /clear new chat  /think show or hide reasoning  /stay keep the current model (no swaps)  "
+        "/save FILE  /exit   (Ctrl+C stops an answer)")
 
 
 def _utf8_console() -> None:
@@ -29,11 +30,13 @@ def server_alive(url: str) -> bool:
         return False
 
 
-def stream(url: str, messages: list[dict], show_thinking: bool, out=sys.stdout) -> tuple[str, dict]:
-    """Send the conversation, print the answer as it streams. Returns (answer text, timings)."""
+def stream(url: str, messages: list[dict], show_thinking: bool, out=sys.stdout, stay: bool = False) -> tuple[str, dict]:
+    """Send the conversation, print the answer as it streams. Returns (answer text, timings).
+    stay: ask a multi-model server to keep the loaded model instead of switching for this message."""
     body = {"messages": messages, "stream": True, "timings_per_token": False}
+    headers = {"Content-Type": "application/json", **({"X-Localllm-Stay": "1"} if stay else {})}
     req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
+                                 headers=headers)
     answer, timings, thinking_shown = [], {}, False
     with urllib.request.urlopen(req, timeout=3600) as r:
         model = r.headers.get("X-Localllm-Model")      # smart routing: which model answered, and why
@@ -65,7 +68,7 @@ def repl(url: str, model_label: str = "") -> None:
     _utf8_console()
     print(f"[localllm] chatting with {model_label or url}. {HELP}")
     messages: list[dict] = []
-    show_thinking = False
+    show_thinking = stay = False
     while True:
         try:
             text = input("\n\x1b[1m> \x1b[0m").strip()
@@ -84,6 +87,10 @@ def repl(url: str, model_label: str = "") -> None:
             show_thinking = not show_thinking
             print(f"(reasoning {'shown' if show_thinking else 'hidden'})")
             continue
+        if text == "/stay":
+            stay = not stay
+            print("(staying on the current model: no switches)" if stay else "(the best model per message again)")
+            continue
         if text.startswith("/save"):
             path = Path(text[5:].strip() or f"chat-{time.strftime('%Y%m%d-%H%M%S')}.md")
             try:
@@ -97,7 +104,7 @@ def repl(url: str, model_label: str = "") -> None:
             continue
         messages.append({"role": "user", "content": text})
         try:
-            answer, t = stream(url, messages, show_thinking)
+            answer, t = stream(url, messages, show_thinking, stay=stay)
         except KeyboardInterrupt:
             print("\n(stopped)")
             messages.pop()

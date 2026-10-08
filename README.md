@@ -119,6 +119,9 @@ models fit in VRAM together (24 GB+ cards for the pair below), they all stay loa
 one model is on the GPU at a time and it only swaps when the other is at least 3 points better, because a swap costs
 seconds.
 Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).
+To keep one model for a whole conversation, type `/stay` in `localllm chat` (or send `X-Localllm-Stay: 1`). After 15
+minutes without a request the models are unloaded, so the GPU is free for games and other apps; the next message loads
+what it needs (`--idle-unload MIN`, 0 = never).
 
 What we measured on an RX 9070 XT (16 GB) with 32 GB RAM, and why this is **not the default**:
 
