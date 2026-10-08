@@ -59,6 +59,10 @@ conversation is remembered, `/save` writes it to a file, `/think` shows the mode
 `http://127.0.0.1:8080` speaks all four APIs, tool / function calling included, so existing apps and SDKs only need a new base URL. See
 [docs/apis.md](docs/apis.md).
 
+**Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
+and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
+See [LAN mode](docs/apis.md#use-it-from-another-device-on-your-network-lan-mode).
+
 **Can it fall back to my cloud API key?** Only if you turn it on. Routing is off by default; with your own key in an
 environment variable it sends a request to the cloud only when a rule says so (prompt too long, a cloud model asked for
 by name, or the local model scores below your floor in that language) and tells you where each answer came from.
@@ -251,8 +255,20 @@ reasoning in multiple choice, not writing quality.
 
 ## Contributing
 
-The catalog only grows with measurements. Run `localllm eval --langs en,<yours>` on your GPU and open a PR with
-`~/.localllm/results.json` and your GPU name. Other languages' local exams are very welcome. See [ROADMAP.md](ROADMAP.md)
+The catalog only grows with measurements. Run `localllm tune` and `localllm eval --langs en,<yours>` on your GPU, then
+`localllm report`: it collects your GPU, RAM, OS, llama.cpp build, tuned settings and scores into one JSON (no user
+names, paths or keys) and opens a prefilled GitHub issue you can review before submitting. Other languages' local exams
+are very welcome.
+
+### Measured on contributors' PCs
+
+Generated from shared reports by `tools/merge_reports.py`:
+
+<!-- gpu-table:start -->
+| GPU | VRAM | RAM | OS | llama.cpp | model | decode tok/s | kept settings | scores |
+|---|---|---|---|---|---|---|---|---|
+<!-- gpu-table:end -->
+ See [ROADMAP.md](ROADMAP.md)
 for what's next: using less system RAM (0.2), working alongside cloud provider APIs (0.3), a speed-only release (0.4), and per-language compression research (0.5).
 
 ## License

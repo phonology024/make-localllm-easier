@@ -1,7 +1,11 @@
 import json
+import socket
 import threading
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import pytest
 
 from localllm import gateway, router
 
@@ -142,3 +146,127 @@ def test_passthrough_forwards_request_headers(monkeypatch):
     hdrs = {k.lower(): v for k, v in FakeLlama.seen[-1][1].items()}
     g.shutdown(); up.shutdown()
     assert hdrs.get("accept-encoding") == "gzip" and hdrs.get("x-custom") == "1"
+
+
+# ---- LAN mode: API key -----------------------------------------------------------------------------------------------
+
+def _keyed_gw(upstream, key="lan-secret"):
+    # trust_loopback=False makes this test client count as "another device on the network"
+    g = gateway.serve(upstream, port=0, model_name="test-model", api_key=key, trust_loopback=False)
+    return g, f"http://127.0.0.1:{g.server_address[1]}"
+
+
+def _status(url, body=None, headers=None):
+    req = urllib.request.Request(url, data=None if body is None else json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def test_lan_key_accepted_and_denied_on_all_four_apis(monkeypatch):
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    up, uurl = _up(); g, gurl = _keyed_gw(uurl)
+    chat = {"messages": [{"role": "user", "content": "hi"}], "stream": False}
+    gem = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+    calls = [  # (path, body, the way that API's SDK sends a key)
+        ("/v1/chat/completions", chat, {"Authorization": "Bearer lan-secret"}),        # OpenAI
+        ("/v1/messages", {"max_tokens": 5, **chat}, {"x-api-key": "lan-secret"}),        # Anthropic
+        ("/api/chat", chat, {"Authorization": "Bearer lan-secret"}),                    # Ollama
+        ("/v1beta/models/m:generateContent", gem, {"x-goog-api-key": "lan-secret"}),    # Gemini (header)
+        ("/v1beta/models/m:generateContent?key=lan-secret", gem, {}),                   # Gemini (query)
+        ("/api/tags", None, {"Authorization": "Bearer lan-secret"}),
+    ]
+    try:
+        for path, body, good in calls:
+            bare = path.split("?")[0]
+            assert _status(gurl + path, body, good) == 200, path
+            assert _status(gurl + bare, body) == 401, bare                                      # no key
+            assert _status(gurl + bare, body, {"Authorization": "Bearer nope", "x-api-key": "nope"}) == 401, bare
+            assert _status(gurl + bare + "?key=nope", body) == 401, bare
+    finally:
+        g.shutdown(); up.shutdown()
+
+
+def test_lan_key_never_reaches_llama_server_or_cloud(monkeypatch):
+    up, uurl = _up(); cloud, curl = _up(); g, gurl = _keyed_gw(uurl)
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    _status(gurl + "/v1/chat/completions?key=lan-secret", {"messages": [{"role": "user", "content": "x"}]},
+            {"Authorization": "Bearer lan-secret", "x-api-key": "lan-secret", "x-goog-api-key": "lan-secret"})
+    path, headers, _ = FakeLlama.seen[-1]
+    assert "lan-secret" not in path and "lan-secret" not in json.dumps(headers)                 # local llama-server
+    monkeypatch.setenv("FAKE_KEY", "cloud-secret")
+    cfg = {"enabled": True, "providers": {"c": {"kind": "openai", "url": curl, "key_env": "FAKE_KEY", "model": "big"}}}
+    monkeypatch.setattr(router, "load_config", lambda: cfg)
+    _status(gurl + "/v1/chat/completions", {"model": "gpt-5", "messages": [{"role": "user", "content": "q"}]},
+            {"Authorization": "Bearer lan-secret"})
+    path, headers, _ = FakeLlama.seen[-1]
+    g.shutdown(); up.shutdown(); cloud.shutdown()
+    assert headers["Authorization"] == "Bearer cloud-secret" and "lan-secret" not in json.dumps(headers)
+
+
+def test_lan_refuses_network_address_without_key_and_trusts_this_pc(monkeypatch):
+    up, uurl = _up()
+    for host in ("0.0.0.0", "::", "192.168.1.20"):
+        try:
+            gateway.serve(uurl, host=host, port=0)
+            raise AssertionError(f"bound {host} without a key")
+        except ValueError as e:
+            assert "API key" in str(e)
+    assert gateway.is_loopback("127.0.0.1") and gateway.is_loopback("::1") and gateway.is_loopback("localhost")
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    g = gateway.serve(uurl, port=0, model_name="m", api_key="k")          # default: requests from this PC need no key
+    code = _status(f"http://127.0.0.1:{g.server_address[1]}/api/tags")
+    g.shutdown()
+    g, gurl = _keyed_gw(uurl)                       # another device may load the chat page, not call the API
+    page, api = _status(gurl + "/"), _status(gurl + "/v1/models")
+    g.shutdown(); up.shutdown()
+    assert code == 200 and page == 200 and api == 401
+
+
+def test_split_key_keeps_other_query_parameters():
+    assert gateway.split_key("/v1beta/models/m:streamGenerateContent?alt=sse&key=K") == \
+        ("/v1beta/models/m:streamGenerateContent?alt=sse", "K")
+    assert gateway.split_key("/v1/models") == ("/v1/models", None)
+
+
+def _ipv6_ok() -> bool:
+    try:
+        with socket.socket(socket.AF_INET6) as s:
+            s.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
+
+
+@pytest.mark.skipif(not _ipv6_ok(), reason="this machine has no IPv6 (GitHub runners do)")
+def test_lan_dual_stack_host_takes_ipv6_and_ipv4_clients(monkeypatch):
+    up, uurl = _up()
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    g = gateway.serve(uurl, host="::", port=0, model_name="m", api_key="k")
+    port = g.server_address[1]
+    try:
+        for host in ("[::1]", "127.0.0.1"):              # 127.0.0.1 arrives as ::ffff:127.0.0.1: still this PC
+            assert _status(f"http://{host}:{port}/v1/models") == 200, host
+    finally:
+        g.shutdown()
+    g = gateway.serve(uurl, host="::", port=0, model_name="m", api_key="k", trust_loopback=False)
+    port = g.server_address[1]
+    try:
+        for host in ("[::1]", "127.0.0.1"):
+            assert _status(f"http://{host}:{port}/v1/models") == 401, host
+            assert _status(f"http://{host}:{port}/v1/models", headers={"Authorization": "Bearer k"}) == 200, host
+    finally:
+        g.shutdown(); up.shutdown()
+
+
+def test_mapped_loopback_and_key_required_locally():
+    assert gateway.is_loopback("::ffff:127.0.0.1") and not gateway.is_loopback("::ffff:192.168.1.5")
+    try:
+        gateway.serve("http://127.0.0.1:9", port=0, trust_loopback=False)
+        raise AssertionError("served local clients that must send a key, with no key set")
+    except ValueError as e:
+        assert "key" in str(e)

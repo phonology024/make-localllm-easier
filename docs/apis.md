@@ -82,3 +82,38 @@ config when you set them.
   "local_model": "qwen3.8-27b-q3"
 }
 ```
+
+## Use it from another device on your network (LAN mode)
+
+Run the model on the desktop with the GPU and use it from a laptop or phone on the same network:
+
+```
+localllm serve --host 0.0.0.0                  # prints the LAN address and a new API key, once
+localllm serve --host 0.0.0.0 --api-key KEY    # or bring your own key (or set LOCALLLM_API_KEY)
+localllm serve --host ::                       # IPv6 too (and IPv4 where the OS allows dual stack)
+```
+
+Other devices send the key the way their SDK already does:
+
+| API | How the key is sent |
+|---|---|
+| OpenAI | `api_key="KEY"` (sent as `Authorization: Bearer KEY`) |
+| Anthropic | `api_key="KEY"` (sent as `x-api-key: KEY`) |
+| Ollama | `Authorization: Bearer KEY` header (e.g. `ollama.Client(host=..., headers={"Authorization": "Bearer KEY"})`) |
+| Gemini | `x-goog-api-key: KEY` header, or `?key=KEY` on the URL |
+
+Requests without the right key get `401`. Requests from the desktop itself need no key, so local apps, `localllm chat`
+and the browser page keep working. On another device the chat page loads without the key, but its requests need it:
+enter the key in the page's settings (API key).
+
+Security notes:
+- `localllm` refuses to listen on a network address without a key. Keep the key secret: anyone who has it can use your
+  GPU, and through your cloud key too if you turned cloud routing on.
+- The key is checked in constant time and stripped before anything is forwarded, so it never reaches llama-server or a
+  cloud provider. llama-server itself still listens only on `127.0.0.1`.
+- Behind a reverse proxy or tunnel on the same PC (nginx, Caddy, cloudflared, ngrok), every request reaches localllm
+  from `127.0.0.1`, so "no key from this PC" would let the whole proxy through without one. Start it with
+  `--require-key-local` there: then every client, this PC included, must send the key.
+- Traffic is plain HTTP. Use it on a network you trust (home Wi-Fi), or put it behind a VPN such as WireGuard or
+  Tailscale. Don't forward the port to the internet.
+- `?key=` ends up in browser history and proxy logs; prefer the header when you can.
