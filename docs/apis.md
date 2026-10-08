@@ -71,6 +71,7 @@ Run the model on the desktop with the GPU and use it from a laptop or phone on t
 ```
 localllm serve --host 0.0.0.0                  # prints the LAN address and a new API key, once
 localllm serve --host 0.0.0.0 --api-key KEY    # or bring your own key (or set LOCALLLM_API_KEY)
+localllm serve --host ::                       # IPv6 too (and IPv4 where the OS allows dual stack)
 ```
 
 Other devices send the key the way their SDK already does:
@@ -91,6 +92,9 @@ Security notes:
   GPU, and through your cloud key too if you turned cloud routing on.
 - The key is checked in constant time and stripped before anything is forwarded, so it never reaches llama-server or a
   cloud provider. llama-server itself still listens only on `127.0.0.1`.
+- Behind a reverse proxy or tunnel on the same PC (nginx, Caddy, cloudflared, ngrok), every request reaches localllm
+  from `127.0.0.1`, so "no key from this PC" would let the whole proxy through without one. Start it with
+  `--require-key-local` there: then every client, this PC included, must send the key.
 - Traffic is plain HTTP. Use it on a network you trust (home Wi-Fi), or put it behind a VPN such as WireGuard or
   Tailscale. Don't forward the port to the internet.
 - `?key=` ends up in browser history and proxy logs; prefer the header when you can.

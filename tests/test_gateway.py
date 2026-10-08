@@ -1,8 +1,11 @@
 import json
+import socket
 import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import pytest
 
 from localllm import gateway, router
 
@@ -228,3 +231,42 @@ def test_split_key_keeps_other_query_parameters():
     assert gateway.split_key("/v1beta/models/m:streamGenerateContent?alt=sse&key=K") == \
         ("/v1beta/models/m:streamGenerateContent?alt=sse", "K")
     assert gateway.split_key("/v1/models") == ("/v1/models", None)
+
+
+def _ipv6_ok() -> bool:
+    try:
+        with socket.socket(socket.AF_INET6) as s:
+            s.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
+
+
+@pytest.mark.skipif(not _ipv6_ok(), reason="this machine has no IPv6 (GitHub runners do)")
+def test_lan_dual_stack_host_takes_ipv6_and_ipv4_clients(monkeypatch):
+    up, uurl = _up()
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    g = gateway.serve(uurl, host="::", port=0, model_name="m", api_key="k")
+    port = g.server_address[1]
+    try:
+        for host in ("[::1]", "127.0.0.1"):              # 127.0.0.1 arrives as ::ffff:127.0.0.1: still this PC
+            assert _status(f"http://{host}:{port}/v1/models") == 200, host
+    finally:
+        g.shutdown()
+    g = gateway.serve(uurl, host="::", port=0, model_name="m", api_key="k", trust_loopback=False)
+    port = g.server_address[1]
+    try:
+        for host in ("[::1]", "127.0.0.1"):
+            assert _status(f"http://{host}:{port}/v1/models") == 401, host
+            assert _status(f"http://{host}:{port}/v1/models", headers={"Authorization": "Bearer k"}) == 200, host
+    finally:
+        g.shutdown(); up.shutdown()
+
+
+def test_mapped_loopback_and_key_required_locally():
+    assert gateway.is_loopback("::ffff:127.0.0.1") and not gateway.is_loopback("::ffff:192.168.1.5")
+    try:
+        gateway.serve("http://127.0.0.1:9", port=0, trust_loopback=False)
+        raise AssertionError("served local clients that must send a key, with no key set")
+    except ValueError as e:
+        assert "key" in str(e)

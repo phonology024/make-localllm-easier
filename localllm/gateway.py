@@ -20,6 +20,7 @@ import hmac
 import ipaddress
 import json
 import re
+import socket
 import threading
 import time
 from contextlib import nullcontext
@@ -40,9 +41,11 @@ KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients
 
 def is_loopback(host: str) -> bool:
     try:
-        return host == "localhost" or ipaddress.ip_address(host).is_loopback
+        ip = ipaddress.ip_address(host)
     except ValueError:
-        return False
+        return host == "localhost"
+    mapped = getattr(ip, "ipv4_mapped", None)        # an IPv4 client of a dual-stack socket: ::ffff:127.0.0.1
+    return (mapped or ip).is_loopback
 
 
 def split_key(path: str) -> tuple[str, str | None]:
@@ -302,10 +305,27 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
     return Handler
 
 
+class _Server(ThreadingHTTPServer):
+    """IPv4 or IPv6 by the address; `::` also takes IPv4 clients (dual stack) where the OS allows it."""
+    def __init__(self, addr, handler):
+        if ":" in addr[0]:
+            self.address_family = socket.AF_INET6
+        super().__init__(addr, handler)
+
+    def server_bind(self):
+        if self.address_family == socket.AF_INET6 and self.server_address[0] == "::":
+            try:
+                self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            except (AttributeError, OSError):
+                pass
+        super().server_bind()
+
+
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
           trust_loopback: bool = True) -> ThreadingHTTPServer:
-    if not is_loopback(host) and not api_key:
-        raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC")
-    srv = ThreadingHTTPServer((host, port), make_handler(upstream, model_name, api_key, trust_loopback))
+    if not api_key and (not is_loopback(host) or not trust_loopback):
+        raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
+                         if not is_loopback(host) else "a key is required for local clients but none was given")
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
