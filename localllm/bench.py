@@ -61,7 +61,7 @@ CODE_SYSTEM = ("You are given a Python function and an input. Work out what the 
                "exact return value as a Python literal on a last line of the form [ANSWER] value [/ANSWER].")
 CODEGEN_SYSTEM = ("Write a correct, self-contained Python solution. Reply with one ```python code block containing the "
                   "complete function (with any imports it needs) and nothing else.")
-CODEGEN_TIMEOUT = 60.0      # seconds per task: EvalPlus's own cap. Its slowest reference solution, Mbpp/599, takes ~28 s
+CODEGEN_TIMEOUT = 60.0      # seconds per task: EvalPlus's cap. Its slowest reference solution, Mbpp/599, takes ~20 s
 # Test repairs, task -> (regex, replacement), made when a program is assembled (so cached items and replies get them):
 # - HumanEval/32: the Hugging Face copy asserts _poly(*find_zero(xs), inp), splatting a float, so nothing could pass
 #   (the canonical solution included). Judge like EvalPlus's harness, |poly(out)| <= atol, or like every other task, by
