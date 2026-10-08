@@ -248,18 +248,14 @@ class ToolCalls:
 
 NO_VISION = ("this model was started without its vision projector, so it can't read images. Restart with "
              "`localllm --vision` (or `localllm serve --vision`); text-only use keeps the projector out of memory.")
-_vision: dict[str, bool] = {}
-
-
 def vision_ok(url: str) -> bool:
-    """Whether the llama-server at `url` loaded a projector (/props modalities). Unknown -> True: let it answer."""
-    if url not in _vision:
-        try:
-            props = json.load(urllib.request.urlopen(url.rstrip("/") + "/props", timeout=5))
-            _vision[url] = bool((props.get("modalities") or {}).get("vision", True))
-        except (OSError, ValueError):
-            return True
-    return _vision[url]
+    """Whether the llama-server at `url` loaded a projector (/props modalities). Asked on every image request (not
+    cached: a restarted server can reuse the port); unknown -> True, so llama-server answers itself."""
+    try:
+        props = json.load(urllib.request.urlopen(url.rstrip("/") + "/props", timeout=5))
+    except (OSError, ValueError):
+        return True
+    return bool((props.get("modalities") or {}).get("vision", True))
 
 
 def error_body(api: str, msg: str, code: int = 400) -> dict:

@@ -42,7 +42,6 @@ class FakeVisionLlama(BaseHTTPRequestHandler):
 def _servers(monkeypatch, vision: bool):
     monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
     monkeypatch.setattr(FakeVisionLlama, "vision", vision)
-    gateway._vision.clear()
     up = HTTPServer(("127.0.0.1", 0), FakeVisionLlama)
     threading.Thread(target=up.serve_forever, daemon=True).start()
     g = gateway.serve(f"http://127.0.0.1:{up.server_port}", port=0, model_name="m")
@@ -106,6 +105,8 @@ def test_without_projector_each_api_gets_its_own_error_with_the_fix(monkeypatch)
         code, _ = _post(url + "/api/chat", {"model": "m", "stream": False,
                                             "messages": [{"role": "user", "content": "hi"}]})
         assert code == 200                                                  # text still works
+        monkeypatch.setattr(FakeVisionLlama, "vision", True)                # restarted with --vision, same port
+        assert _post(url + "/api/chat", REQUESTS["ollama"][1])[0] == 200
     finally:
         g.shutdown(); up.shutdown()
 
