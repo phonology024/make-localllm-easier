@@ -8,10 +8,12 @@
   localllm route [--test P] routing config; compare one prompt local vs your cloud keys
   localllm serve [MODEL]    start an OpenAI-compatible server only (http://127.0.0.1:8080/v1)
   localllm eval             score a running server in English + your language (global and local exams)
+  localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -309,6 +311,18 @@ def cmd_list(_a) -> None:
     print("* decode speed on an RX 9070 XT 16 GB.  scores: accuracy % from `localllm eval` (lang/suite)")
 
 
+def cmd_report(a) -> None:
+    from . import report
+    rep = report.collect()
+    out = report.save(rep)
+    print(json.dumps(rep, ensure_ascii=False, indent=1))
+    url = report.issue_url(rep, out)
+    _say(f"saved to {out} - no user names, paths or keys are in it")
+    _say(f"share it (you review everything before submitting): {url}")
+    if not a.no_browser:
+        webbrowser.open(url)
+
+
 def cmd_eval(a) -> None:
     from . import bench
     langs = a.langs.split(",") if a.langs else sorted({"en", bench.system_language()})
@@ -329,6 +343,9 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
     sub.add_parser("list").set_defaults(fn=cmd_list)
+    rp = sub.add_parser("report", help="your GPU, tuned settings and eval scores in one JSON, ready to share")
+    rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
+    rp.set_defaults(fn=cmd_report)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     c = sub.add_parser("chat"); c.add_argument("model", nargs="?", choices=list(catalog.MODELS))

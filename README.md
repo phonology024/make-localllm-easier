@@ -251,8 +251,20 @@ reasoning in multiple choice, not writing quality.
 
 ## Contributing
 
-The catalog only grows with measurements. Run `localllm eval --langs en,<yours>` on your GPU and open a PR with
-`~/.localllm/results.json` and your GPU name. Other languages' local exams are very welcome. See [ROADMAP.md](ROADMAP.md)
+The catalog only grows with measurements. Run `localllm tune` and `localllm eval --langs en,<yours>` on your GPU, then
+`localllm report`: it collects your GPU, RAM, OS, llama.cpp build, tuned settings and scores into one JSON (no user
+names, paths or keys) and opens a prefilled GitHub issue you can review before submitting. Other languages' local exams
+are very welcome.
+
+### Measured on contributors' PCs
+
+Generated from shared reports by `tools/merge_reports.py`:
+
+<!-- gpu-table:start -->
+| GPU | VRAM | RAM | OS | llama.cpp | model | decode tok/s | kept settings | scores |
+|---|---|---|---|---|---|---|---|---|
+<!-- gpu-table:end -->
+ See [ROADMAP.md](ROADMAP.md)
 for what's next: using less system RAM (0.2), working alongside cloud provider APIs (0.3), a speed-only release (0.4), and per-language compression research (0.5).
 
 ## License
