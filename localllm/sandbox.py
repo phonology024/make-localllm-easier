@@ -155,4 +155,4 @@ def run(programs: list[str], timeout_s: float = 10.0) -> list[dict]:
             raise RuntimeError(f"sandbox failed (exit {out.returncode}): {out.stderr[-1000:]}")
         rows = {r["name"]: r for r in json.loads(lines[-1])}
     missing = {"ok": False, "rc": None, "err": "missing", "oom": False, "pids": False, "t": 0.0}
-    return [rows.get(f"p{i:05d}.py", missing) for i in range(len(programs))]
+    return [rows.get(f"p{i:05d}.py", {**missing}) for i in range(len(programs))]
