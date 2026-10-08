@@ -53,7 +53,7 @@ def test_sandbox_blocks_attacks_for_the_right_reason():
         "memory": "chunks = [bytearray(64 * 1024 ** 2) for _ in range(32)]\n",           # 2 GB, 64 MB at a time
         "network": "import socket\nsocket.create_connection(('1.1.1.1', 53), timeout=5)\n",
         "dns": "import socket\nsocket.getaddrinfo('example.com', 443)\n",
-        "write_home": "open('/home/runner/x', 'w').write('x')\n",   # the sandbox user owns it: only --read-only stops this
+        "write_home": "open('/home/runner/x', 'w').write('x')\n",   # the sandbox user's own dir: only --read-only stops it
         "write_work": "open('/work/p99999.py', 'w').write('x')\n",
         "write_usr": "open('/usr/local/lib/python3.12/site-packages/evil.pth', 'w').write('x')\n",
         "tmp_full": "open('/tmp/big', 'wb').write(bytes(100 * 1024 ** 2))\n",              # /tmp is a 64 MB tmpfs
@@ -99,6 +99,16 @@ def entry_only(row: dict) -> str:
     return ast.get_source_segment(src, fn)
 
 
+# HumanEval/32's answers were recorded on Python < 3.12, whose sum() of floats adds left to right. Its canonical
+# find_zero (Newton's method) is chaotic on a few inputs: on the sandbox's Python 3.12 (compensated sum) it stops on a
+# non-root for 5 of its 886 inputs; with the old summation it reproduces all 886 recorded answers.
+OLD_SUM = "import functools, operator\nsum = lambda v, start=0: functools.reduce(operator.add, v, start)\n"
+
+
+def as_recorded(row: dict, code: str) -> str:
+    return OLD_SUM + code if row["task_id"] == "HumanEval/32" else code
+
+
 @needs_docker
 @pytest.mark.skipif(not os.environ.get("LOCALLLM_CANONICAL"),
                     reason="downloads HumanEval+/MBPP+ from Hugging Face; the sandbox CI job sets LOCALLLM_CANONICAL=1")
@@ -109,10 +119,13 @@ def test_evalplus_canonical_solutions_pass(monkeypatch, tmp_path):
     items = bench.load("codegen", "en")                      # exactly what `localllm eval --suites codegen` tests
     he, mb = rows["evalplus/humanevalplus"], rows["evalplus/mbppplus"]
     kept = [r for r in mb if f"Mbpp/{r['task_id']}" not in bench.CODEGEN_SKIP]
-    assert len(he) == 164 and len(mb) - len(kept) == len(bench.CODEGEN_SKIP) and len(items) == len(he) + len(kept)
+    assert len(he) == 164 and he[32]["task_id"] == "HumanEval/32" and len(mb) - len(kept) == len(bench.CODEGEN_SKIP)
+    assert len(items) == len(he) + len(kept)
     assert [it["id"] for it in items] == [r["task_id"] for r in he] + [f"Mbpp/{r['task_id']}" for r in kept]
-    cases = [("HumanEval+ full", it, fence(r["prompt"] + r["canonical_solution"])) for it, r in zip(items, he)]
-    cases += [("HumanEval+ bare", it, fence(entry_only(r))) for it, r in zip(items, he)]
+    cases = [("HumanEval+ full", it, fence(as_recorded(r, r["prompt"] + r["canonical_solution"])))
+             for it, r in zip(items, he)]
+    cases += [("HumanEval+ bare", it, fence(as_recorded(r, entry_only(r)))) for it, r in zip(items, he)]
+    cases += [("info: /32 as-is", items[32], fence(he[32]["prompt"] + he[32]["canonical_solution"]))]   # reported only
     cases += [("MBPP+", it, fence(r["code"])) for it, r in zip(items[len(he):], kept)]
     cases += [("skipped", {"id": f"Mbpp/{r['task_id']}", "head": "", "test": r["test"]}, fence(r["code"]))
               for r in mb if r not in kept]                  # still run: they must fail for the stated reason
@@ -120,7 +133,7 @@ def test_evalplus_canonical_solutions_pass(monkeypatch, tmp_path):
     t0 = time.time()
     res = sandbox.run([bench.codegen_program(it, reply) for _, it, reply in cases], timeout)
     print(f"\n{len(cases)} programs in {time.time() - t0:.0f}s, per-program timeout {timeout:g}s")
-    for group in ("HumanEval+ full", "HumanEval+ bare", "MBPP+", "skipped"):
+    for group in ("HumanEval+ full", "HumanEval+ bare", "MBPP+", "skipped", "info: /32 as-is"):
         mine = [r for (g, _, _), r in zip(cases, res) if g == group]
         print(f"  {group:16} {sum(r['ok'] for r in mine)}/{len(mine)} pass, slowest {max(r['t'] for r in mine):.2f}s")
     slow = sorted(((r["t"], f"{g} {it['id']}") for (g, it, _), r in zip(cases, res)), reverse=True)[:10]
@@ -128,6 +141,6 @@ def test_evalplus_canonical_solutions_pass(monkeypatch, tmp_path):
     for (g, it, _), r in zip(cases, res):
         if not r["ok"]:
             print(f"  FAIL {g} {it['id']}: rc={r['rc']} oom={r['oom']} pids={r['pids']} t={r['t']} {r['err'][-300:]!r}")
-    bad = [it["id"] for (g, it, _), r in zip(cases, res) if r["ok"] == (g == "skipped")]
+    bad = [it["id"] for (g, it, _), r in zip(cases, res) if not g.startswith("info") and r["ok"] == (g == "skipped")]
     assert not bad, f"canonical solutions that failed: {bad}"
     assert all(r["oom"] for (g, _, _), r in zip(cases, res) if g == "skipped")    # too big for --memory 1g, as stated

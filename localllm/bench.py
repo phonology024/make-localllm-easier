@@ -275,19 +275,23 @@ def code_block(text: str) -> str:
     return (m.group(1) if m else text).strip("\n")
 
 
-# The Hugging Face copy of HumanEval+ swaps _poly()'s arguments in HumanEval/32, so no find_zero() could pass (the
-# canonical one included); this is the check EvalPlus's own harness makes.
-POLY_FIX = ("assert _poly(*candidate(*inp), inp) <=", "assert abs(_poly(*inp, candidate(*inp))) <=")
+# HumanEval/32: the Hugging Face copy of HumanEval+ asserts _poly(*find_zero(xs), inp), splatting a float, so nothing
+# could pass (the canonical solution included). Judge like EvalPlus's harness, |poly(out)| <= atol, or like every other
+# task, by the recorded answer: on steep polynomials no float gets within 1e-4 of zero, the recorded root included.
+POLY_FIX = (r"assert _poly\(\*candidate\(\*inp\), inp\) <= (\S+)",
+            r"out = candidate(*inp); assert abs(_poly(*inp, out)) <= \1 or math.isclose(out, exp, rel_tol=1e-07, "
+            r"abs_tol=\1)")
 
 
 def codegen_program(item: dict, reply: str) -> str:
     """Model code + the benchmark's tests. The whole HumanEval prompt goes first: its imports and helpers (poly() in
     HumanEval/32, is_palindrome() in /10) are given, so a model need not repeat them, and the model's own definitions
     come after it and win. `from __future__` lines must open the file, so they move there."""
+    import re
     lines = code_block(reply).splitlines()
     future = [l for l in lines if l.startswith("from __future__")]
     code = "\n".join(l for l in lines if not l.startswith("from __future__"))
-    return "\n".join([*future, item["head"], code, "", item["test"].replace(*POLY_FIX)])
+    return "\n".join([*future, item["head"], code, "", re.sub(POLY_FIX[0], POLY_FIX[1], item["test"])])
 
 
 def ask_codegen(url: str, item: dict) -> str:
