@@ -24,28 +24,41 @@ def rows(ds, cfg, split, limit=10**9, offset=0):
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
     cache.parent.mkdir(parents=True, exist_ok=True)
-    got = _rows(ds, cfg, split, limit, offset)
-    cache.write_text(json.dumps(got, ensure_ascii=False), encoding="utf-8")
+    got, complete = _rows(ds, cfg, split, limit, offset)
+    if complete:                              # a partial answer is used once but fetched again next time
+        cache.write_text(json.dumps(got, ensure_ascii=False), encoding="utf-8")
     return got
+
+
+def _get(u, tries=8):
+    """One datasets-server page; anonymous requests get throttled (429), so back off up to a minute, Retry-After first."""
+    for attempt in range(tries):
+        try:
+            return json.load(urllib.request.urlopen(u, timeout=120))
+        except Exception as e:
+            err = e
+            after = getattr(e, "headers", None) and e.headers.get("Retry-After")
+            wait = min(60, float(after) if after and after.isdigit() else 5 * 2 ** attempt)
+            print(f"    {e} - retry in {wait:.0f}s", flush=True)
+            time.sleep(wait)
+    raise RuntimeError(f"{u}: {err}")
 
 
 def _rows(ds, cfg, split, limit, offset):
     out, off = [], offset
     while len(out) < limit:
         u = ROWS.format(ds=urllib.parse.quote(ds, safe=""), cfg=urllib.parse.quote(cfg), split=split, off=off)
-        for attempt in range(5):
-            try:
-                d = json.load(urllib.request.urlopen(u, timeout=120)); break
-            except Exception:
-                time.sleep(3 * (attempt + 1))
-        else:
-            print(f"  gave up on {ds} {cfg} {split} at row {off}: keeping {len(out)} rows", flush=True)
-            return out
+        try:
+            d = _get(u)
+        except RuntimeError as e:
+            print(f"  gave up on {ds} {cfg} {split} at row {off} ({e}): keeping {len(out)} rows", flush=True)
+            return out, False
         out += [r["row"] for r in d["rows"]]
         off += 100
         if off >= d.get("num_rows_total", 0) or not d["rows"]:
             break
-    return out[:limit]
+        time.sleep(0.3)                       # pace requests
+    return out[:limit], True
 
 
 # ---- templates (written per language; {x} = payload) ---------------------------------------------------------------

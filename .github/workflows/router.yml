@@ -11,7 +11,7 @@ permissions:
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       LLAMA_TAG: b11457        # the llama.cpp build the numbers in tools/router/README.md were measured with
       HF_HUB_DISABLE_PROGRESS_BARS: "1"
@@ -52,9 +52,19 @@ jobs:
           ls -la lh/models
       - name: GGUF (llama.cpp, CPU) vs PyTorch embeddings
         run: python tools/router/check_embed.py lh/models/multilingual-e5-small-Q8_0.gguf e5-small
+      - uses: actions/cache/restore@v4       # datasets-server pages fetched by earlier runs (complete pages only)
+        with:
+          path: tools/router/data/cache
+          key: router-data-v1-${{ github.run_id }}
+          restore-keys: router-data-v1-
       - name: Training data from Hugging Face (build_data.py; generated.jsonl needs a local LLM and is not rebuilt here)
-        timeout-minutes: 40
+        timeout-minutes: 50
         run: python tools/router/build_data.py
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: tools/router/data/cache
+          key: router-data-v1-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Train the head and export it (train_router.py --export)
         run: python tools/router/train_router.py lh/models/multilingual-e5-small-Q8_0.gguf --export lh/models/router_head.json
       - name: Measure the router as the package runs it (eval_package.py)
