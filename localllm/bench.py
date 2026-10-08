@@ -16,7 +16,7 @@ Task suites (opt-in with --suites, they generate text so they are slower):
   code      CRUXEval-O (Gu et al. 2024, MIT): 800 short Python functions; the model predicts what f(input) returns.
             Nothing the model writes is executed: the answer is parsed with ast.literal_eval and compared to the
             recorded output. English only (code is the language).
-  codegen   HumanEval+ and MBPP+ (EvalPlus, Apache-2.0): 542 tasks; the model writes the function and the extended
+  codegen   HumanEval+ and MBPP+ (EvalPlus, Apache-2.0): 541 tasks; the model writes the function and the extended
             tests run inside a locked-down Docker container (see sandbox.py) - never on your PC. Needs Docker.
 """
 from __future__ import annotations
@@ -59,6 +59,8 @@ CODE_SYSTEM = ("You are given a Python function and an input. Work out what the 
                "exact return value as a Python literal on a last line of the form [ANSWER] value [/ANSWER].")
 CODEGEN_SYSTEM = ("Write a correct, self-contained Python solution. Reply with one ```python code block containing the "
                   "complete function (with any imports it needs) and nothing else.")
+CODEGEN_TIMEOUT = 60.0      # seconds per task: EvalPlus's own cap. Its slowest reference solution, Mbpp/599, takes ~28 s
+CODEGEN_SKIP = {"Mbpp/255"}  # its test holds two ~1 GB lists at once (2.2 GB peak): nothing passes in the 1 GB sandbox
 SUITES = ("global", "regional", "math", "translate", "code", "codegen")
 
 
@@ -118,6 +120,8 @@ def load(suite: str, lang: str) -> list[dict]:
             items.append({"id": r["task_id"], "prompt": r["prompt"], "head": r["prompt"],
                           "test": f"{r['test']}\n\ncheck({r['entry_point']})\n"})
         for r in _rows("evalplus/mbppplus", "default"):
+            if f"Mbpp/{r['task_id']}" in CODEGEN_SKIP:
+                continue
             tests = r["test_list"] if isinstance(r["test_list"], list) else ast.literal_eval(r["test_list"])
             items.append({"id": f"Mbpp/{r['task_id']}", "prompt": f"{r['prompt']}\nYour code should pass this test:\n"
                           f"{tests[0]}", "head": "", "test": r["test"]})
@@ -330,7 +334,7 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                     print(f"  {lang:3} {suite:9} generated {len(programs)} programs; start Docker (Linux containers) "
                           f"and rerun to test them (saved in {gen})", flush=True)
                     continue
-                ok = sum(r["ok"] for r in sandbox.run(programs))
+                ok = sum(r["ok"] for r in sandbox.run(programs, CODEGEN_TIMEOUT))
                 acc = round(100 * ok / len(items), 1)
                 res[f"{lang}/{suite}"] = {"acc": acc, "correct": ok, "n": len(items)}
                 print(f"  {lang:3} {suite:9} {acc:5.1f}%  ({ok}/{len(items)} pass the EvalPlus tests)", flush=True)

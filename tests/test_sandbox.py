@@ -108,21 +108,26 @@ def test_evalplus_canonical_solutions_pass(monkeypatch, tmp_path):
     monkeypatch.setattr(bench, "HOME", tmp_path)
     items = bench.load("codegen", "en")                      # exactly what `localllm eval --suites codegen` tests
     he, mb = rows["evalplus/humanevalplus"], rows["evalplus/mbppplus"]
-    assert len(he) == 164 and len(items) == len(he) + len(mb)
+    kept = [r for r in mb if f"Mbpp/{r['task_id']}" not in bench.CODEGEN_SKIP]
+    assert len(he) == 164 and len(mb) - len(kept) == len(bench.CODEGEN_SKIP) and len(items) == len(he) + len(kept)
+    assert [it["id"] for it in items] == [r["task_id"] for r in he] + [f"Mbpp/{r['task_id']}" for r in kept]
     cases = [("HumanEval+ full", it, fence(r["prompt"] + r["canonical_solution"])) for it, r in zip(items, he)]
     cases += [("HumanEval+ bare", it, fence(entry_only(r))) for it, r in zip(items, he)]
-    cases += [("MBPP+", it, fence(r["code"])) for it, r in zip(items[len(he):], mb)]
-    timeout = float(os.environ.get("LOCALLLM_CANONICAL_TIMEOUT", 10))
+    cases += [("MBPP+", it, fence(r["code"])) for it, r in zip(items[len(he):], kept)]
+    cases += [("skipped", {"id": f"Mbpp/{r['task_id']}", "head": "", "test": r["test"]}, fence(r["code"]))
+              for r in mb if r not in kept]                  # still run: they must fail for the stated reason
+    timeout = float(os.environ.get("LOCALLLM_CANONICAL_TIMEOUT", bench.CODEGEN_TIMEOUT))
     t0 = time.time()
     res = sandbox.run([bench.codegen_program(it, reply) for _, it, reply in cases], timeout)
     print(f"\n{len(cases)} programs in {time.time() - t0:.0f}s, per-program timeout {timeout:g}s")
-    for group in ("HumanEval+ full", "HumanEval+ bare", "MBPP+"):
+    for group in ("HumanEval+ full", "HumanEval+ bare", "MBPP+", "skipped"):
         mine = [r for (g, _, _), r in zip(cases, res) if g == group]
-        print(f"  {group:16} {sum(r['ok'] for r in mine)}/{len(mine)} pass, slowest {max(r.get('t', 0) for r in mine):.2f}s")
-    slow = sorted(((r.get("t", 0), f"{g} {it['id']}") for (g, it, _), r in zip(cases, res)), reverse=True)[:10]
+        print(f"  {group:16} {sum(r['ok'] for r in mine)}/{len(mine)} pass, slowest {max(r['t'] for r in mine):.2f}s")
+    slow = sorted(((r["t"], f"{g} {it['id']}") for (g, it, _), r in zip(cases, res)), reverse=True)[:10]
     print("  slowest:", ", ".join(f"{n} {t:.2f}s" for t, n in slow))
-    bad = [(g, it["id"], r) for (g, it, _), r in zip(cases, res) if not r["ok"]]
-    for g, i, r in bad:
-        print(f"  FAIL {g} {i}: rc={r.get('rc')} oom={r.get('oom')} pids={r.get('pids')} t={r.get('t')} "
-              f"{r['err'][-300:]!r}")
-    assert not bad, f"{len(bad)} canonical solutions failed"
+    for (g, it, _), r in zip(cases, res):
+        if not r["ok"]:
+            print(f"  FAIL {g} {it['id']}: rc={r['rc']} oom={r['oom']} pids={r['pids']} t={r['t']} {r['err'][-300:]!r}")
+    bad = [it["id"] for (g, it, _), r in zip(cases, res) if r["ok"] == (g == "skipped")]
+    assert not bad, f"canonical solutions that failed: {bad}"
+    assert all(r["oom"] for (g, _, _), r in zip(cases, res) if g == "skipped")    # too big for --memory 1g, as stated
