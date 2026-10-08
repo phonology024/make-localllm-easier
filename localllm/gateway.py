@@ -196,11 +196,13 @@ def gemini_to_openai(body: dict) -> dict:
     n = 0
     for c in body.get("contents", []):
         parts = c.get("parts", [])
-        text = "".join(p.get("text", "") for p in parts)
         if any(p.get("fileData") or p.get("file_data") for p in parts):
             raise ValueError("fileData (an uploaded-file URI) is not supported locally: send the image as inlineData")
+        role = "assistant" if c.get("role") == "model" else "user"
+        text = "".join(p.get("text", "") for p in parts)
+        content = text                                  # a plain string, or text and images in their order
         if any(p.get("inlineData") or p.get("inline_data") for p in parts):
-            content = []                                # keep text and images in their order
+            content = []
             for p in parts:
                 blob = p.get("inlineData") or p.get("inline_data")
                 if blob:
@@ -208,8 +210,6 @@ def gemini_to_openai(body: dict) -> dict:
                     content.append({"type": "image_url", "image_url": {"url": url}})
                 elif p.get("text"):
                     content.append({"type": "text", "text": p["text"]})
-            msgs.append({"role": "assistant" if c.get("role") == "model" else "user", "content": content})
-            continue
         calls = [p.get("functionCall") or p.get("function_call") for p in parts
                  if p.get("functionCall") or p.get("function_call")]
         answers = [p.get("functionResponse") or p.get("function_response") for p in parts
@@ -220,14 +220,16 @@ def gemini_to_openai(body: dict) -> dict:
                 oc.append(_call(n, fc["name"], fc.get("args") or {}))
                 ids.setdefault(fc["name"], []).append(oc[-1]["id"])
                 n += 1
-            msgs.append({"role": "assistant", "content": text, "tool_calls": oc})
+            msgs.append({"role": "assistant", "content": content, "tool_calls": oc})
         elif answers:
             for fr in answers:
                 q = ids.get(fr["name"]) or []
                 msgs.append({"role": "tool", "tool_call_id": q.pop(0) if q else f"call_{fr['name']}",
                              "content": json.dumps(fr.get("response", {}), ensure_ascii=False)})
+            if content:                                 # text or an image sent along with the results
+                msgs.append({"role": "user", "content": content})
         else:
-            msgs.append({"role": "assistant" if c.get("role") == "model" else "user", "content": text})
+            msgs.append({"role": role, "content": content})
     cfg = body.get("generationConfig") or {}
     out = {"messages": msgs}
     decls = [d for t in body.get("tools") or []

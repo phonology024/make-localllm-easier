@@ -160,3 +160,17 @@ def test_rows_stop_at_the_limit_and_retry_server_errors(monkeypatch):
     rows = bench._rows("floschne/maxm", "default", "th", page=10, limit=25)
     assert len(rows) == 25 and len(calls) == 4                              # 1 retry + pages of 10, 10, 5
     assert calls[-1].endswith("length=5")
+
+
+def test_gemini_image_next_to_function_parts_keeps_both():
+    img = {"inlineData": {"mimeType": "image/png", "data": PNG}}
+    out = gateway.gemini_to_openai({"contents": [
+        {"role": "user", "parts": [{"text": "what is in this photo, and the weather there?"}, img]},
+        {"role": "model", "parts": [{"functionCall": {"name": "get_weather", "args": {"city": "Bangkok"}}}]},
+        {"role": "user", "parts": [{"functionResponse": {"name": "get_weather", "response": {"temp": 31}}},
+                                   {"text": "and this one?"}, img]}]})
+    m = out["messages"]
+    assert [x["role"] for x in m] == ["user", "assistant", "tool", "user"]
+    assert m[1]["tool_calls"][0]["function"]["name"] == "get_weather" and m[2]["tool_call_id"] == m[1]["tool_calls"][0]["id"]
+    assert [p["type"] for p in m[0]["content"]] == ["text", "image_url"]
+    assert [p["type"] for p in m[3]["content"]] == ["text", "image_url"]       # not dropped next to the result
