@@ -37,9 +37,16 @@ First results, before the generated data (RX 9070 XT PC, CPU, shared test): Laya
 keyword rules first 72.2% (~6 ms) | keyword rules alone 56.9%. Held-out (same style as training) 98.6%: the gap is
 training-data style, being fixed with generated short requests.
 
-CPU data point (CI, GitHub ubuntu-latest, 4 vCPU AMD EPYC 7763, no generated requests, `pad_token_id: null`):
-embedding head 66.7% | keyword rules first 75.0% | keyword rules alone 56.9%; held-out 98.4%. Per message through
-`localllm/taskclf.py` (embed one message + head): median 8.9 ms, p95 15.0 ms; first message 1.5 s (starts the server).
+CPU data points (CI, GitHub ubuntu-latest 4 vCPU, llama.cpp b11457, `pad_token_id: null`), shared test through
+`localllm/taskclf.py` exactly as shipped (own CPU llama-server, pure-Python head; per message = embed + head):
+
+| head | embedding only | keyword rules first | keyword rules alone | per message, median / p95 | runner CPU |
+|---|---|---|---|---|---|
+| trained in CI, with `generated.jsonl` | 97.9% | **98.6%** | 56.9% | 13.2 / 26.5 ms | Xeon Platinum 8370C |
+| committed `router_head.json` | 97.9% | **98.6%** | 56.9% | 12.7 / 26.0 ms | Xeon Platinum 8370C |
+| trained in CI, without generated requests | 66.7% | 75.0% | 56.9% | 8.9 / 15.0 ms | EPYC 7763 |
+
+The first message also starts the embedding server: 1.3-1.5 s once.
 
 ## In the package (#35)
 

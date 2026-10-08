@@ -55,8 +55,8 @@ def detect_task(text: str) -> str:
 
 
 # Who decides the task, in order. The keyword rules only commit when they find a translate/math cue; the embedding
-# classifier (taskclf) always answers. Shared test (tools/router, 144 messages, 15 languages): keyword rules first
-# 72.2%, embedding only 64.6%, keyword rules alone 56.9% (maintainer's PC); 75.0 / 66.7 / 56.9% (CI CPU runner).
+# classifier (taskclf) always answers. Shared test (tools/router, 144 messages, 15 languages), head trained with the
+# generated requests: keyword rules first 98.6%, embedding only 97.9%, keyword rules alone 56.9% (CI CPU runner).
 TASK_ORDER = ("keyword", "embedding")
 
 
