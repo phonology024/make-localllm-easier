@@ -1,0 +1,118 @@
+name: vocab-trim
+# Real-model check for tools/trim_vocab.py (#36): trim a small GGUF to Thai + English, then measure tokenization,
+# next-token agreement, file size and CPU speed against the original. Runs on GitHub's CPU runners, which can reach
+# Hugging Face.
+on:
+  push:
+    paths: [tools/trim_vocab.py, .github/workflows/vocab-trim.yml]
+  workflow_dispatch:
+    inputs:
+      model_url:
+        description: GGUF to test (resolve URL on huggingface.co)
+        default: https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf
+
+jobs:
+  real-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MODEL_URL: ${{ inputs.model_url || 'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install gguf numpy
+
+      - name: llama.cpp CPU binaries (latest release)
+        run: |
+          python - <<'EOF'
+          import io, json, os, re, tarfile, urllib.request, zipfile
+          req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10",
+                                       headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}"})
+          rels = json.load(urllib.request.urlopen(req))
+          rel, asset = next((r, a) for r in rels for a in r["assets"]
+                            if re.search(r"bin-ubuntu-x64\.(zip|tar\.gz)$", a["name"]))
+          print("llama.cpp", rel["tag_name"], asset["name"])
+          data = urllib.request.urlopen(asset["browser_download_url"]).read()
+          if asset["name"].endswith(".zip"):
+              zipfile.ZipFile(io.BytesIO(data)).extractall("llama")
+          else:
+              tarfile.open(fileobj=io.BytesIO(data)).extractall("llama", filter="data")
+          EOF
+          BIN=$(dirname "$(find "$PWD/llama" -name llama-perplexity -type f | head -1)")
+          chmod +x "$BIN"/llama-*
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$BIN" >> "$GITHUB_ENV"
+
+      - name: Small Qwen3.5 / Gemma 4 GGUFs on Hugging Face (for later runs)
+        continue-on-error: true
+        run: |
+          for q in Qwen3.5 gemma-4-E2B gemma-4-E4B; do
+            curl -fsS "https://huggingface.co/api/models?search=$q&filter=gguf&sort=downloads&limit=8" \
+              | python -c "import json,sys; print('$q:', [m['id'] for m in json.load(sys.stdin)])"
+          done
+
+      - name: Model and test texts
+        run: |
+          curl -fsSL -o model.gguf "$MODEL_URL"
+          ls -l model.gguf
+          mkdir -p raw texts
+          for p in English:en Thai:th Chinese:zh Hindi:hi Arabic:ar; do
+            curl -fsSL -o raw/${p##*:}.conllu \
+              https://raw.githubusercontent.com/UniversalDependencies/UD_${p%%:*}-PUD/master/${p##*:}_pud-ud-test.conllu
+          done
+          curl -fsSL -o raw/gsm8k.jsonl \
+            https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/test.jsonl
+          python - <<'EOF'
+          import json, pathlib, random, sysconfig
+          raw, out = pathlib.Path("raw"), pathlib.Path("texts")
+          for f in raw.glob("*.conllu"):    # UD PUD: the same 1,000 news/Wikipedia sentences in every language
+              lines = [l[9:].strip() for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("# text = ")]
+              (out / f"{f.stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          qs = [json.loads(l) for l in (raw / "gsm8k.jsonl").read_text(encoding="utf-8").splitlines()][:400]
+          (out / "math.txt").write_text("\n\n".join(q["question"] + "\n" + q["answer"] for q in qs) + "\n", encoding="utf-8")
+          src = sorted(pathlib.Path(sysconfig.get_paths()["stdlib"]).glob("*.py"))
+          random.Random(0).shuffle(src)
+          code, n = [], 0
+          for p in src:
+              t = p.read_text(encoding="utf-8", errors="ignore"); code.append(t); n += len(t)
+              if n > 400_000:
+                  break
+          (out / "code.txt").write_text("\n".join(code), encoding="utf-8")
+          EOF
+          mkdir -p agree && cp texts/{th,en,code,math,zh}.txt agree/
+          wc -c texts/*
+
+      - name: Trim
+        run: |
+          python tools/trim_vocab.py trim model.gguf trim-th-en.gguf --langs th,en | tee trim.txt
+          python tools/trim_vocab.py trim model.gguf trim-th-en-64k.gguf --langs th,en --keep-top 64000 | tee trim64k.txt
+
+      - name: Tokenization and round trip
+        run: |
+          python tools/trim_vocab.py check model.gguf trim-th-en.gguf --texts texts --bin-dir "$BIN" | tee check.txt
+          python tools/trim_vocab.py check model.gguf trim-th-en-64k.gguf --texts texts --bin-dir "$BIN" | tee check64k.txt
+
+      - name: Next-token agreement (logits of both models)
+        run: |
+          python tools/trim_vocab.py agree model.gguf trim-th-en.gguf --texts agree --ctx 512 --chunks 8 \
+            --bin-dir "$BIN" --ppl-args "-t 4" | tee agree.txt
+
+      - name: CPU speed
+        run: |
+          "$BIN/llama-bench" -m model.gguf -m trim-th-en.gguf -m trim-th-en-64k.gguf -t 4 -p 512 -n 128 -r 3 -o md \
+            | tee bench.md
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## $(basename "$MODEL_URL"), --langs th,en"
+            for f in trim.txt trim64k.txt check.txt check64k.txt agree.txt; do
+              [ -f "$f" ] && { echo "### $f"; echo '```'; cat "$f"; echo '```'; }
+            done
+            [ -f bench.md ] && { echo "### llama-bench (CPU, 4 threads)"; cat bench.md; }
+            ls -l *.gguf | awk '{print "    " $5 " " $9}'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -7,6 +7,7 @@ smaller, less of it stays CPU-mapped, and the output layer runs faster.
   python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en --dry-run   # what would be kept, sizes saved
   python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en             # keep every Thai/Latin/symbol token
   python tools/trim_vocab.py check MODEL.gguf OUT.gguf --texts DIR               # same tokens as before, per text file
+  python tools/trim_vocab.py agree MODEL.gguf OUT.gguf --texts DIR               # same next-token pick, per text file
 
 Text written only in the kept scripts tokenizes exactly as before (`check` verifies it on DIR/*.txt), so the model sees
 the same input and its logits for kept tokens are unchanged. Text in other scripts still works: the merges that built
@@ -15,16 +16,21 @@ un-encodable. `--max-vocab N` also drops the rarest ASCII/symbol tokens (latest 
 protects every token FILE uses. Tokens holding the chosen languages' letters are never capped, only ASCII/symbol ones,
 but rare English words and code identifiers then split differently, so measure before using it.
 
-Supports BPE vocabularies with merges (Qwen, Llama 3, Gemma 4, ...). Needs `pip install gguf numpy`; `check` and
-`--keep-text` run llama-tokenize (next to the llama-server localllm downloaded, or --tokenizer).
+`agree` runs both models with llama-perplexity on each text and compares their predictions position by position: how
+often the most likely next token is the same, and how much probability the original put on tokens that were dropped.
+
+Supports BPE vocabularies with merges (Qwen, Llama 3, Gemma 4, ...). Needs `pip install gguf numpy`; `check`, `agree`
+and `--keep-text` run llama-tokenize / llama-perplexity (next to the llama-server localllm downloaded, or --bin-dir).
 """
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -79,7 +85,7 @@ LANG_SCRIPTS = {**{c: ["latin"] for c in LATIN_LANGS},
                 "am": ["ethiopic"], "ko": ["hangul", "cjk-punct"], "zh": ["han", "cjk-punct"],
                 "ja": ["han", "kana", "cjk-punct"]}
 
-NORMAL, UNUSED = 1, 5   # llama_token_type; every other type (control, user-defined, unknown, byte) is always kept
+NORMAL, UNUSED, BYTE = 1, 5, 6   # llama_token_type; all but normal/unused (control, user-defined, unknown, byte) kept
 SPACE = "\u2581"        # SentencePiece-style space marker used by Gemma 4's BPE
 PLACEHOLDER = re.compile(r"<unused\d+>")
 
@@ -349,37 +355,137 @@ def trim(src: Path, dst: Path | None, langs: list[str], max_vocab: int | None = 
     return report
 
 
-def find_tokenizer(explicit: str | None) -> Path:
-    if explicit:
-        return Path(explicit)
+def find_tool(name: str, bin_dir: str | None) -> Path:
+    """A llama.cpp binary from --bin-dir, else from the llama.cpp build localllm downloaded."""
+    if bin_dir:
+        found = sorted(Path(bin_dir).rglob(name + (".exe" if sys.platform == "win32" else "")))
+        if not found:
+            raise SystemExit(f"{name} not found under {bin_dir}")
+        return found[0]
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from localllm import runtime
     server = runtime.find_server()
-    return server.with_name("llama-tokenize" + server.suffix)
+    return server.with_name(name + server.suffix)
 
 
 def tokenize(tokenizer: Path, model: Path, text_file: Path) -> list[int]:
     out = subprocess.run([str(tokenizer), "-m", str(model), "-f", str(text_file), "--ids", "--log-disable",
-                          "--no-bos"], capture_output=True, text=True, errors="replace")
+                          "--no-bos", "--no-escape"], capture_output=True, text=True, errors="replace")
     lines = [ln for ln in out.stdout.splitlines() if ln.startswith("[")]
     if out.returncode or not lines:
         raise SystemExit(f"llama-tokenize failed on {text_file}:\n{out.stderr[-800:]}")
     return json.loads(lines[-1])
 
 
+class Vocab:
+    """A GGUF's tokenizer arrays, enough to map ids between two vocabularies and turn ids back into bytes."""
+
+    def __init__(self, path: Path):
+        r = gguf.GGUFReader(path)
+        self.tokens = _field(r, "tokenizer.ggml.tokens")
+        self.types = _field(r, "tokenizer.ggml.token_type")
+        self.byte_level = byte_level(_field(r, "tokenizer.ggml.model", ""), _field(r, "tokenizer.ggml.pre", ""))
+
+    def to(self, other: "Vocab") -> list[int | None]:
+        """For each of our ids, the id of the same token in `other` (None if it was dropped)."""
+        ids = {t: i for i, t in enumerate(other.tokens)}
+        return [ids.get(t) for t in self.tokens]
+
+    def detokenize(self, ids: list[int]) -> bytes:
+        """Bytes llama.cpp would print for these ids: byte-level text decoded, <0xXX> byte tokens, U+2581 -> space."""
+        out = bytearray()
+        for i in ids:
+            t, ty = self.tokens[i], self.types[i]
+            if ty == BYTE and not self.byte_level:
+                out.append(int(t[3:5], 16))
+            elif ty == NORMAL:
+                out += token_bytes(t, self.byte_level)
+            else:
+                out += t.encode()
+        return bytes(out)
+
+
 def check(orig: Path, trimmed: Path, texts: Path, tokenizer: Path) -> list[dict]:
-    """Per text file: does the trimmed model split it into exactly the same tokens? And how many more tokens text in
-    dropped scripts now takes."""
-    old = _field(gguf.GGUFReader(orig), "tokenizer.ggml.tokens")
-    new = {t: i for i, t in enumerate(_field(gguf.GGUFReader(trimmed), "tokenizer.ggml.tokens"))}
-    old_to_new = [new.get(t) for t in old]
+    """Per text file: does the trimmed model split it into exactly the same tokens, does it decode back to the same
+    bytes, and how many more tokens does text in dropped scripts now take."""
+    vo, vt = Vocab(orig), Vocab(trimmed)
+    old_to_new = vo.to(vt)
     rows = []
     for txt in sorted(texts.glob("*.txt")):
         a, b = tokenize(tokenizer, orig, txt), tokenize(tokenizer, trimmed, txt)
         mapped = [old_to_new[i] for i in a]
+        raw = txt.read_bytes()
         rows.append({"text": txt.stem, "tokens": len(a), "tokens_trimmed": len(b),
                      "kept_pct": 100 * sum(m is not None for m in mapped) / max(len(a), 1),
-                     "identical": mapped == b, "growth_pct": 100 * (len(b) / max(len(a), 1) - 1)})
+                     "identical": mapped == b, "growth_pct": 100 * (len(b) / max(len(a), 1) - 1),
+                     "roundtrip": vt.detokenize(b) == raw, "roundtrip_orig": vo.detokenize(a) == raw})
+    return rows
+
+
+def read_logprobs(path: Path):
+    """llama-perplexity --kl-divergence-base file: (n_ctx, n_vocab, tokens, rows). Each row is one scored position:
+    2 floats (scale, min log-prob) + n_vocab uint16 q, log p = min + scale * q; q = 0 means 16+ nats below the top."""
+    head = np.fromfile(path, dtype=np.uint8, count=20)
+    if head[:8].tobytes() != b"_logits_":
+        raise SystemExit(f"{path}: not a llama-perplexity logits file")
+    n_ctx, n_vocab, n_chunk = (int(x) for x in head[8:20].view(np.int32))
+    tokens = np.fromfile(path, dtype=np.int32, count=n_ctx * n_chunk, offset=20)
+    nv = 2 * ((n_vocab + 1) // 2) + 4
+    rows = np.memmap(path, dtype=np.uint16, mode="r", offset=20 + 4 * n_ctx * n_chunk)
+    return n_ctx, n_vocab, tokens, rows[: rows.size // nv * nv].reshape(-1, nv)
+
+
+def compare_logprobs(base_o: Path, base_t: Path, old_to_new: list[int | None], block: int = 64) -> dict:
+    """Position by position: same most-likely token? How much probability did the original give dropped tokens?
+    Tokens more than 16 nats below the top are stored without their value and count as 0 here."""
+    _, nvo, tok_o, rows_o = read_logprobs(base_o)
+    _, nvt, tok_t, rows_t = read_logprobs(base_t)
+    mapped = np.array([-1 if old_to_new[i] is None else old_to_new[i] for i in tok_o])
+    if len(tok_o) != len(tok_t) or not np.array_equal(mapped, tok_t):
+        return {"comparable": False}
+    new_to_old = np.full(nvt, -1)
+    new_to_old[[n for n in old_to_new if n is not None]] = [o for o, n in enumerate(old_to_new) if n is not None]
+    kept = np.zeros(nvo, bool)
+    kept[new_to_old] = True
+    same = top_kept = 0
+    dropped_mass = []
+    for s in range(0, len(rows_o), block):
+        qo, qt = rows_o[s:s + block], rows_t[s:s + block]
+        top_o = qo[:, 4:4 + nvo].argmax(1)
+        top_t = new_to_old[qt[:, 4:4 + nvt].argmax(1)]
+        same += int((top_o == top_t).sum())
+        top_kept += int(kept[top_o].sum())
+        hdr = np.ascontiguousarray(qo[:, :4]).view(np.float32)            # (scale, min log-prob) per row
+        q = qo[:, 4:4 + nvo].astype(np.float32)
+        p = np.exp(hdr[:, 1:2] + hdr[:, 0:1] * q)
+        clipped = hdr[:, 0:1] * 65535 > 15.999                            # range hit 16 nats: q = 0 is "below that"
+        p = np.where((q > 0) | ~clipped, p, 0.0)                          # count those as 0 (a lower bound)
+        dropped_mass += list(p[:, ~kept].sum(1) / p.sum(1))
+    n = len(rows_o)
+    return {"comparable": True, "positions": n, "same_top1_pct": 100 * same / n,
+            "orig_top1_kept_pct": 100 * top_kept / n, "dropped_mass_mean": float(np.mean(dropped_mass)),
+            "dropped_mass_p99": float(np.percentile(dropped_mass, 99))}
+
+
+def agree(orig: Path, trimmed: Path, texts: Path, perplexity: Path, ctx: int = 512, chunks: int = 4,
+          extra: list[str] = ()) -> list[dict]:
+    """Run both models over each text with llama-perplexity and compare their next-token predictions."""
+    old_to_new = Vocab(orig).to(Vocab(trimmed))
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="trim-agree-") as d:
+        for txt in sorted(texts.glob("*.txt")):
+            bases = []
+            for tag, model in (("orig", orig), ("trim", trimmed)):
+                base = Path(d, f"{txt.stem}-{tag}.bin")
+                out = subprocess.run([str(perplexity), "-m", str(model), "-f", str(txt), "-c", str(ctx), "--chunks",
+                                      str(chunks), "--kl-divergence-base", str(base), *extra],
+                                     capture_output=True, text=True, errors="replace")
+                if out.returncode or not base.exists():
+                    raise SystemExit(f"llama-perplexity failed on {txt} ({tag}):\n{out.stderr[-1500:]}")
+                bases.append(base)
+            rows.append({"text": txt.stem, **compare_logprobs(*bases, old_to_new)})
+            for b in bases:
+                b.unlink()
     return rows
 
 
@@ -390,27 +496,45 @@ def main() -> None:
     t.add_argument("model", type=Path)
     t.add_argument("out", type=Path, nargs="?")
     t.add_argument("--langs", required=True, help="language codes or script names, e.g. th,en or thai,latin")
-    t.add_argument("--max-vocab", type=int, help="also drop the rarest ASCII/symbol tokens down to about this many")
+    t.add_argument("--max-vocab", "--keep-top", dest="max_vocab", type=int,
+                   help="also drop the rarest ASCII/symbol tokens down to about this many")
     t.add_argument("--keep-text", type=Path, action="append", default=[], help="never drop tokens this text uses")
-    t.add_argument("--tokenizer", help="llama-tokenize path (for --keep-text)")
     t.add_argument("--dry-run", action="store_true")
     c = sub.add_parser("check", help="compare tokenization of DIR/*.txt before and after trimming")
-    c.add_argument("orig", type=Path)
-    c.add_argument("trimmed", type=Path)
-    c.add_argument("--texts", type=Path, required=True)
-    c.add_argument("--tokenizer", help="llama-tokenize path")
+    g = sub.add_parser("agree", help="compare next-token predictions on DIR/*.txt (runs llama-perplexity)")
+    for p in (c, g):
+        p.add_argument("orig", type=Path)
+        p.add_argument("trimmed", type=Path)
+        p.add_argument("--texts", type=Path, required=True)
+    g.add_argument("--ctx", type=int, default=512)
+    g.add_argument("--chunks", type=int, default=4)
+    g.add_argument("--ppl-args", default="", help='extra llama-perplexity arguments, e.g. "-ngl 99 -dev Vulkan0"')
+    for p in (t, c, g):
+        p.add_argument("--bin-dir", help="folder with llama.cpp binaries (default: the build localllm downloaded)")
     a = ap.parse_args()
 
     if a.cmd == "check":
-        for r in check(a.orig, a.trimmed, a.texts, find_tokenizer(a.tokenizer)):
+        for r in check(a.orig, a.trimmed, a.texts, find_tool("llama-tokenize", a.bin_dir)):
             print(f"{r['text']:>10}: {r['tokens']:>7} -> {r['tokens_trimmed']:>7} tokens ({r['growth_pct']:+.1f}%), "
-                  f"{r['kept_pct']:.1f}% of its tokens kept, {'identical' if r['identical'] else 'CHANGED'}")
+                  f"{r['kept_pct']:.1f}% of its tokens kept, {'identical' if r['identical'] else 'CHANGED'}, "
+                  f"decodes back {'exactly' if r['roundtrip'] else 'DIFFERENTLY'}"
+                  + ("" if r["roundtrip_orig"] else " (the original model doesn't round-trip it either)"))
+        return
+    if a.cmd == "agree":
+        for r in agree(a.orig, a.trimmed, a.texts, find_tool("llama-perplexity", a.bin_dir), a.ctx, a.chunks,
+                       shlex.split(a.ppl_args)):
+            if not r["comparable"]:
+                print(f"{r['text']:>10}: tokenized differently after trimming, positions can't be compared")
+                continue
+            print(f"{r['text']:>10}: same top-1 {r['same_top1_pct']:.2f}% of {r['positions']} positions, "
+                  f"original's top-1 kept {r['orig_top1_kept_pct']:.2f}%, probability on dropped tokens "
+                  f"mean {r['dropped_mass_mean']:.5f} / p99 {r['dropped_mass_p99']:.5f}")
         return
     if a.out is None and not a.dry_run:
         ap.error("give OUT.gguf or --dry-run")
     extra: set[int] = set()
     for f in a.keep_text:
-        extra |= set(tokenize(find_tokenizer(a.tokenizer), a.model, f))
+        extra |= set(tokenize(find_tool("llama-tokenize", a.bin_dir), a.model, f))
     langs = [s.strip() for s in a.langs.split(",") if s.strip()]
     r = trim(a.model, a.out, langs, a.max_vocab, extra, a.dry_run)
     print(f"vocab {r['n_vocab']:,} -> {r['n_kept']:,} tokens ({100 * r['n_kept'] / r['n_vocab']:.1f}%), "

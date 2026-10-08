@@ -114,3 +114,53 @@ def test_dry_run_reports_savings_without_writing(tmp_path):
     report = tv.trim(src, tmp_path / "t.gguf", ["th"], dry_run=True)
     assert not (tmp_path / "t.gguf").exists()
     assert set(report["tensors"]) == {"token_embd.weight", "output.weight"} and report["saved_gb"] > 0
+
+
+def test_detokenize_round_trips_kept_and_byte_fallback_text(tmp_path):
+    src, dst = tmp_path / "m.gguf", tmp_path / "t.gguf"
+    tokens = write_model(src)
+    tv.trim(src, dst, ["th"])
+    v = tv.Vocab(dst)
+    ids = {t: i for i, t in enumerate(v.tokens)}
+    text = "hello ส 中"
+    pieces = [enc(b"hello"), enc(b" "), enc("ส".encode()), enc(b" ")] + [enc(bytes([b])) for b in "中".encode()]
+    assert v.detokenize([ids[p] for p in pieces]).decode() == text      # 中 is spelled out in kept byte tokens
+    assert tv.Vocab(src).to(v)[tokens.index(enc("中".encode()))] is None
+
+
+def write_logprobs(path: Path, logits: np.ndarray, tokens: list[int]) -> None:
+    """A llama-perplexity --kl-divergence-base file for one chunk whose scored rows are `logits`."""
+    n_rows, n_vocab = logits.shape
+    n_ctx = 2 * n_rows + 2                                   # rows = n_ctx - 1 - n_ctx // 2
+    nv = 2 * ((n_vocab + 1) // 2) + 4
+    out = np.zeros((n_rows, nv), np.uint16)
+    for r, lg in enumerate(logits):
+        mx = lg.max(); mn = max(lg.min(), mx - 16)
+        lse = np.log(np.exp(lg - mx).sum())
+        scale = (mx - mn) / 65535
+        out[r, :4] = np.array([scale, mn - mx - lse], np.float32).view(np.uint16)
+        out[r, 4:4 + n_vocab] = np.where(lg > mn, np.rint((lg - mn) / scale), 0)
+    with open(path, "wb") as f:
+        f.write(b"_logits_")
+        np.array([n_ctx, n_vocab, 1], np.int32).tofile(f)
+        np.array((tokens * n_ctx)[:n_ctx], np.int32).tofile(f)
+        out.tofile(f)
+
+
+def test_compare_logprobs_counts_top1_agreement_and_dropped_mass(tmp_path):
+    keep = [0, 2, 3]                                          # old ids kept; old id 1 is dropped
+    old_to_new = [0, None, 1, 2]
+    orig = np.array([[5.0, 1.0, 0.0, 0.0],                   # top-1 kept (0)
+                     [0.0, 6.0, 5.0, 0.0],                   # top-1 dropped (1): trimmed picks 2 instead
+                     [0.0, 0.0, 0.0, 3.0]], np.float32)
+    trimmed = orig[:, keep]
+    write_logprobs(tmp_path / "o.bin", orig, [0, 2, 3])
+    write_logprobs(tmp_path / "t.bin", trimmed, [0, 1, 2])
+    r = tv.compare_logprobs(tmp_path / "o.bin", tmp_path / "t.bin", old_to_new)
+    assert r["comparable"] and r["positions"] == 3
+    assert round(r["same_top1_pct"], 1) == 66.7 and round(r["orig_top1_kept_pct"], 1) == 66.7
+    p = np.exp(orig) / np.exp(orig).sum(1, keepdims=True)
+    assert abs(r["dropped_mass_mean"] - p[:, 1].mean()) < 1e-3
+
+    write_logprobs(tmp_path / "t2.bin", trimmed, [0, 2, 2])  # different tokens: not comparable
+    assert not tv.compare_logprobs(tmp_path / "o.bin", tmp_path / "t2.bin", old_to_new)["comparable"]
