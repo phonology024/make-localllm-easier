@@ -28,21 +28,23 @@ def _say(msg: str) -> None:
     print(f"[localllm] {msg}", flush=True)
 
 
-def _download(url: str, dest: Path, label: str) -> None:
-    """Resumable download with a one-line progress bar."""
+def _download(url: str, dest: Path, label: str, timeout: float = 60) -> None:
+    """Resumable download with a one-line progress bar. timeout is per connect/read: a stalled link raises."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     done = tmp.stat().st_size if tmp.exists() else 0
     req = urllib.request.Request(url, headers={"Range": f"bytes={done}-"} if done else {})
-    with urllib.request.urlopen(req) as r, open(tmp, "ab") as f:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        done = done if r.status == 206 else 0           # a server that ignores Range sends the whole file again
         total = done + int(r.headers.get("Content-Length") or 0)
         t0, got = time.time(), 0
-        while chunk := r.read(1 << 22):
-            f.write(chunk); got += len(chunk)
-            if total:
-                pct = 100 * (done + got) / total
-                speed = got / max(time.time() - t0, 1e-3) / 2**20
-                print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
+        with open(tmp, "ab" if done else "wb") as f:
+            while chunk := r.read(1 << 22):
+                f.write(chunk); got += len(chunk)
+                if total:
+                    pct = 100 * (done + got) / total
+                    speed = got / max(time.time() - t0, 1e-3) / 2**20
+                    print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
     print()
     tmp.replace(dest)
 

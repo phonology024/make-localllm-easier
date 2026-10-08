@@ -64,6 +64,10 @@ runs the head in pure Python. Files, in `~/.localllm/models/` (or a `$LOCALLLM_M
 Without them, or when the server fails, routing falls back to the keyword rules and the `X-Localllm-Model` header says so:
 `gemma4-26b-a4b-qat (th code by embedding p=0.93: best measured)`, `(en math by keyword: ...)`,
 `(en general by keyword fallback because no multilingual-e5-small-Q8_0.gguf in ~/.localllm/models ...: ...)`.
+The download and the server start run in a background thread, never under the pool lock: the message that kicks them
+off waits up to 5 s (a start takes ~1.5 s), others fall back at once (`... task router is downloading ... (not ready
+yet)`). A failed or stalled download (30 s read timeout) or a slow start is retried after 5 minutes; a missing file with
+no link, a bad head, a server that exits, or 3 failed embeddings in a row (3 s timeout each) turn it off until restart.
 
 ## Running the scripts
 

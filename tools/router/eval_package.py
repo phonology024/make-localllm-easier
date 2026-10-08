@@ -83,7 +83,7 @@ def main():
     test = [json.loads(l) for l in open(a.test, encoding="utf-8") if l.strip()]
     res = {"messages": len(test)}
 
-    clf = taskclf.Classifier()
+    clf = taskclf.Classifier(wait=taskclf.START_TIMEOUT_S)     # the first message waits for the start: cold start time
     gguf, head = clf.files()
     res["gguf_mb"], res["head_kb"] = round(gguf.stat().st_size / 2**20, 1), round(head.stat().st_size / 1024, 1)
     print(f"model {gguf} ({res['gguf_mb']} MB), head {head} ({res['head_kb']} KB), server args: "

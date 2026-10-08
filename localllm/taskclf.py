@@ -33,10 +33,19 @@ GGUF_URL = ""   # e.g. https://huggingface.co/<user>/<repo>/resolve/main/multili
 HEAD_URL = ""   # e.g. https://huggingface.co/<user>/<repo>/resolve/main/router_head.json
 PREFIX, MAX_CHARS = "query: ", 450   # e5 inputs need the prefix; the head was trained on the first 450 characters
 START_TIMEOUT_S = 60
+FIRST_WAIT_S = 5.0          # the message that starts the router waits this long for it, then falls back to keywords
+TIMEOUT_S = 3.0             # per embedding request; one takes ~10 ms on a CPU
+MAX_FAILS = 3               # failed embeddings in a row before the server is given up for the session
+RETRY_S = 300               # a failed download or a slow start is tried again after this long
+DOWNLOAD_TIMEOUT_S = 30     # per connect/read, so a stalled download fails instead of hanging
 
 
 class Unavailable(Exception):
     """The embedding path can't answer this message; str(e) is a short ASCII reason (it goes into an HTTP header)."""
+
+
+class Retry(Unavailable):
+    """A failure that may go away (network, slow start): tried again after RETRY_S instead of remembered for good."""
 
 
 def _reason(msg) -> str:
@@ -110,7 +119,7 @@ def start_server(gguf: Path, server: Path | None = None) -> tuple[subprocess.Pop
             pass
         time.sleep(0.05)
     proc.kill()
-    raise Unavailable(f"embedding server did not answer within {START_TIMEOUT_S} s")
+    raise Retry(f"embedding server did not answer within {START_TIMEOUT_S} s")
 
 
 def model_dirs() -> list[Path]:
@@ -119,18 +128,25 @@ def model_dirs() -> list[Path]:
 
 
 class Classifier:
-    """classify(text) -> (label, probability). Nothing runs until the first call; then the files are found (or
-    downloaded) and the server started once, and reused. A failure is remembered: later calls raise Unavailable at
-    once instead of retrying on every message. start(gguf) -> (process, url) replaces the real server in tests."""
+    """classify(text) -> (label, probability). Nothing runs until the first call. Then a background thread finds (or
+    downloads) the files and starts the server once; it is reused for every message after that.
 
-    def __init__(self, server: Path | None = None, dirs: list | None = None, start=None, timeout: float = 10.0):
-        self.server, self.timeout = server, timeout
+    The caller (Pool.use, which holds the pool lock) never waits long: the call that kicks off the preparation waits up
+    to `wait` seconds (a normal start takes ~1.5 s), every other call while it runs falls back to the keyword rules at
+    once. Permanent failures (no file and no link, bad head, server exits on start, server stops answering) are
+    remembered; a failed download or a slow start is retried after RETRY_S. start(gguf) -> (process, url) replaces the
+    real server in tests."""
+
+    def __init__(self, server: Path | None = None, dirs: list | None = None, start=None, timeout: float = TIMEOUT_S,
+                 wait: float = FIRST_WAIT_S):
+        self.server, self.timeout, self.wait = server, timeout, wait
         self.dirs = [Path(d) for d in dirs] if dirs is not None else model_dirs()
         self._start = start or (lambda gguf: start_server(gguf, self.server))
         self.lock = threading.Lock()
-        self.head = self.proc = self.url = None
-        self.error: str | None = None
-        self.starts = 0
+        self.head = self.proc = self.url = self.thread = None
+        self.error: str | None = None                   # permanent: fall back for the rest of the session
+        self.retry_at, self.last = 0.0, ""              # transient: the last failure, tried again after retry_at
+        self.status, self.fails, self.registered, self.closed = "", 0, False, False
 
     def files(self) -> tuple[Path, Path]:
         """(gguf, head) from the model folders; a missing one is downloaded into the last folder."""
@@ -141,31 +157,63 @@ class Classifier:
                 if not url:
                     raise Unavailable(f"no {name} in {_show(self.dirs[-1])} (download link not set yet)")
                 path = self.dirs[-1] / name
+                self.status = f"task router is downloading {name}"
                 print(f"[localllm] downloading the task router's {name} (one time) ...", flush=True)
                 try:
                     from .cli import _download
-                    _download(url, path, name)
+                    _download(url, path, name, timeout=DOWNLOAD_TIMEOUT_S)
                 except Exception as e:
-                    raise Unavailable(f"download of {name} failed: {e}") from None
+                    raise Retry(f"download of {name} failed: {type(e).__name__}: {e}") from None
             out.append(path)
         return out[0], out[1]
+
+    def _prepare(self) -> None:
+        """Background thread: files, head, server. Never raises; leaves url, error or retry_at set."""
+        try:
+            gguf, head_path = self.files()
+            head = load_head(head_path)
+            self.status = "embedding server is starting"
+            proc, url = self._start(gguf)
+        except Exception as e:      # a missing binary, a bad file, a crash: never break the chat itself
+            msg = _reason(e if isinstance(e, Unavailable) else f"{type(e).__name__}: {e}")
+            with self.lock:
+                if isinstance(e, Retry):
+                    self.last, self.retry_at = msg, time.time() + RETRY_S
+                else:
+                    self.error = msg
+                self.thread = None
+            return
+        with self.lock:
+            self.head, self.proc, self.url, self.fails, self.thread = head, proc, url, 0, None
+            closed = self.closed
+        if closed:                  # close() came while the server was starting
+            self.close()
+        elif not self.registered:
+            self.registered = True
+            atexit.register(self.close)
 
     def _ready(self) -> str:
         with self.lock:
             if self.error:
                 raise Unavailable(self.error)
-            if self.url is None:
-                try:
-                    gguf, head = self.files()
-                    self.head = load_head(head)
-                    self.starts += 1
-                    self.proc, self.url = self._start(gguf)
-                except Exception as e:      # a missing binary, a bad file, a crash: never break the chat itself
-                    self.error = _reason(e if isinstance(e, Unavailable) else f"{type(e).__name__}: {e}")
-                    raise Unavailable(self.error) from None
-                if self.starts == 1:
-                    atexit.register(self.close)
-            return self.url
+            if self.url is not None:
+                return self.url
+            if self.thread is not None:     # another message started it: don't hold this one up
+                raise Unavailable(f"{self.status} (not ready yet)")
+            if time.time() < self.retry_at:
+                raise Unavailable(_reason(f"{self.last}; retry in {self.retry_at - time.time():.0f} s"))
+            self.status, self.closed = "task router is starting", False
+            self.thread = t = threading.Thread(target=self._prepare, name="localllm-taskclf", daemon=True)
+            t.start()
+        t.join(self.wait)
+        with self.lock:
+            if self.url is not None:
+                return self.url
+            if self.error:
+                raise Unavailable(self.error)
+            if self.thread is None:         # finished with a failure that is retried later
+                raise Unavailable(_reason(f"{self.last}; retry in {RETRY_S} s"))
+            raise Unavailable(f"{self.status} (not ready yet)")
 
     def classify(self, text: str) -> tuple[str, float]:
         url = self._ready()
@@ -175,9 +223,17 @@ class Classifier:
         try:
             emb = json.load(urllib.request.urlopen(req, timeout=self.timeout))["data"][0]["embedding"]
         except Exception as e:      # one slow or failed request falls back for this message; a dead server for good
-            if self.proc is not None and self.proc.poll() is not None:
-                self.error = _reason(f"embedding server exited (code {self.proc.returncode})")
-            raise Unavailable(self.error or _reason(f"embedding failed: {type(e).__name__}: {e}")) from None
+            proc, why = self.proc, _reason(f"embedding failed: {type(e).__name__}: {e}")
+            with self.lock:
+                self.fails += 1
+                if proc is not None and proc.poll() is not None:
+                    self.error = _reason(f"embedding server exited (code {proc.returncode})")
+                elif self.fails >= MAX_FAILS:   # alive but not answering: stop it rather than pay the timeout again
+                    self.error = _reason(f"embedding server stopped after {self.fails} failures in a row: {why}")
+            if self.error and proc is not None and proc.poll() is None:
+                self.close()
+            raise Unavailable(self.error or why) from None
+        self.fails = 0
         try:
             return predict(self.head, emb)
         except (ValueError, TypeError) as e:    # head and model don't match: no point trying again
@@ -185,7 +241,8 @@ class Classifier:
             raise Unavailable(self.error) from None
 
     def close(self) -> None:
-        proc, self.proc, self.url = self.proc, None, None
+        with self.lock:
+            proc, self.proc, self.url, self.closed = self.proc, None, None, True
         if proc is not None and proc.poll() is None:
             proc.terminate()
             try:

@@ -2,7 +2,8 @@ import atexit
 import json
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ class FakeProc:
 
 
 def _serve(handler):
-    s = HTTPServer(("127.0.0.1", 0), handler)
+    s = ThreadingHTTPServer(("127.0.0.1", 0), handler)    # a stalled request must not block the next one
     threading.Thread(target=s.serve_forever, daemon=True).start()
     return s, f"http://127.0.0.1:{s.server_port}"
 
@@ -182,6 +183,110 @@ def test_downloads_missing_files_on_first_use(tmp_path, monkeypatch):
     clf, started = _clf([tmp_path / "other"])
     assert f"download of {taskclf.HEAD_FILE} failed" in router.classify_task(POEM, clf)[1] and started == []
     s.shutdown(); s.server_close()
+
+
+def _file_server(go: threading.Event, monkeypatch):
+    """Serves the two router files (Range aware). The GGUF stalls after 4 bytes until `go` is set."""
+    files = {"/e5.gguf": b"GGUF fake", "/head.json": json.dumps(HEAD).encode()}
+
+    class Files(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            b, rng = files[self.path], self.headers.get("Range")
+            start = int(rng.split("=")[1].rstrip("-")) if rng else 0
+            self.send_response(206 if rng else 200); self.send_header("Content-Length", str(len(b) - start))
+            self.end_headers()
+            if self.path == "/e5.gguf" and start == 0:
+                self.wfile.write(b[:4]); self.wfile.flush()
+                if not go.wait(10):
+                    return
+                start = 4
+            self.wfile.write(b[start:])
+
+    s, base = _serve(Files)
+    monkeypatch.setattr(taskclf, "GGUF_URL", base + "/e5.gguf")
+    monkeypatch.setattr(taskclf, "HEAD_URL", base + "/head.json")
+    return s
+
+
+def _wait_idle(clf):
+    t = clf.thread
+    if t is not None:
+        t.join(10)
+
+
+def test_slow_download_never_holds_up_messages(tmp_path, monkeypatch):
+    go = threading.Event()
+    s = _file_server(go, monkeypatch)
+    clf, started = _clf([tmp_path])
+    clf.wait = 1.0
+    t = time.time()
+    task, how = router.classify_task(POEM, clf)           # starts the download, waits 1 s, then keyword rules
+    assert task == "general" and how == f"keyword fallback because task router is downloading {taskclf.GGUF_FILE} " \
+                                        "(not ready yet)"
+    t2 = time.time()
+    assert router.classify_task(POEM, clf)[1] == how      # the next message doesn't wait at all
+    assert t2 - t >= 0.9 and time.time() - t2 < 0.5 and started == []
+    go.set()
+    _wait_idle(clf)
+    assert clf.classify(CASES[1]["text"])[0] == "code" and started == [tmp_path / taskclf.GGUF_FILE]
+    clf.close(); s.shutdown(); s.server_close()
+
+
+def test_stalled_download_times_out_and_is_retried_later(tmp_path, monkeypatch):
+    monkeypatch.setattr(taskclf, "DOWNLOAD_TIMEOUT_S", 0.3)
+    go = threading.Event()
+    s = _file_server(go, monkeypatch)
+    clf, started = _clf([tmp_path])
+    how = router.classify_task(POEM, clf)[1]              # wait (5 s) is longer than the stall timeout
+    assert how.startswith(f"keyword fallback because download of {taskclf.GGUF_FILE} failed: ") and "retry in" in how
+    how = router.classify_task(POEM, clf)[1]
+    assert "retry in" in how and clf.thread is None and started == []   # not retried on every message ...
+    go.set()
+    clf.retry_at = 0                                      # ... but after RETRY_S, and then it works (resumed)
+    assert clf.classify(CASES[2]["text"])[0] == "translate" and started == [tmp_path / taskclf.GGUF_FILE]
+    assert (tmp_path / taskclf.GGUF_FILE).read_bytes() == b"GGUF fake"
+    clf.close(); s.shutdown(); s.server_close()
+
+
+def test_slow_server_start_is_retried_later(models):
+    calls = []
+
+    def start(gguf):
+        calls.append(gguf)
+        if len(calls) == 1:
+            raise taskclf.Retry(f"embedding server did not answer within {taskclf.START_TIMEOUT_S} s")
+        s, url = _serve(FakeEmbed)
+        return FakeProc(s), url
+    clf = taskclf.Classifier(dirs=[models], start=start)
+    assert "did not answer within 60 s; retry in" in router.classify_task(POEM, clf)[1]
+    assert "retry in" in router.classify_task(POEM, clf)[1] and len(calls) == 1
+    clf.retry_at = 0
+    assert clf.classify(CASES[1]["text"])[0] == "code" and len(calls) == 2
+    clf.close()
+
+
+def test_server_that_stops_answering_is_given_up(models):
+    class Hung(FakeEmbed):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            time.sleep(3)
+
+    procs = []
+
+    def start(gguf):
+        s, url = _serve(Hung)
+        procs.append(FakeProc(s))
+        return procs[-1], url
+    clf = taskclf.Classifier(dirs=[models], start=start, timeout=0.2)
+    hows = [router.classify_task(POEM, clf)[1] for _ in range(taskclf.MAX_FAILS)]
+    assert all("embedding failed: " in h for h in hows[:-1])
+    assert hows[-1].startswith(f"keyword fallback because embedding server stopped after {taskclf.MAX_FAILS} failures")
+    t = time.time()
+    assert router.classify_task(POEM, clf)[1] == hows[-1] and time.time() - t < 0.2   # no more timeouts to pay
+    assert clf.proc is None and procs[0].returncode == 0 and len(procs) == 1         # stopped, not restarted
 
 
 def test_gateway_reports_how_the_task_was_decided(models, tmp_path, monkeypatch):
