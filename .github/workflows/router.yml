@@ -1,0 +1,76 @@
+name: router
+# Issue #35: build the e5-small GGUF + the router head on a CPU runner, then measure the task router exactly as localllm
+# runs it (localllm/taskclf.py). Hugging Face models and datasets are only fetched here, never by the unit tests.
+on:
+  push:
+    branches: [claude/issue-35-embed-router]
+    paths: [tools/router/**, localllm/taskclf.py, localllm/router.py, localllm/pool.py, .github/workflows/router.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LLAMA_TAG: b11457        # the llama.cpp build the numbers in tools/router/README.md were measured with
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: llama.cpp ${{ env.LLAMA_TAG }} (prebuilt CPU llama-server + llama-quantize; source for the converter)
+        run: |
+          curl -sSfL -o llama.tar.gz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/llama-$LLAMA_TAG-bin-ubuntu-x64.tar.gz"
+          mkdir llama-bin && tar xzf llama.tar.gz -C llama-bin
+          echo "LOCALLLM_LLAMA_SERVER=$(find "$PWD/llama-bin" -name llama-server -type f | head -1)" >> "$GITHUB_ENV"
+          echo "LLAMA_QUANTIZE=$(find "$PWD/llama-bin" -name llama-quantize -type f | head -1)" >> "$GITHUB_ENV"
+          git clone -q --depth 1 --branch "$LLAMA_TAG" https://github.com/ggml-org/llama.cpp llama-src
+          lscpu | grep -E "^Model name|^CPU\(s\)|^Thread"
+      - name: Python packages (converter requirements, scikit-learn)
+        run: python -m pip install -q -r llama-src/requirements/requirements-convert_hf_to_gguf.txt scikit-learn huggingface_hub
+      - name: multilingual-e5-small -> GGUF Q8_0 (recipe in tools/router/README.md)
+        run: |
+          python - <<'EOF'
+          import glob, json, shutil
+          from huggingface_hub import snapshot_download
+          get = lambda pats: snapshot_download("intfloat/multilingual-e5-small", local_dir="e5-small", allow_patterns=pats)
+          get(["*.json", "*.safetensors", "sentencepiece.bpe.model"])
+          if not glob.glob("e5-small/*.safetensors"):
+              get(["pytorch_model.bin"])
+          shutil.copytree("e5-small", "e5-convert", ignore=shutil.ignore_patterns("onnx"))
+          c = json.load(open("e5-convert/config.json"))
+          print("HF config:", c.get("architectures"), "pad_token_id =", c.get("pad_token_id"))
+          c["architectures"] = ["XLMRobertaModel"]    # BERT body + XLM-R sentencepiece tokenizer
+          c.pop("pad_token_id", None)                 # keeping it would shift the position embeddings by one
+          json.dump(c, open("e5-convert/config.json", "w"), indent=2)
+          EOF
+          python llama-src/convert_hf_to_gguf.py e5-convert --outtype f16 --outfile e5-small-f16.gguf
+          mkdir -p lh/models
+          "$LLAMA_QUANTIZE" e5-small-f16.gguf lh/models/multilingual-e5-small-Q8_0.gguf Q8_0 > quantize.log 2>&1 || (tail -20 quantize.log; exit 1)
+          ls -la lh/models
+      - name: GGUF (llama.cpp, CPU) vs PyTorch embeddings
+        run: python tools/router/check_embed.py lh/models/multilingual-e5-small-Q8_0.gguf e5-small
+      - name: Training data from Hugging Face (build_data.py; generated.jsonl needs a local LLM and is not rebuilt here)
+        timeout-minutes: 40
+        run: python tools/router/build_data.py
+      - name: Train the head and export it (train_router.py --export)
+        run: python tools/router/train_router.py lh/models/multilingual-e5-small-Q8_0.gguf --export lh/models/router_head.json
+      - name: Measure the router as the package runs it (eval_package.py)
+        env:
+          LOCALLLM_HOME: ${{ github.workspace }}/lh
+        run: |
+          ls -la lh/models
+          python tools/router/eval_package.py --json router-eval.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: router-head
+          path: |
+            lh/models/router_head.json
+            router-eval.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multilingual-e5-small-Q8_0-gguf
+          path: lh/models/multilingual-e5-small-Q8_0.gguf
+          retention-days: 14

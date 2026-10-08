@@ -39,6 +39,7 @@ def _rows(ds, cfg, split, limit, offset):
             except Exception:
                 time.sleep(3 * (attempt + 1))
         else:
+            print(f"  gave up on {ds} {cfg} {split} at row {off}: keeping {len(out)} rows", flush=True)
             return out
         out += [r["row"] for r in d["rows"]]
         off += 100

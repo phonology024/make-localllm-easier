@@ -1,25 +1,42 @@
-"""Embed the router data with e5-small (llama.cpp), train a logistic-regression head, evaluate vs the keyword rules.
-usage: train_router.py MODEL.gguf [--ngl 0|99]"""
-import json, subprocess, sys, time, urllib.request
+"""Embed the router data with e5-small (llama.cpp), train a logistic-regression head, evaluate vs the keyword rules,
+and export the head the package loads (localllm/taskclf.py).
+
+usage: train_router.py MODEL.gguf [--ngl 0|99] [--server llama-server] [--data DIR] [--extra FILE ...]
+                       [--test shared_test.jsonl] [--export router_head.json]
+  --data    folder with train.jsonl + heldout.jsonl from build_data.py (default: data/ next to this script)
+  --extra   more training files, e.g. data/generated.jsonl from gen_data.py
+  --server  default: $LOCALLLM_LLAMA_SERVER, the maintainer's Vulkan build if present, else localllm's own llama.cpp
+"""
+import argparse, hashlib, json, os, subprocess, sys, time, urllib.request
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
-sys.path.insert(0, r"C:\Users\user\Projects\make-localllm-easier")
-from localllm import router  # noqa: E402
+D = Path(__file__).resolve().parent
+sys.path.insert(0, str(D.parents[1]))          # this repo, so `localllm` imports without installing it
+from localllm import router, runtime, taskclf  # noqa: E402
 
-D = Path(__file__).parent
-SERVER = r"C:\Users\user\tools\llama.cpp-b11457\vulkan\llama-server.exe"
 LABELS = ["general", "math", "code", "translate"]
-MODEL = sys.argv[1]
-NGL = sys.argv[sys.argv.index("--ngl") + 1] if "--ngl" in sys.argv else "0"
-PORT = 8099
+WIN_SERVER = r"C:\Users\user\tools\llama.cpp-b11457\vulkan\llama-server.exe"
+ORDERS = {"embedding only": ("embedding",), "keyword first + embedding": ("keyword", "embedding"),
+          "keyword rules alone": ("keyword",)}
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument("model")
+ap.add_argument("--ngl", default="0")
+ap.add_argument("--server", default=os.environ.get("LOCALLLM_LLAMA_SERVER") or (WIN_SERVER if Path(WIN_SERVER).exists() else None))
+ap.add_argument("--data", type=Path, default=D / "data")
+ap.add_argument("--extra", type=Path, nargs="*", default=[])
+ap.add_argument("--test", type=Path, default=D / "shared_test.jsonl")
+ap.add_argument("--export", type=Path, default=D / "router_head.json")
+A = ap.parse_args()
+PORT = taskclf._free_port()
 
 
-def load(name):
-    return [json.loads(l) for l in open(D / "data" / f"{name}.jsonl", encoding="utf-8")]
+def load(path):
+    return [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
 
 
 def post(texts):
@@ -29,32 +46,50 @@ def post(texts):
 
 
 def embed(recs, tag):
-    cache = D / "data" / f"emb-{tag}-{Path(MODEL).stem}.npy"
+    key = hashlib.sha1("\n".join(r["text"] for r in recs).encode()).hexdigest()[:8]   # new data -> new cache
+    cache = A.data / f"emb-{tag}-{Path(A.model).stem}-{key}.npy"
     if cache.exists():
         return np.load(cache)
     out = []
     t = time.time()
     for i in range(0, len(recs), 32):
-        out += post(["query: " + r["text"][:450] for r in recs[i:i + 32]])
+        out += post([taskclf.PREFIX + r["text"][:taskclf.MAX_CHARS] for r in recs[i:i + 32]])
     print(f"  embedded {len(recs)} {tag} texts in {time.time() - t:.1f}s")
     x = np.array(out, dtype=np.float32)
     x /= np.linalg.norm(x, axis=1, keepdims=True)
+    A.data.mkdir(parents=True, exist_ok=True)
     np.save(cache, x)
     return x
 
 
 def report(name, y, pred, recs):
     acc = 100 * np.mean(np.array(y) == np.array(pred))
-    per = {l: round(100 * np.mean([p == l for t, p in zip(y, pred) if t == l]), 1) for l in LABELS}
+    per = {l: round(float(100 * np.mean([p == l for t, p in zip(y, pred) if t == l])), 1) for l in LABELS if l in y}
     bylang = defaultdict(list)
     for t, p, r in zip(y, pred, recs):
-        bylang[r["lang"]].append(t == p)
-    worst = sorted(((round(100 * np.mean(v), 1), k, len(v)) for k, v in bylang.items()))[:4]
-    print(f"  {name:28} {acc:5.1f}%  per class {per}  weakest langs {worst}")
-    return acc
+        bylang[r.get("lang", "?")].append(t == p)
+    worst = sorted(((round(float(100 * np.mean(v)), 1), k, len(v)) for k, v in bylang.items()))[:4]
+    print(f"  {name:40} {acc:5.1f}%  per class {per}  weakest langs {worst}")
+    return round(float(acc), 1)
 
 
-srv = subprocess.Popen([SERVER, "-m", MODEL, "--embedding", "--pooling", "mean", "-ngl", NGL, "--port", str(PORT),
+def export_head(clf, model, **meta) -> dict:
+    """The JSON localllm/taskclf.py loads: softmax(coef . x/|x| + intercept) over `labels`."""
+    return {"labels": [str(c) for c in clf.classes_], "coef": clf.coef_.tolist(), "intercept": clf.intercept_.tolist(),
+            "model": Path(model).name, "prefix": taskclf.PREFIX, "max_chars": taskclf.MAX_CHARS, **meta}
+
+
+class Precomputed:
+    """taskclf.Classifier with the embeddings already computed: the shipped head math and combination code."""
+    def __init__(self, head, recs, x):
+        self.head, self.emb = head, {r["text"]: v for r, v in zip(recs, x.tolist())}
+
+    def classify(self, text):
+        return taskclf.predict(self.head, self.emb[text])
+
+
+server = A.server or str(runtime.find_server())
+srv = subprocess.Popen([server, "-m", A.model, "--embedding", "--pooling", "mean", "-ngl", A.ngl, "--port", str(PORT),
                         "-c", "8192", "-b", "8192", "-ub", "8192", "-np", "16"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     for _ in range(300):
@@ -62,7 +97,10 @@ try:
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=1); break
         except OSError:
             time.sleep(0.2)
-    train, held, test = load("train"), load("heldout"), load("shared_test")
+    train = load(A.data / "train.jsonl") + [r for f in A.extra for r in load(f)]
+    held, test = load(A.data / "heldout.jsonl"), load(A.test)
+    print(f"train {len(train)} {dict(Counter(r['label'] for r in train))}  extra: {[str(f) for f in A.extra] or 'none'}")
+    print(f"held-out {len(held)}, shared test {len(test)} ({A.test})")
     xtr, xho, xte = embed(train, "train"), embed(held, "heldout"), embed(test, "test")
     ytr, yho, yte = [r["label"] for r in train], [r["label"] for r in held], [r["label"] for r in test]
 
@@ -77,20 +115,25 @@ try:
     print(f"\nC={c}")
     report("held-out: embedding router", yho, clf.predict(xho), held)
     report("held-out: keyword rules", yho, [router.detect_task(r["text"]) for r in held], held)
-    report("shared test: embedding router", yte, clf.predict(xte), test)
-    report("shared test: keyword rules", yte, [router.detect_task(r["text"]) for r in test], test)
+    head = export_head(clf, A.model, C=c, train=dict(Counter(ytr)))
+    pc = Precomputed(head, test, xte)
+    same = sum(taskclf.predict(head, v)[0] == p for v, p in zip(xte.tolist(), clf.predict(xte)))
+    print(f"  package head math agrees with sklearn on {same}/{len(test)} shared-test messages")
+    shared = {name: report(f"shared test: {name}", yte, [router.classify_task(r["text"], pc, o)[0] for r in test], test)
+              for name, o in ORDERS.items()}
     wrong = [(r["lang"], r["label"], p, r["text"][:60]) for r, p in zip(test, clf.predict(xte)) if p != r["label"]]
-    print("\nshared-test mistakes:", *wrong, sep="\n  ")
+    print("\nshared-test mistakes (embedding only):", *wrong, sep="\n  ")
 
-    # single-message latency (what a user feels): embed one text + classify
+    # single-message latency (what a user feels): embed one text + classify with the package's head
     lat = []
     for r in test[:40]:
         t = time.perf_counter()
-        e = np.array(post(["query: " + r["text"][:450]])[0]); e /= np.linalg.norm(e)
-        clf.predict(e[None])
+        taskclf.predict(head, post([taskclf.PREFIX + r["text"][:taskclf.MAX_CHARS]])[0])
         lat.append(1000 * (time.perf_counter() - t))
-    print(f"\nlatency per message (ngl={NGL}): median {np.median(lat):.1f} ms, p95 {np.percentile(lat, 95):.1f} ms")
-    json.dump({"labels": list(clf.classes_), "coef": clf.coef_.tolist(), "intercept": clf.intercept_.tolist(),
-               "model": Path(MODEL).name, "prefix": "query: "}, open(D / "router_head.json", "w"))
+    print(f"\nlatency per message (ngl={A.ngl}, this training server): median {np.median(lat):.1f} ms, "
+          f"p95 {np.percentile(lat, 95):.1f} ms")
+    A.export.parent.mkdir(parents=True, exist_ok=True)
+    A.export.write_text(json.dumps({**head, "shared_test": shared}), encoding="utf-8")
+    print(f"head written to {A.export} ({A.export.stat().st_size / 1024:.1f} KB)")
 finally:
     srv.terminate()

@@ -6,7 +6,7 @@ from pathlib import Path
 from laya import Router
 
 D = Path(__file__).parent
-test = [json.loads(l) for l in open(D / "data" / "shared_test.jsonl", encoding="utf-8")]
+test = [json.loads(l) for l in open(D / "shared_test.jsonl", encoding="utf-8")]
 questions = {"task": {"type": "choice", "instructions": "What kind of task is the user's request? ประเภทของคำขอ",
                       "criteria": {
                           "general": "everyday questions, knowledge, advice, chat, creative or business writing; คำถามทั่วไป ความรู้ คำแนะนำ งานเขียน",
@@ -28,4 +28,5 @@ for p, r in zip(pred, test):
 lat.sort()
 print(f"Laya shared test: {acc:.1f}%  per class { {k: round(100 * sum(v) / len(v), 1) for k, v in per.items()} }")
 print(f"latency median {lat[len(lat) // 2]:.0f} ms, p95 {lat[int(len(lat) * .95)]:.0f} ms")
+(D / "data").mkdir(exist_ok=True)
 json.dump(pred, open(D / "data" / "laya_pred.json", "w"))

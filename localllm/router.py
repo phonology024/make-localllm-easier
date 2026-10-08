@@ -54,6 +54,29 @@ def detect_task(text: str) -> str:
     return "math" if len(re.findall(r"\d+", text)) >= 2 and MATH.search(text) else "general"
 
 
+# Who decides the task, in order. The keyword rules only commit when they find a translate/math cue; the embedding
+# classifier (taskclf) always answers. Shared test (tools/router, 144 messages, 15 languages): keyword rules first
+# 72.2%, embedding only 64.6%, keyword rules alone 56.9%.
+TASK_ORDER = ("keyword", "embedding")
+
+
+def classify_task(text: str, clf=None, order=TASK_ORDER) -> tuple[str, str]:
+    """(task, how): how = 'keyword', 'embedding p=0.87', or 'keyword fallback because <reason>' when the embedding
+    classifier `clf` (taskclf.Classifier) is missing or failed. clf=None means keyword rules only."""
+    from .taskclf import Unavailable
+    kw, failed = detect_task(text), None
+    for step in order:
+        if step == "keyword" and kw != "general":
+            break
+        if step == "embedding" and clf is not None:
+            try:
+                label, p = clf.classify(text)
+                return label, f"embedding p={p:.2f}"
+            except Unavailable as e:
+                failed = str(e)
+    return kw, f"keyword fallback because {failed}" if failed else "keyword"
+
+
 @dataclass
 class Provider:
     name: str
@@ -157,12 +180,15 @@ def decide(body: dict, path: str, cfg: dict | None = None) -> Decision:
 SWITCH_POINTS = 3.0   # swapping models costs seconds on one GPU: only switch for a clear accuracy gain
 
 
-def pick_local(text: str, keys: list[str], current: str | None, vram_gb: float, ram_free_gb: float = 0.0) -> tuple[str, str]:
-    """Smart local routing (0.6): the measured-best model for this message's language among `keys`, with hysteresis -
-    stay on the loaded model unless the other one scores >= SWITCH_POINTS higher. Returns (model key, reason)."""
+def pick_local(text: str, keys: list[str], current: str | None, vram_gb: float, ram_free_gb: float = 0.0,
+               clf=None) -> tuple[str, str]:
+    """Smart local routing (0.6): the measured-best model for this message's language and task among `keys`, with
+    hysteresis - stay on the loaded model unless the other one scores >= SWITCH_POINTS higher. The reason names the
+    language, the task and what decided it. clf: taskclf.Classifier, or None for keyword rules only.
+    Returns (model key, reason)."""
     from . import catalog
-    lang, task = detect_language(text), detect_task(text)
-    tag = lang if task == "general" else f"{lang} {task}"
+    lang, (task, how) = detect_language(text), classify_task(text, clf)
+    tag = f"{lang} {task} by {how}"
     best = catalog.pick(vram_gb, lang, ram_free_gb, candidates=keys, task=task) or current or keys[0]
     if current and best != current and current in keys:
         gain = catalog.score(best, lang, task) - catalog.score(current, lang, task)

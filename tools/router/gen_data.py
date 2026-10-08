@@ -1,14 +1,17 @@
 """Generate short, everyday-style requests per task class in many languages with the local LLM (gemma-4 via localllm).
-The shared test set is never shown to the model; exact duplicates of it are dropped. Output: data/generated.jsonl"""
+The shared test set is never shown to the model; exact duplicates of it are dropped. Output: data/generated.jsonl
+Needs a GPU that runs gemma-4 (not possible in CI). Model folders: $LOCALLLM_MODELS, else the maintainer's."""
 import json, os, random, re, sys, time, urllib.request
 from pathlib import Path
 
-sys.path.insert(0, r"C:\Users\user\Projects\make-localllm-easier")
-os.environ["LOCALLLM_MODELS"] = os.pathsep.join([r"C:\QUANT_FLEET_MASTER\08_Local_Creative_Core\models",
-                                                 r"C:\QUANT_FLEET_MASTER\08_Local_Creative_Core\models\candidates"])
+D = Path(__file__).resolve().parent
+sys.path.insert(0, str(D.parents[1]))          # this repo, so `localllm` imports without installing it
+WIN_MODELS = [r"C:\QUANT_FLEET_MASTER\08_Local_Creative_Core\models",
+              r"C:\QUANT_FLEET_MASTER\08_Local_Creative_Core\models\candidates"]
+if not os.environ.get("LOCALLLM_MODELS") and Path(WIN_MODELS[0]).exists():
+    os.environ["LOCALLLM_MODELS"] = os.pathsep.join(WIN_MODELS)
 from localllm import cli, runtime  # noqa: E402
 
-D = Path(__file__).parent
 LANGS = {"th": "Thai", "en": "English", "zh": "Simplified Chinese", "ja": "Japanese", "es": "Spanish", "fr": "French",
          "de": "German", "hi": "Hindi", "ar": "Arabic", "ko": "Korean", "vi": "Vietnamese", "id": "Indonesian",
          "pt": "Portuguese", "ru": "Russian", "tr": "Turkish"}
@@ -28,9 +31,10 @@ PROMPT = ("Write 12 different realistic messages that a user might send to an AI
 
 
 def main():
-    test = {json.loads(l)["text"] for l in open(D / "data" / "shared_test.jsonl", encoding="utf-8")}
+    test = {json.loads(l)["text"] for l in open(D / "shared_test.jsonl", encoding="utf-8")}
     server, _d, dev, _r = cli._machine()
     proc, url = cli._launch("gemma4-26b-a4b-qat", server, dev, 8192, runtime.ram_available_gb())
+    (D / "data").mkdir(exist_ok=True)
     out = open(D / "data" / "generated.jsonl", "w", encoding="utf-8")
     n = 0
     try:

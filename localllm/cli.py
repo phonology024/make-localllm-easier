@@ -106,8 +106,10 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None):
         resident = need <= dev["total_gb"]
         _say(f"all {len(keys)} models fit in VRAM together ({need:.1f} GB): no swaps" if resident else
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
+        from . import taskclf
+        clf = taskclf.Classifier(server)    # math/code/translate in any language; its server starts on the 1st message
         p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctx, ram_free), dev["total_gb"], ram_free, first, resident,
-                      files=None if resident else {k: _model_path(k) for k in keys})
+                      files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf)
         return _PoolProc(p, gateway.serve(p, port=port, model_name="localllm-auto")), f"http://127.0.0.1:{port}"
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:

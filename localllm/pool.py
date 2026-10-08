@@ -37,10 +37,12 @@ def prefetch(path: Path, stop: threading.Event, ram_free_gb=None) -> bool:
 
 class Pool:
     def __init__(self, keys: list[str], launch, vram_gb: float, ram_free_gb: float = 0.0, first: str | None = None,
-                 resident: bool = False, files: dict | None = None):
+                 resident: bool = False, files: dict | None = None, classifier=None):
         """launch(key) -> (Popen, url) starts a llama-server for `key` and returns once it is healthy.
-        files: {key: model path} to prefetch the models that aren't loaded (lazy mode only)."""
+        files: {key: model path} to prefetch the models that aren't loaded (lazy mode only).
+        classifier: taskclf.Classifier that tells the task (math, code, ...) when the keyword rules can't."""
         self.keys, self.launch, self.vram_gb, self.ram_free_gb = keys, launch, vram_gb, ram_free_gb
+        self.classifier = classifier
         self.files = files or {}
         self._stop_prefetch = threading.Event()
         self.prefetched: list[str] = []
@@ -78,7 +80,7 @@ class Pool:
         """Hold the GPU for one request: pick the model for it, swap if needed, yield (url, header label)."""
         with self.lock:
             key, why = router.pick_local(router._last_user(body), self.keys, None if self.loaded else self.current,
-                                         self.vram_gb, self.ram_free_gb)
+                                         self.vram_gb, self.ram_free_gb, self.classifier)
             label = f"{key} ({why})"
             if self.loaded:
                 self.current = key
@@ -90,5 +92,7 @@ class Pool:
 
     def close(self) -> None:
         self._stop_prefetch.set()
+        if self.classifier is not None:
+            self.classifier.close()
         for p, _url in self.loaded.values() or ([(self.proc, None)] if self.proc is not None else []):
             p.terminate()
