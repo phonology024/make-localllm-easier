@@ -1,14 +1,42 @@
 # Roadmap
 
-**North star: the leanest local AI.** Use the least CPU, system RAM and GPU memory, and the smallest model files that
-keep measured quality - beating other launchers on footprint, not just convenience. Where no published work answers a
-question, we run the experiment ourselves and publish the numbers.
+**North star: the most capability per GB of memory.** Two profiles make the trade-off explicit (#90):
+- **`lean`** (the default): the least CPU, system RAM and GPU memory, and the smallest model files that keep measured
+  quality - beating other launchers on footprint, not just convenience.
+- **`max`** (opt-in): use every GB the PC has for capability - MoE experts in system RAM, bigger context, long agent
+  sessions, the 100B+ routes of 0.9.
+Where no published work answers a question, we run the experiment ourselves and publish the numbers.
+
+Stretch goal: a 120B-class MoE that runs like our 27B (better measured quality at the same class of speed and
+VRAM <= 16 GB, with the RAM it needs stated honestly) - to our knowledge no one ships this yet (#82, #83). Reaching the
+27B's *lean* footprint is probably out of reach (about 1.6-1.9 bits per parameter after pruning); we measure to find out.
 
 Every release ships a before/after number measured on real hardware (one headline figure + a bar chart, e.g.
 "3x less RAM on the same chat"), so an upgrade is visible at a glance.
 
 Guiding principle (borrowed from how the Elysia web framework cut memory): **don't load, don't copy, don't run what
 isn't used** - skip unused model parts, share instead of duplicating caches, and specialise the launch per machine once.
+
+## Priorities (October 2026)
+Rule: at most **3 measurement items in flight** at a time (one test PC, one maintainer). Order is by "cheap and unlocks
+the rest" first. Nothing here is a promise of dates.
+
+**P0 - reach and unblock**
+1. (#81) README GIF, (#46) one-click install without Python, (#92) verify downloads
+2. (#73, #74) leaderboard data + website, (#94) success metrics
+3. (#75) `localllm connect` (OpenCode, Claude Code, Codex, Aider, Cline, Hermes)
+4. (#91) measurement runner (it makes every later item cheaper)
+
+**P1 - the answer to the big question, and the baselines it needs**
+5. (#49) KV cache comparison incl. TurboQuant, with (#93) the long-context suite
+6. (#82) measure a ~120B MoE on this PC (loads at all with 32 GB RAM? tok/s? quality vs the 27B?), (#90) profiles
+7. (#62, #65) code suites (needed by #85 and #88), (#77) agent workload, (#89) Obsidian connect, (#79) live status, (#95) llama.cpp bump process
+
+**P2 - after the numbers from P1**
+8. (#83) REAP pruning, (#85) test-time compute, (#88) harness ablation, (#76) chat workspace
+
+**Parked until a blocker clears:** (#84) SSD streaming (waits for #82/#83 and the upstream PR), (#86), (#87), (#71),
+(#32) sub-second switching, (#29) specialist pool incl. voice
 
 ## 0.1 - one command (released)
 - `localllm`: detect GPU/RAM, pick the most accurate measured model for your language, download, start a tuned
@@ -88,11 +116,11 @@ result at 3.5 bpw. Below ~3 bits the weights are effectively restructured, so ca
       Qwen3.5-2B and Gemma 4 E2B; files 8-22% smaller, decode +8-12% on CPU. Next: GPU speed/VRAM and benchmark
       accuracy on the catalog models, then a `localllm` option
 - [ ] KV cache at 2-3 bit with rotation (TurboQuant `turbo2/turbo3`, in llama.cpp forks, ~4x smaller KV reported): KLD per
-      language + long agent-style context vs `q8_0`, ship as opt-in only if the quality floor holds (#69)
+      language + long agent-style context vs `q8_0`, ship as opt-in only if the quality floor holds (#49)
 - [ ] Distillation recovery for 2-3 bit quants (QAD with an Q8/BF16 teacher, mixed multilingual set), small model first;
-      ParetoQ says below 3 bit the weights change, so this is where calibration stops helping (#70)
+      ParetoQ says below 3 bit the weights change, so this is where calibration stops helping (#26)
 - [ ] Watch-list, blocked on llama.cpp support: QTIP / lattice vector quantization at 2 bit, lossless BF16 weight
-      compression (DFloat11/ZipNN, mostly a download-size win) (#71)
+      compression (DFloat11/ZipNN/MPEG NNC, mostly a download-size win) (#71); QTIP is tracked in #25
 - [ ] Publish every measured quant with its per-language scores on Hugging Face
 
 ## 0.6 - smart router: the right local model for each message (Laya-style)
@@ -164,8 +192,15 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
       `sitemap.xml`, Search Console (same recipe as babelscribe)
 - [ ] (#79) Live footprint/spill status in chat and the UI, not only a warning at start-up
 - [ ] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
-- [ ] (#78) Local voice -> text -> LLM pipeline with babelscribe, Thai first: one VRAM budget for both
-- Not doing: a full desktop GUI against LM Studio; chasing 2-bit/QTIP/NNC formats before the measurements (#69-#71) say
+- [ ] (#29) Local voice -> text -> LLM pipeline with babelscribe, Thai first (speech slot of the specialist pool): one VRAM budget for both
+- [ ] (#90) Two profiles: `lean` (default) and `max`
+- [ ] (#91) Measurement runner: a queue of benchmark jobs that runs overnight
+- [ ] (#92) Verify downloads: checksum llama.cpp builds and model files
+- [ ] (#93) Long-context quality suite per language (needle / RULER-style)
+- [ ] (#94) Success metrics for this section: stars, PyPI downloads, reports received
+- [ ] (#95) llama.cpp upgrade process: smoke test before bumping, flag stale scores
+- [ ] (#46) One-click install for people without Python (winget, Homebrew, AppImage)
+- Not doing: a full desktop GUI against LM Studio; widening the core focus (AMD/Intel Vulkan on Windows, Thai/SEA) - other hardware comes from community reports via #73; chasing 2-bit/QTIP/NNC formats before the measurements (#49, #26, #25, #71) say
   they help; widening to every backend and language - the niche is the point
 
 ## 0.9 - big models on a small card (research)
@@ -173,7 +208,7 @@ Goal: the quality of a 70B-300B model on 16 GB of VRAM (our PC: 16 GB + 32 GB RA
 there. Honest starting point: weights cost bytes, so quantization alone cannot do it without losing quality (a dense 70B
 is ~14 GB only at 1.58 bit). The levers, with sources and arithmetic, are in [docs/research-big-models.md](docs/research-big-models.md):
 MoE expert offload, expert pruning + quantization, SSD expert streaming, test-time compute, and a harness. KV-cache
-compression (#69) stacks with all of them because long context is where the KV cache runs out of memory.
+compression (#49) stacks with all of them because long context is where the KV cache runs out of memory.
 
 - [ ] (#82) Measure a ~120B MoE with `--n-cpu-moe` and the expert cache on 16 GB VRAM + 32 GB RAM: the real floor
 - [ ] (#83) REAP expert pruning + 3-4 bit so a 100-235B MoE fits 48 GB, scored per language (pruning can drop a language)

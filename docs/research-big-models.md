@@ -94,5 +94,5 @@ verification loop, so that is something we would measure ourselves.
 2. REAP-pruned 100-120B MoE at 3-4 bit that fits 48 GB, scored per language (#83).
 3. Small model + verifier on checkable tasks vs the big model, per language and per second of wall time (#85).
 4. SSD expert streaming for 235B-300B, after #82/#83 (#84).
-5. KV cache compression (#69) stacks with all of the above: long context is where the KV cache, not the weights, runs
+5. KV cache compression (#49) stacks with all of the above: long context is where the KV cache, not the weights, runs
    out of memory.
