@@ -42,8 +42,11 @@ coverage says it works with llama.cpp through a custom OpenAI-style endpoint, wh
 for us (details from the project's own site and secondary write-ups; check its docs before relying on any of it):
 - We do not need to rebuild it. The plan is `localllm connect hermes` (same as OpenCode/Aider), then measure it on our
   local models, and build our own loop only for what it lacks (RAM-aware context limits, footprint, per-language routing).
-- Native Windows is reported as unsupported (use WSL2); our test PC is Windows. Tool execution is risky without
-  approvals or container isolation.
+- Windows: its own page lists a PowerShell installer for native Windows (an earlier secondary source said WSL2 only;
+  the project's page is the better source), and warns that antivirus may quarantine the bundled `uv.exe` (documented as a
+  false positive). Tool execution is risky without approvals or container isolation.
+- It is a general agent with a large surface (messaging gateway, 40-60+ tools, cron, subagents). The page reports no
+  benchmarks and gives no guidance for small local models or minimum context, which is where we can compete.
 - Self-written skills can drift in the wrong direction over time ("skill misevolution", [arXiv 2608.12851](https://arxiv.org/pdf/2608.12851)),
   so keep skills reviewable and under version control.
 - Worth borrowing in our own loop: skills and memory as plain Markdown files the user can read and edit.

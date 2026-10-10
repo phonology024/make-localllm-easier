@@ -33,7 +33,7 @@ the rest" first. Nothing here is a promise of dates.
 7. (#62, #65) code suites (needed by #85 and #88), (#77) agent workload, (#89) Obsidian connect, (#79) live status, (#95) llama.cpp bump process
 
 **P2 - after the numbers from P1**
-8. (#83) REAP pruning, (#85) test-time compute, (#88) harness ablation, (#76) chat workspace
+8. (#83) REAP pruning, (#85) test-time compute, (#88) harness ablation, (#96) head-to-head benchmark vs Hermes, (#76) chat workspace
 
 **Parked until a blocker clears:** (#84) SSD streaming (waits for #82/#83 and the upstream PR), (#86), (#87), (#71),
 (#32) sub-second switching, (#29) specialist pool incl. voice
@@ -216,6 +216,7 @@ compression (#49) stacks with all of them because long context is where the KV c
 - [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
 - [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
 - [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
+- [ ] (#96) **Goal: beat Hermes Agent on local models** - public head-to-head (Hermes vs OpenCode vs Aider vs ours, same model, pass/fail fixed in advance); we win on performance per GB, not breadth
 - [ ] (#88) Harness: measure Hermes Agent / OpenCode / Aider on our local models, and an Anthropic-style planner/generator/evaluator loop with ablations (which part pays off on a small model); own loop only for what they lack
 - [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins), own plugin only if needed
 - Optional add-ons never change the base install; what each costs you is in [docs/addons.md](docs/addons.md)
