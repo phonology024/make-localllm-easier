@@ -168,6 +168,23 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
 - Not doing: a full desktop GUI against LM Studio; chasing 2-bit/QTIP/NNC formats before the measurements (#69-#71) say
   they help; widening to every backend and language - the niche is the point
 
+## 0.9 - big models on a small card (research)
+Goal: the quality of a 70B-300B model on 16 GB of VRAM (our PC: 16 GB + 32 GB RAM), or small models that together get
+there. Honest starting point: weights cost bytes, so quantization alone cannot do it without losing quality (a dense 70B
+is ~14 GB only at 1.58 bit). The levers, with sources and arithmetic, are in [docs/research-big-models.md](docs/research-big-models.md):
+MoE expert offload, expert pruning + quantization, SSD expert streaming, test-time compute, and a harness. KV-cache
+compression (#69) stacks with all of them because long context is where the KV cache runs out of memory.
+
+- [ ] (#82) Measure a ~120B MoE with `--n-cpu-moe` and the expert cache on 16 GB VRAM + 32 GB RAM: the real floor
+- [ ] (#83) REAP expert pruning + 3-4 bit so a 100-235B MoE fits 48 GB, scored per language (pruning can drop a language)
+- [ ] (#84) SSD expert streaming with predictive prefetch for 235B-300B-class MoE (least mature, only route to 300B here)
+- [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
+- [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
+- [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
+- [ ] (#88) Harness: opt-in agent loop for small local models; ship only if it beats OpenCode/Aider on our numbers
+- [ ] (#89) Obsidian: `localllm connect obsidian` first (existing plugins), own plugin only if needed
+- Optional add-ons never change the base install; what each costs you is in [docs/addons.md](docs/addons.md)
+
 ## Later
 - Shared prefix cache (block/radix, like vLLM/SGLang) instead of per-slot prompt copies - needs llama.cpp work
 - More measured GPUs: `localllm eval` results from contributors feed the catalog

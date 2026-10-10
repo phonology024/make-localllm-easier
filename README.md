@@ -56,6 +56,14 @@ Qwen3.8-27B Q3 in Hindi (+4.7), Arabic (+2.9), Japanese (+1.6) and Thai (+1.5); 
 buffers in a 256 MB host-visible heap backed by system RAM and decode drops up to 1.7x. `localllm` sets
 `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` for you ([llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097)).
 
+**Can it run a 70B-300B model on a 16 GB GPU?** Not by quantization alone without losing quality: a dense 70B is ~14 GB
+only at 1.58 bit, and our own 2-bit results already cost 8-13 points. The realistic routes are MoE models with the experts
+in system RAM, expert pruning, SSD expert streaming and test-time compute. We are measuring them, none is shipped yet:
+[docs/research-big-models.md](docs/research-big-models.md) and ROADMAP 0.9.
+
+**Is there a harness or an Obsidian plugin?** Not yet. Both are planned as optional add-ons that never touch the base
+install, with what each costs you spelled out in [docs/addons.md](docs/addons.md).
+
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, Ctrl+C stops an answer.
 
