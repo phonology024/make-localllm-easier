@@ -56,12 +56,10 @@ first month of #94); one before/after headline number (RAM 4x, `tune` 2.5x alrea
 **1.1** agents: (#97) cost saver under Hermes/OpenCode/Aider, (#96) head-to-head benchmark. **1.2** (#82) the 120B-class
 measurement and whatever it supports; harness, chat workspace and Obsidian plugin follow the measurements.
 
-## Test lab and funding
-Money is not the first bottleneck; hardware we don't own is. Cheapest first: free vendor credits and loans, a crowdsourced
-lab via `localllm report`, then a small cloud-rental matrix (about $200-300 for NVIDIA, Apple Silicon and an AMD Instinct
-pass; cloud does not offer consumer Radeon or much Intel) - (#101). Big clouds: only AWS has an open-source credits program (Microsoft and Google need a company); Azure and AWS offer workstation Radeon VMs and AWS offers Mac instances for testing; every sponsor is disclosed and none sees results before publication. Bigger options (vendor partnership, certified
-benchmarks, on-prem consulting, grants, and why hosted GPU inference is probably a bad fit) are in (#102); decide the
-legal holder (#100) before any money arrives.
+## Test lab
+Hardware we don't own is the bottleneck for measurements. Cheapest first: a crowdsourced lab via `localllm report`, then a
+small cloud-rental matrix for NVIDIA and Apple Silicon (about $200-300, #101). Cloud has little consumer Radeon or Intel,
+so those come from community reports.
 
 ## 0.1 - one command (released)
 - `localllm`: detect GPU/RAM, pick the most accurate measured model for your language, download, start a tuned
