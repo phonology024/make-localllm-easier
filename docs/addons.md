@@ -20,7 +20,20 @@ a checker) is where small models gain the most. See [research-big-models.md](res
 | Everything stays on your PC; tool use runs inside the sandbox | Does not make a small model know more. On open knowledge questions the gain is small or none |
 | Same endpoint as everything else, so `localllm connect` tools can use it | More RAM/VRAM pressure from long contexts (the KV cache grows every step) |
 | We publish measured before/after numbers per language | A tool-using agent can run commands; it must stay sandboxed and ask before touching files |
-| | One more thing to maintain; if it does not beat existing agents (OpenCode, Aider) on our measurements, we will not ship it |
+| | One more thing to maintain; if it does not beat existing agents (OpenCode, Aider, Hermes Agent) on our measurements, we will not ship it |
+
+**Existing harnesses first.** [Hermes Agent](https://github.com/nousresearch/hermes-agent) (Nous Research) is the one
+people point at local models: an agent loop with persistent memory, skills it writes for itself as Markdown files
+(agentskills.io format), cross-session search, and several terminal backends (local, Docker, SSH, ...). Third-party
+coverage says it works with llama.cpp through a custom OpenAI-style endpoint, which is what we serve. What that means
+for us (details from the project's own site and secondary write-ups; check its docs before relying on any of it):
+- We do not need to rebuild it. The plan is `localllm connect hermes` (same as OpenCode/Aider), then measure it on our
+  local models, and build our own loop only for what it lacks (RAM-aware context limits, footprint, per-language routing).
+- Native Windows is reported as unsupported (use WSL2); our test PC is Windows. Tool execution is risky without
+  approvals or container isolation.
+- Self-written skills can drift in the wrong direction over time ("skill misevolution", [arXiv 2608.12851](https://arxiv.org/pdf/2608.12851)),
+  so keep skills reviewable and under version control.
+- Worth borrowing in our own loop: skills and memory as plain Markdown files the user can read and edit.
 
 ## Obsidian integration - #89
 

@@ -146,7 +146,7 @@ Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so
       RAM readout from `doctor`, no cloud assets or telemetry
 - [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
       API key, still refuses to listen on the network without it
-- [ ] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline): write the tool's config to point at the
+- [ ] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline, hermes): write the tool's config to point at the
       local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`
 - [ ] (#77) Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
       context, defaults vs our tuned profile (same method as the 0.2 chat test)
@@ -181,8 +181,8 @@ compression (#69) stacks with all of them because long context is where the KV c
 - [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
 - [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
 - [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
-- [ ] (#88) Harness: opt-in agent loop for small local models; ship only if it beats OpenCode/Aider on our numbers
-- [ ] (#89) Obsidian: `localllm connect obsidian` first (existing plugins), own plugin only if needed
+- [ ] (#88) Harness: connect Hermes Agent / OpenCode / Aider first and measure them on our local models; own loop only for what they lack
+- [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins), own plugin only if needed
 - Optional add-ons never change the base install; what each costs you is in [docs/addons.md](docs/addons.md)
 
 ## Later
