@@ -38,6 +38,31 @@ the rest" first. Nothing here is a promise of dates.
 **Parked until a blocker clears:** (#84) SSD streaming (waits for #82/#83 and the upstream PR), (#86), (#87), (#71),
 (#32) sub-second switching, (#29) specialist pool incl. voice
 
+## 1.0 - release 1: a promise, trust, reach (milestone "1.0")
+1.0 is not "everything done"; it is "this part is stable, safe and provable". Research items stay in 1.x.
+
+**In 1.0**
+- Promise: (#98) stability contract and deprecation policy for the CLI, API, report schema, catalog and config
+- Trust: (#92) verified downloads, (#79) live footprint/spill status, (#80) docs can't drift from real output, (#95) llama.cpp upgrade process
+- Easy: (#46) install without Python, (#90) lean/max profiles (flag + `doctor` shows both)
+- Reach: (#75) `localllm connect` (incl. Hermes), (#73, #74) leaderboard data and website, (#81) README GIF
+- Honest platform matrix: (#99) tested by maintainers vs community-tested vs untested; Windows + AMD is the tested one today
+- Housekeeping: (#100) decide the copyright holder in LICENSE
+
+**Release gate (proposed)**: no known bug that loses data or stops a normal run; 30 days without a breaking change to the
+stable surface; `localllm report` results from people outside the project on hardware we don't own (minimum set from the
+first month of #94); one before/after headline number (RAM 4x, `tune` 2.5x already measured).
+
+**1.1** agents: (#97) cost saver under Hermes/OpenCode/Aider, (#96) head-to-head benchmark. **1.2** (#82) the 120B-class
+measurement and whatever it supports; harness, chat workspace and Obsidian plugin follow the measurements.
+
+## Test lab and funding
+Money is not the first bottleneck; hardware we don't own is. Cheapest first: free vendor credits and loans, a crowdsourced
+lab via `localllm report`, then a small cloud-rental matrix (about $200-300 for NVIDIA, Apple Silicon and an AMD Instinct
+pass; cloud does not offer consumer Radeon or much Intel) - (#101). Bigger options (vendor partnership, certified
+benchmarks, on-prem consulting, grants, and why hosted GPU inference is probably a bad fit) are in (#102); decide the
+legal holder (#100) before any money arrives.
+
 ## 0.1 - one command (released)
 - `localllm`: detect GPU/RAM, pick the most accurate measured model for your language, download, start a tuned
   llama-server, open the chat page
