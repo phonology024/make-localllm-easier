@@ -141,16 +141,32 @@ whatever models it is given. Ours should be that, but fully local: your GPU, you
 llama-server's chat page has none of the session, model-switching or LAN-login pieces, and coding agents (OpenCode,
 Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so they are also the best RAM/context test.
 
-- [ ] `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
+- [ ] (#76) `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
       files), a model picker fed by the catalog and the router (`X-Localllm-Model` shown per answer), per-model speed and
       RAM readout from `doctor`, no cloud assets or telemetry
 - [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
       API key, still refuses to listen on the network without it
-- [ ] `localllm connect <tool>` (opencode, claude-code, codex, aider, cline): write the tool's config to point at the
+- [ ] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline): write the tool's config to point at the
       local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`
-- [ ] Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
+- [ ] (#77) Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
       context, defaults vs our tuned profile (same method as the 0.2 chat test)
-- [ ] README: a short terminal GIF and the RAM-over-30-turns bar chart at the top, so the result is visible at a glance
+- [x] README: the RAM-over-30-turns bar chart at the top (`docs/img/ram-30-turns.png`)
+- [ ] (#81) README: a short terminal GIF at the top
+
+## 0.8 - reach and trust: be the local-LLM chooser that tells the truth
+Positioning: Ollama, LM Studio and plain llama.cpp users complain about silent defaults - small context, many slots eating
+RAM, a model spilling out of VRAM and getting slow with no message. Our edge is not the launcher code (easy to copy) but
+the **measured data**: per language, per GPU, with footprint numbers. Niche we already own: AMD/Intel via Vulkan on
+Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not features.
+
+- [ ] (#73) Leaderboard data: turn `localllm report` JSONs (already exist) into one validated public dataset
+- [ ] (#74) Website on GitHub Pages: per-language / per-GPU leaderboard + landing pages for the README FAQ questions,
+      `sitemap.xml`, Search Console (same recipe as babelscribe)
+- [ ] (#79) Live footprint/spill status in chat and the UI, not only a warning at start-up
+- [ ] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
+- [ ] (#78) Local voice -> text -> LLM pipeline with babelscribe, Thai first: one VRAM budget for both
+- Not doing: a full desktop GUI against LM Studio; chasing 2-bit/QTIP/NNC formats before the measurements (#69-#71) say
+  they help; widening to every backend and language - the niche is the point
 
 ## Later
 - Shared prefix cache (block/radix, like vLLM/SGLang) instead of per-slot prompt copies - needs llama.cpp work
