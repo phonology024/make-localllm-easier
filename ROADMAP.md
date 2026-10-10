@@ -87,6 +87,12 @@ result at 3.5 bpw. Below ~3 bits the weights are effectively restructured, so ca
       vocabulary with identical tokenization and the same top-1 next token at 100% of positions on Qwen3-0.6B,
       Qwen3.5-2B and Gemma 4 E2B; files 8-22% smaller, decode +8-12% on CPU. Next: GPU speed/VRAM and benchmark
       accuracy on the catalog models, then a `localllm` option
+- [ ] KV cache at 2-3 bit with rotation (TurboQuant `turbo2/turbo3`, in llama.cpp forks, ~4x smaller KV reported): KLD per
+      language + long agent-style context vs `q8_0`, ship as opt-in only if the quality floor holds (#69)
+- [ ] Distillation recovery for 2-3 bit quants (QAD with an Q8/BF16 teacher, mixed multilingual set), small model first;
+      ParetoQ says below 3 bit the weights change, so this is where calibration stops helping (#70)
+- [ ] Watch-list, blocked on llama.cpp support: QTIP / lattice vector quantization at 2 bit, lossless BF16 weight
+      compression (DFloat11/ZipNN, mostly a download-size win) (#71)
 - [ ] Publish every measured quant with its per-language scores on Hugging Face
 
 ## 0.6 - smart router: the right local model for each message (Laya-style)
@@ -128,6 +134,23 @@ strong-model calls.
       vision (MaXM, 7 languages incl. Thai, `--suites vision`, with `--vision` image input in all four APIs),
       translation (FLORES-101, 101 languages, chrF++ identical to sacreBLEU, `--suites translate`)
 - [x] Show which model answered and why (`X-Localllm-Model`, shown in `localllm chat`); override with `--model`
+
+## 0.7 - a local chat workspace and agent hookup (idea from OpenCode's `opencode serve`)
+Idea: OpenCode's `serve` opens a session-based web UI (session list, model picker, settings, server password) on top of
+whatever models it is given. Ours should be that, but fully local: your GPU, your files, nothing leaves the PC. Plain
+llama-server's chat page has none of the session, model-switching or LAN-login pieces, and coding agents (OpenCode,
+Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so they are also the best RAM/context test.
+
+- [ ] `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
+      files), a model picker fed by the catalog and the router (`X-Localllm-Model` shown per answer), per-model speed and
+      RAM readout from `doctor`, no cloud assets or telemetry
+- [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
+      API key, still refuses to listen on the network without it
+- [ ] `localllm connect <tool>` (opencode, claude-code, codex, aider, cline): write the tool's config to point at the
+      local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`
+- [ ] Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
+      context, defaults vs our tuned profile (same method as the 0.2 chat test)
+- [ ] README: a short terminal GIF and the RAM-over-30-turns bar chart at the top, so the result is visible at a glance
 
 ## Later
 - Shared prefix cache (block/radix, like vLLM/SGLang) instead of per-slot prompt copies - needs llama.cpp work
