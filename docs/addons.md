@@ -22,6 +22,19 @@ a checker) is where small models gain the most. See [research-big-models.md](res
 | We publish measured before/after numbers per language | A tool-using agent can run commands; it must stay sandboxed and ask before touching files |
 | | One more thing to maintain; if it does not beat existing agents (OpenCode, Aider, Hermes Agent) on our measurements, we will not ship it |
 
+**Reference design: Anthropic's long-running-app harness.** The post [Harness design for long-running application
+development](https://www.anthropic.com/engineering/harness-design-long-running-apps) (Anthropic Labs, March 2026) describes
+three roles: a *planner* that expands a short prompt into a spec, a *generator* that builds one feature (sprint) at a time,
+and a separate *evaluator* that tests the running result and sends failures back. Techniques worth copying: a "sprint
+contract" (agree what "done" means and how it is verified before coding), hand-offs through files, context *resets* with
+a structured hand-off instead of in-place summaries, and a skeptical evaluator calibrated with examples. Their numbers:
+a solo run took 20 min / $9 and its main feature did not work; the full harness took 6 h / $200 and produced a playable
+game, i.e. over 20x the cost for visibly better quality. Their own lesson: "every component in a harness encodes an
+assumption about what the model can't do on its own", so test each component and remove the ones that stopped paying off.
+The post tests Claude models only, not small ones. For local models it suggests two things we will measure rather than
+assume: weaker models probably need *more* scaffolding, and an evaluator is worth it when the task is beyond what the
+model does reliably alone. Context resets also fit our footprint goal: a fresh context means a small KV cache.
+
 **Existing harnesses first.** [Hermes Agent](https://github.com/nousresearch/hermes-agent) (Nous Research) is the one
 people point at local models: an agent loop with persistent memory, skills it writes for itself as Markdown files
 (agentskills.io format), cross-session search, and several terminal backends (local, Docker, SSH, ...). Third-party

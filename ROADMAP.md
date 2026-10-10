@@ -181,7 +181,7 @@ compression (#69) stacks with all of them because long context is where the KV c
 - [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
 - [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
 - [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
-- [ ] (#88) Harness: connect Hermes Agent / OpenCode / Aider first and measure them on our local models; own loop only for what they lack
+- [ ] (#88) Harness: measure Hermes Agent / OpenCode / Aider on our local models, and an Anthropic-style planner/generator/evaluator loop with ablations (which part pays off on a small model); own loop only for what they lack
 - [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins), own plugin only if needed
 - Optional add-ons never change the base install; what each costs you is in [docs/addons.md](docs/addons.md)
 
