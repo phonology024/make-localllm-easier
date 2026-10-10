@@ -30,7 +30,7 @@ the rest" first. Nothing here is a promise of dates.
 **P1 - the answer to the big question, and the baselines it needs**
 5. (#49) KV cache comparison incl. TurboQuant, with (#93) the long-context suite
 6. (#82) measure a ~120B MoE on this PC (loads at all with 32 GB RAM? tok/s? quality vs the 27B?), (#90) profiles
-7. (#62, #65) code suites (needed by #85 and #88), (#77) agent workload, (#89) Obsidian connect, (#79) live status, (#95) llama.cpp bump process
+7. (#97) cost saver for agents (after #75), (#62, #65) code suites (needed by #85 and #88), (#77) agent workload, (#89) Obsidian connect, (#79) live status, (#95) llama.cpp bump process
 
 **P2 - after the numbers from P1**
 8. (#83) REAP pruning, (#85) test-time compute, (#88) harness ablation, (#96) head-to-head benchmark vs Hermes, (#76) chat workspace
@@ -216,6 +216,7 @@ compression (#49) stacks with all of them because long context is where the KV c
 - [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
 - [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
 - [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
+- [ ] (#97) **Cost saver for agents**: local-first routing under Hermes/OpenCode/Aider with a savings meter, own API key only (Anthropic bans subscription logins in third-party tools since April 2026; Hermes users now pay API rates) - the faster route to reach
 - [ ] (#96) **Goal: beat Hermes Agent on local models** - public head-to-head (Hermes vs OpenCode vs Aider vs ours, same model, pass/fail fixed in advance); we win on performance per GB, not breadth
 - [ ] (#88) Harness: measure Hermes Agent / OpenCode / Aider on our local models, and an Anthropic-style planner/generator/evaluator loop with ablations (which part pays off on a small model); own loop only for what they lack
 - [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins), own plugin only if needed
