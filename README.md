@@ -16,6 +16,8 @@ That's it. `localllm` checks your GPU and RAM, picks the most accurate model we 
 fits your card, downloads llama.cpp and the model, starts it with settings profiled op by op, and opens the chat page.
 You also get an OpenAI-compatible API at `http://127.0.0.1:8080/v1` for any app that speaks it. Offline, private, free.
 
+![Same 30-turn chat: llama.cpp defaults use about 9 GB of system RAM, localllm about 2.3 GB](docs/img/ram-30-turns.png)
+
 ```
 localllm chat       # chat right here in the terminal (Thai, Japanese, any language)
 localllm doctor     # what this GPU is good for: model sizes, speed, how much text it can hold
@@ -54,6 +56,14 @@ Qwen3.8-27B Q3 in Hindi (+4.7), Arabic (+2.9), Japanese (+1.6) and Thai (+1.5); 
 buffers in a 256 MB host-visible heap backed by system RAM and decode drops up to 1.7x. `localllm` sets
 `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` for you ([llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097)).
 
+**Can it run a 70B-300B model on a 16 GB GPU?** Not by quantization alone without losing quality: a dense 70B is ~14 GB
+only at 1.58 bit, and our own 2-bit results already cost 8-13 points. The realistic routes are MoE models with the experts
+in system RAM, expert pruning, SSD expert streaming and test-time compute. We are measuring them, none is shipped yet:
+[docs/research-big-models.md](docs/research-big-models.md) and ROADMAP 0.9.
+
+**Is there a harness or an Obsidian plugin?** Not yet. Both are planned as optional add-ons that never touch the base
+install, with what each costs you spelled out in [docs/addons.md](docs/addons.md).
+
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, Ctrl+C stops an answer.
 
@@ -89,14 +99,21 @@ Model sizes for this PC (whole model on the GPU = fast):
   [OK  ] 24-32B                   Q3 13.2 GB  ~29 tok/s (est.)
   [SLOW] 30B MoE (3B active)      Q4 18.0 GB with experts in RAM - works, ~10-25 tok/s
   [NO  ] 70B                      needs ~42.0 GB - too big for this PC
+  [NO  ] 120B MoE (10B active)    needs ~72.0 GB - too big for this PC
 
 Best measured model for you: gemma4-26b-a4b-qat  (MoE with ~4B active params: fastest)
 What it can do here:
+  EN  translated world-knowledge exam   82.2% correct
+  EN  grade-school math word problems   96.8% correct
+  TH  grade-school math word problems   89.6% correct  <- your language
   TH  real local school/licence exams   65.7% correct  <- your language
+  TH  translation to/from English       55.6 chrF++ (0-100)  <- your language
+  also measured in ar, es, hi, ja, zh (`localllm list`)
   holds ~78k tokens at once (~130 pages of text) next to the model
-  uses ~34.7 GB of system RAM: ~0.3 GB embeddings/CPU-mapped + ~8.0 GB prompt cache + ~25.9 GB ctx checkpoints + ~0.5 GB host (est.)
-  leaves ~0 GB of RAM free for other apps (est.)
-  answers at ~85 tok/s
+  uses ~2.2 GB of system RAM: ~0.3 GB embeddings/CPU-mapped + ~1.0 GB prompt cache + ~0.4 GB ctx checkpoints + ~0.5 GB host (est.)
+  leaves ~15 GB of RAM free for other apps (est.)
+  answers at ~90 tok/s
+  speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
 ```
 
 Speeds marked *est.* come from your card's memory bandwidth, calibrated on measured runs. Everything else is measured.
