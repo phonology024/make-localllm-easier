@@ -76,6 +76,21 @@ def test_responses_api_is_passed_through_for_codex(monkeypatch):
     g.shutdown(); up.shutdown()
 
 
+def test_status_endpoint(monkeypatch):
+    up, uurl = _up()
+    g = gateway.serve(uurl, port=0, model_name="test-model", status=lambda: {"loaded": True, "ram_gb": 2.0})
+    d = json.load(urllib.request.urlopen(f"http://127.0.0.1:{g.server_address[1]}/localllm/status", timeout=10))
+    assert d == {"model": "test-model", "loaded": True, "ram_gb": 2.0}
+    g.shutdown()
+    g, gurl = _gw(uurl)                                    # no status callable: 404, not passed to llama-server
+    try:
+        urllib.request.urlopen(gurl + "/localllm/status", timeout=10)
+        assert False
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
+    g.shutdown(); up.shutdown()
+
+
 def test_ollama_chat_non_stream_and_stream(monkeypatch):
     monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
     up, uurl = _up(); g, gurl = _gw(uurl)

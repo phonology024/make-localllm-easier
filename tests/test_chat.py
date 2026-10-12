@@ -75,3 +75,41 @@ def test_save_to_bad_path_reports_instead_of_crashing(monkeypatch, capsys):
     chat.repl(url)
     srv.shutdown()
     assert "could not save" in capsys.readouterr().out
+
+
+class StatusServer(BaseHTTPRequestHandler):
+    spill = 0.4
+
+    def do_GET(self):
+        if self.path == "/localllm/status":
+            b = json.dumps({"model": "m", "loaded": True, "running": "gemma4-26b-a4b-qat", "vram_gb": 13.1,
+                            "ram_gb": 2.2, "spill_gb": StatusServer.spill, "spill_warn_gb": 1.5}).encode()
+        elif self.path == "/props":
+            b = json.dumps({"default_generation_settings": {"n_ctx": 8192}}).encode()
+        else:
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+
+    def log_message(self, *a):
+        pass
+
+
+def test_status_shows_memory_spill_context_and_speed():
+    srv = HTTPServer(("127.0.0.1", 0), StatusServer)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_port}"
+    lines = chat.status_lines(url, {"cache_n": 1000, "prompt_n": 48, "predicted_n": 1000, "predicted_per_second": 88.0})
+    assert lines == ["model: gemma4-26b-a4b-qat", "VRAM: 13.1 GB   system RAM: 2.2 GB",
+                     "spilled into system RAM: 0.4 GB (ok)", "context: 2,048 tokens of 8,192 (25%)",
+                     "last answer: 88 tok/s"]
+    assert chat.spill_warning(url) is None
+    StatusServer.spill = 3.2
+    assert "3.2 GB" in chat.spill_warning(url)
+    srv.shutdown()
+
+
+def test_status_on_a_foreign_server_says_so():
+    srv, url = _serve()      # FakeServer answers every GET with {"status": "ok"}: no loaded flag, no memory
+    lines = chat.status_lines(url, {})
+    srv.shutdown()
+    assert lines == ["memory: not available from this server (it isn't localllm's)"]

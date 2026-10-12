@@ -1,18 +1,20 @@
 """Terminal chat against the local server (or any OpenAI-compatible URL).
 
   localllm chat                 start the recommended model if nothing is running, then chat
-  /clear  /think  /stay  /save FILE  /exit   (Ctrl+C stops the current answer, Ctrl+C again at the prompt exits)
+  /clear  /think  /stay  /status  /save FILE  /exit   (Ctrl+C stops the current answer, Ctrl+C again exits)
 """
 from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
 
 HELP = ("commands: /clear new chat  /think show or hide reasoning  /stay keep the current model (no swaps)  "
-        "/save FILE  /exit   (Ctrl+C stops an answer)")
+        "/status memory, spill, context  /save FILE  /exit   (Ctrl+C stops an answer)")
+CHECK_EVERY = 5   # answers between background spill checks (one check takes ~1-2 s on Windows)
 
 
 def _utf8_console() -> None:
@@ -64,11 +66,62 @@ def stream(url: str, messages: list[dict], show_thinking: bool, out=sys.stdout, 
     return "".join(answer), {**timings, "model": model} if model else timings
 
 
+def _get(url: str, timeout: float = 30) -> dict | None:
+    try:
+        return json.load(urllib.request.urlopen(url, timeout=timeout))
+    except (OSError, ValueError):
+        return None
+
+
+def status_lines(url: str, last: dict) -> list[str]:
+    """What `/status` prints: model, VRAM, RAM, spill (from /localllm/status), context used and last speed."""
+    base = url.rstrip("/")
+    st = _get(base + "/localllm/status")
+    props = _get(base + "/props", timeout=5) or {}
+    n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx") or props.get("n_ctx")
+    lines = []
+    if st is None or "loaded" not in st:
+        lines.append("memory: not available from this server (it isn't localllm's)")
+    elif not st.get("loaded"):
+        lines.append("model: unloaded (idle); the next message loads it")
+    else:
+        gb = lambda v: f"{v:.1f} GB" if isinstance(v, (int, float)) else "n/a"  # noqa: E731
+        lines.append(f"model: {st.get('running') or st.get('model')}")
+        lines.append(f"VRAM: {gb(st.get('vram_gb'))}   system RAM: {gb(st.get('ram_gb'))}")
+        spill = st.get("spill_gb")
+        if isinstance(spill, (int, float)):
+            bad = spill > st.get("spill_warn_gb", 1.5)
+            lines.append(f"spilled into system RAM: {spill:.1f} GB" + (" - answers will be slower" if bad else " (ok)"))
+    used = sum(last.get(k) or 0 for k in ("cache_n", "prompt_n", "predicted_n"))
+    if used:
+        lines.append(f"context: {used:,} tokens" + (f" of {n_ctx:,} ({100 * used / n_ctx:.0f}%)" if n_ctx else ""))
+    if last.get("predicted_per_second"):
+        lines.append(f"last answer: {last['predicted_per_second']:.0f} tok/s")
+    return lines
+
+
+def spill_warning(url: str) -> str | None:
+    st = _get(url.rstrip("/") + "/localllm/status")
+    spill = (st or {}).get("spill_gb")
+    if isinstance(spill, (int, float)) and spill > st.get("spill_warn_gb", 1.5):
+        return (f"warning: {spill:.1f} GB of the model has spilled from the GPU into system RAM since it started "
+                "(long context?). Answers will be slower; /clear starts a shorter chat.")
+    return None
+
+
+def _check_spill(url: str, pending: list) -> None:
+    w = spill_warning(url)
+    if w:
+        pending.append(w)
+
+
 def repl(url: str, model_label: str = "") -> None:
     _utf8_console()
     print(f"[localllm] chatting with {model_label or url}. {HELP}")
     messages: list[dict] = []
     show_thinking = stay = False
+    last: dict = {}
+    answers, warned, pending = 0, False, []          # pending: a spill warning found by the background check
     while True:
         try:
             text = input("\n\x1b[1m> \x1b[0m").strip()
@@ -91,6 +144,9 @@ def repl(url: str, model_label: str = "") -> None:
             stay = not stay
             print("(staying on the current model: no switches)" if stay else "(the best model per message again)")
             continue
+        if text == "/status":
+            print("\n".join(f"\x1b[2m{line}\x1b[0m" for line in status_lines(url, last)))
+            continue
         if text.startswith("/save"):
             path = Path(text[5:].strip() or f"chat-{time.strftime('%Y%m%d-%H%M%S')}.md")
             try:
@@ -103,6 +159,9 @@ def repl(url: str, model_label: str = "") -> None:
             print(HELP)
             continue
         messages.append({"role": "user", "content": text})
+        if pending and not warned:
+            print(f"\x1b[33m{pending[0]}\x1b[0m")
+            warned = True
         try:
             answer, t = stream(url, messages, show_thinking, stay=stay)
         except KeyboardInterrupt:
@@ -114,6 +173,9 @@ def repl(url: str, model_label: str = "") -> None:
             messages.pop()
             continue
         messages.append({"role": "assistant", "content": answer})
+        last, answers = t, answers + 1
+        if not warned and not pending and answers % CHECK_EVERY == 0:   # spill can appear later (long context)
+            threading.Thread(target=_check_spill, args=(url, pending), daemon=True).start()
         if t.get("predicted_per_second"):
             who = f"  [{t['model']}]" if t.get("model") else ""
             print(f"\x1b[2m{t['predicted_n']} tokens, {t['predicted_per_second']:.0f} tok/s{who}\x1b[0m")

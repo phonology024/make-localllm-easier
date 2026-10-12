@@ -70,7 +70,8 @@ in system RAM, expert pruning, SSD expert streaming and test-time compute. We ar
 install, with what each costs you spelled out in [docs/addons.md](docs/addons.md).
 
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
-conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, Ctrl+C stops an answer.
+conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,
+context used and the last answer's speed, Ctrl+C stops an answer.
 
 **Can I use it as an Ollama, OpenAI, Anthropic or Gemini replacement?** Yes. One local endpoint at
 `http://127.0.0.1:8080` speaks all four APIs, tool / function calling and images (`--vision`) included, so existing apps

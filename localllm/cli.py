@@ -195,7 +195,7 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None, host
                       resident, files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf,
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
-                                            trust_loopback=trust)),
+                                            trust_loopback=trust, status=lambda: _status(p.proc, p.current))),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
@@ -203,8 +203,15 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None, host
     proc, url = _launch(key, server, dev, ctx, ram_free, vision)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
-                                  trust_loopback=trust)
+                                  trust_loopback=trust, status=lambda: _status(proc, key))
     return proc, f"http://127.0.0.1:{port}"
+
+
+def _status(proc, key: str | None) -> dict:
+    """For GET /localllm/status: what the running llama-server uses right now."""
+    if proc is None:
+        return {"loaded": False}
+    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, **runtime.process_memory(proc.pid)}
 
 
 def _warn_spill(pid: int) -> None:

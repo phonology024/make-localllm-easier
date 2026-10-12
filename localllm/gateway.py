@@ -5,6 +5,7 @@
   Anthropic  /v1/messages /v1/messages/count_tokens                          -> passed through (llama-server native)
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
+  localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
@@ -316,7 +317,7 @@ def error_body(api: str, msg: str, code: int = 400) -> dict:
     return {"error": {"message": msg, "type": "invalid_request_error", "code": code}}
 
 
-def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True):
+def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback)."""
     def local(body: dict, stay: bool = False):
@@ -448,6 +449,10 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
                 return self._json(200, {"object": "list", "data": [
                     {"id": k, "object": "model", "owned_by": "localllm"} for k in upstream.keys]})
+            if self.path == "/localllm/status":
+                if status is None:
+                    return self._json(404, {"error": "no status here"})
+                return self._json(200, {"model": model_name, **status()})
             if self.path == "/api/tags":
                 return self._json(200, {"models": [{"name": model_name, "model": model_name, "size": 0,
                                                     "details": {"format": "gguf"}}]})
@@ -549,10 +554,11 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True) -> ThreadingHTTPServer:
+          trust_loopback: bool = True, status=None) -> ThreadingHTTPServer:
+    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
-    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback))
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

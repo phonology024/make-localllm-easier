@@ -200,6 +200,36 @@ def gpu_spill_gb(pid: int) -> float | None:
         return None
 
 
+def process_memory(pid: int) -> dict:
+    """Best effort: {"ram_gb", "vram_gb", "spill_gb"} of one process, None for what this OS doesn't tell us.
+    Windows: working set + the GPU Process Memory counters (dedicated = VRAM, shared = spilled into system RAM).
+    Linux: VmRSS only."""
+    out = {"ram_gb": None, "vram_gb": None, "spill_gb": None}
+    if os.name == "nt":
+        ps = (f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; "
+              f"$c = (Get-Counter '\\GPU Process Memory(pid_{pid}_*)\\Dedicated Usage',"
+              f"'\\GPU Process Memory(pid_{pid}_*)\\Shared Usage' -ErrorAction SilentlyContinue).CounterSamples; "
+              "$d = ($c | Where-Object Path -like '*dedicated*' | Measure-Object CookedValue -Sum).Sum; "
+              "$s = ($c | Where-Object Path -like '*shared*' | Measure-Object CookedValue -Sum).Sum; "
+              "\"$($p.WorkingSet64) $d $s\"")
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                               timeout=20)
+            vals = (r.stdout.split() + ["", "", ""])[:3]
+            for k, v in zip(("ram_gb", "vram_gb", "spill_gb"), vals):
+                out[k] = float(v) / 2**30 if v else None
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        return out
+    status = Path(f"/proc/{pid}/status")
+    try:
+        m = re.search(r"VmRSS:\s+(\d+)", status.read_text())
+        out["ram_gb"] = int(m[1]) / 2**20 if m else None
+    except OSError:
+        pass
+    return out
+
+
 SPILL_WARN_GB = 1.5   # Vulkan keeps ~0.5-0.9 GB of host-visible buffers here even when the model fits (measured)
 
 
