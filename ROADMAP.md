@@ -197,7 +197,7 @@ Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so
       RAM readout from `doctor`, no cloud assets or telemetry
 - [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
       API key, still refuses to listen on the network without it
-- [ ] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline, hermes): write the tool's config to point at the
+- [x] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline, hermes): write the tool's config to point at the
       local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`
 - [ ] (#77) Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
       context, defaults vs our tuned profile (same method as the 0.2 chat test)
@@ -210,17 +210,17 @@ RAM, a model spilling out of VRAM and getting slow with no message. Our edge is 
 the **measured data**: per language, per GPU, with footprint numbers. Niche we already own: AMD/Intel via Vulkan on
 Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not features.
 
-- [ ] (#73) Leaderboard data: turn `localllm report` JSONs (already exist) into one validated public dataset
-- [ ] (#74) Website on GitHub Pages: per-language / per-GPU leaderboard + landing pages for the README FAQ questions,
+- [x] (#73) Leaderboard data: turn `localllm report` JSONs (already exist) into one validated public dataset
+- [x] (#74) Website on Cloudflare Pages (default `*.pages.dev` address, `site/`): per-language / per-GPU leaderboard + landing pages for the README FAQ questions,
       `sitemap.xml`, Search Console (same recipe as babelscribe)
-- [ ] (#79) Live footprint/spill status in chat and the UI, not only a warning at start-up
-- [ ] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
+- [x] (#79) Live footprint/spill status: `/status` in chat (UI part waits for #76)
+- [x] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
 - [ ] (#29) Local voice -> text -> LLM pipeline with babelscribe, Thai first (speech slot of the specialist pool): one VRAM budget for both
 - [ ] (#90) Two profiles: `lean` (default) and `max`
-- [ ] (#91) Measurement runner: a queue of benchmark jobs that runs overnight
-- [ ] (#92) Verify downloads: checksum llama.cpp builds and model files
+- [x] (#91) Measurement runner: a queue of benchmark jobs that runs overnight (`tools/runner.py`; first batch #49 to run)
+- [x] (#92) Verify downloads: checksum llama.cpp builds and model files
 - [ ] (#93) Long-context quality suite per language (needle / RULER-style)
-- [ ] (#94) Success metrics for this section: stars, PyPI downloads, reports received
+- [x] (#94) Success metrics for this section: stars, PyPI downloads, reports received
 - [ ] (#95) llama.cpp upgrade process: smoke test before bumping, flag stale scores
 - [ ] (#46) One-click install for people without Python (winget, Homebrew, AppImage)
 - Not doing: a full desktop GUI against LM Studio; widening the core focus (AMD/Intel Vulkan on Windows, Thai/SEA) - other hardware comes from community reports via #73; chasing 2-bit/QTIP/NNC formats before the measurements (#49, #26, #25, #71) say
