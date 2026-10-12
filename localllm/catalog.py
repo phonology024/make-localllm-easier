@@ -2,13 +2,16 @@
 gb = weights in GiB; kv_kb_per_token = KV cache per token at q8 (from the GGUF attention layout).
 Speeds: llama-server decode tok/s on an RX 9070 XT 16 GB (Windows, Vulkan) with the tuned launch in runtime.py.
 mmproj = the vision projector in the same repo (loaded only with --vision), mmproj_gb its size.
+rev pins the repo commit the files are downloaded from; sha256 / mmproj_sha256 are checked after every download.
 Add a model only after measuring it with `localllm eval`."""
 
 MODELS = {
     "qwen3.8-27b-q3": {
-        "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-Q3_K_XL.gguf", "gb": 12.2, "bpw": 3.8, "qat": False,
+        "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-Q3_K_XL.gguf", "gb": 12.2,
+        "rev": "4ca720788d1e01f1bff70c033e0d0028fd02e502", "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e", "bpw": 3.8, "qat": False,
         "kv_kb_per_token": 34.8, "fixed_cache_gb": 0.15, "checkpoint_gb": 0.15, "max_ctx": 262144, "tok_s_9070xt": 50, "mtp": True, "vk_fix": True,
         "mmproj": "mmproj-F16.gguf", "mmproj_gb": 0.86,
+        "mmproj_sha256": "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e",
         "cpu_mapped_gb": 0.51,  # measured: ~521 MiB of the 12.2 GiB model stays CPU-mapped (large 248k vocab)
         "scores": {"en/global": 81.5, "zh/global": 76.2, "zh/regional": 74.7, "es/global": 80.2, "es/regional": 76.8, "hi/global": 69.0, "hi/regional": 74.3, "ar/global": 70.8, "ar/regional": 71.2, "ja/global": 73.5, "ja/regional": 87.6, "th/regional": 67.1,
                    "en/math": 94.4, "th/math": 87.2, "zh/math": 84.4,
@@ -16,9 +19,11 @@ MODELS = {
         "note": "dense 27B; built-in MTP head drafts 2 tokens",
     },
     "gemma4-26b-a4b-qat": {
-        "repo": "unsloth/gemma-4-26B-A4B-it-qat-GGUF", "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf", "gb": 13.3, "bpw": 4.2, "qat": True,
+        "repo": "unsloth/gemma-4-26B-A4B-it-qat-GGUF", "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf", "gb": 13.3,
+        "rev": "7b92b5b28818151e8669af2e45e88d6086f490dd", "sha256": "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891", "bpw": 4.2, "qat": True,
         "kv_kb_per_token": 10.9, "fixed_cache_gb": 0.11, "checkpoint_gb": 0.11, "max_ctx": 262144, "tok_s_9070xt": 90, "mtp": False, "vk_fix": False,
         "mmproj": "mmproj-F16.gguf", "mmproj_gb": 1.11,
+        "mmproj_sha256": "d00f211a7d4f7fb19bd9b75d8e9342eccffb5920b08fd9562167560fdfcc5dd1",
         "moe": {"layers": 30, "expert_gb_per_layer": 0.4},  # from the GGUF: 11.96 GiB of experts over 30 layers
         "tok_s_offload": {8: 45, 13: 36, 18: 31},          # measured: layers' experts in RAM -> decode tok/s
         "scores": {"en/global": 82.2, "zh/global": 73.5, "zh/regional": 66.5, "es/global": 74.5, "es/regional": 75.2, "hi/global": 69.5, "hi/regional": 71.0, "ar/global": 71.5, "ar/regional": 73.6, "ja/global": 74.5, "ja/regional": 81.9, "th/regional": 65.7,
@@ -27,9 +32,11 @@ MODELS = {
         "note": "MoE with ~4B active params: fastest",
     },
     "qwen3.8-27b-iq2": {
-        "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-IQ2_S.gguf", "gb": 7.8, "bpw": 2.5, "qat": False,
+        "repo": "unsloth/Qwen3.8-27B-GGUF", "file": "Qwen3.8-27B-UD-IQ2_S.gguf", "gb": 7.8,
+        "rev": "4ca720788d1e01f1bff70c033e0d0028fd02e502", "sha256": "7897d2c5a5cee46aef50895141b2c8a0803c1185f3d03c4fda4cd137a7ad77fe", "bpw": 2.5, "qat": False,
         "kv_kb_per_token": 34.8, "fixed_cache_gb": 0.15, "checkpoint_gb": 0.15, "max_ctx": 262144, "tok_s_9070xt": 40, "mtp": False, "vk_fix": True,
         "mmproj": "mmproj-F16.gguf", "mmproj_gb": 0.86,
+        "mmproj_sha256": "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e",
         "scores": {"en/global": 74.2, "zh/global": 67.8, "zh/regional": 67.8, "es/global": 70.8, "es/regional": 69.2, "hi/global": 56.2, "hi/regional": 55.5, "ar/global": 60.8, "ar/regional": 57.2, "ja/global": 65.8, "ja/regional": 77.9, "th/regional": 54.2},
         "note": "for 10-12 GB cards only: 2-bit costs 8-13 points, most in Hindi, Arabic, Thai",
     },

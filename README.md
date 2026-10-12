@@ -84,6 +84,12 @@ by name, or the local model scores below your floor in that language) and tells 
 
 **Does it work offline?** After the first download, yes. Nothing leaves your PC.
 
+**Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
+file (llama.cpp, models, vision projectors, the task router) is downloaded from a pinned commit and checked against a
+SHA-256 stored in the code before it is used. A mismatch deletes the file and stops with the reason.
+`LOCALLLM_LLAMA_BUILD=latest` (or `=bNNNNN`) picks another llama.cpp build, checked against the digest GitHub lists for
+it.
+
 **Which languages are measured?** 23 languages on Global-MMLU-Lite, 44 countries' own exams on INCLUDE, plus Thai
 (ThaiExam). `localllm eval --langs ...` measures any of them on your hardware.
 

@@ -30,25 +30,53 @@ def _say(msg: str) -> None:
     print(f"[localllm] {msg}", flush=True)
 
 
-def _download(url: str, dest: Path, label: str, timeout: float = 60) -> None:
-    """Resumable download with a one-line progress bar. timeout is per connect/read: a stalled link raises."""
+class ChecksumError(Exception):
+    """A downloaded file is not the one we measured: it was deleted, nothing was run from it."""
+
+
+def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str | None = None) -> None:
+    """Resumable download with a one-line progress bar. timeout is per connect/read: a stalled link raises.
+    With sha256 the finished file must match it, else it is deleted and ChecksumError says so."""
+    import hashlib
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
     done = tmp.stat().st_size if tmp.exists() else 0
     req = urllib.request.Request(url, headers={"Range": f"bytes={done}-"} if done else {})
+    h = hashlib.sha256()
     with urllib.request.urlopen(req, timeout=timeout) as r:
         done = done if r.status == 206 else 0           # a server that ignores Range sends the whole file again
+        if done and sha256:
+            with open(tmp, "rb") as f:                   # resumed: hash what is already on disk first
+                while chunk := f.read(1 << 22):
+                    h.update(chunk)
         total = done + int(r.headers.get("Content-Length") or 0)
         t0, got = time.time(), 0
         with open(tmp, "ab" if done else "wb") as f:
             while chunk := r.read(1 << 22):
                 f.write(chunk); got += len(chunk)
+                if sha256:
+                    h.update(chunk)
                 if total:
                     pct = 100 * (done + got) / total
                     speed = got / max(time.time() - t0, 1e-3) / 2**20
                     print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
     print()
+    if sha256 and h.hexdigest() != sha256.lower():
+        tmp.unlink()
+        raise ChecksumError(f"{label}: SHA-256 is {h.hexdigest()}, expected {sha256}. The file was deleted; "
+                            "run the command again to download it fresh. If it fails again, please open an issue.")
     tmp.replace(dest)
+
+
+def _fetch(url: str, dest: Path, label: str, sha256: str | None) -> None:
+    try:
+        _download(url, dest, label, sha256=sha256)
+    except ChecksumError as e:
+        sys.exit(f"[localllm] {e}")
+
+
+def _hf_url(m: dict, name: str) -> str:
+    return f"https://huggingface.co/{m['repo']}/resolve/{m.get('rev', 'main')}/{name}"
 
 
 def _model_path(key: str) -> Path:
@@ -59,7 +87,7 @@ def _model_path(key: str) -> Path:
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
         _say(f"downloading {key} ({m['gb']} GB, one time) ...")
-        _download(f"https://huggingface.co/{m['repo']}/resolve/main/{m['file']}", dest, m["file"])
+        _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
     return dest
 
 
@@ -76,7 +104,7 @@ def _mmproj_path(key: str) -> Path | None:
     dest = runtime.HOME / "models" / name
     if not dest.exists():
         _say(f"downloading the vision projector for {key} ({m['mmproj_gb']} GB, one time) ...")
-        _download(f"https://huggingface.co/{m['repo']}/resolve/main/{m['mmproj']}", dest, name)
+        _fetch(_hf_url(m, m["mmproj"]), dest, name, m.get("mmproj_sha256"))
     return dest
 
 

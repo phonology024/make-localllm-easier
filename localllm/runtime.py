@@ -38,14 +38,59 @@ def find_server() -> Path:
     return found[-1] if found else fetch_server()
 
 
+# The llama.cpp build every catalog score and speed was measured on. Downloads are checked against these SHA-256s
+# (from the release's own asset digests); LOCALLLM_LLAMA_BUILD=bNNNNN or =latest picks another build, which is
+# checked against the digest GitHub lists for it.
+LLAMA_BUILD = "b11476"
+LLAMA_SHA256 = {
+    "llama-b11476-bin-win-vulkan-x64.zip": "5c71e7b749697da4a8d46e9ee55486845cbba27c9dfbecb4007f31ba6610d523",
+    "llama-b11476-bin-win-vulkan-arm64.zip": "53659ca6e67dc624c62f6df48f204cd89d9d1ff12a642173ba67235be9ff4bf7",
+    "llama-b11476-bin-ubuntu-vulkan-x64.tar.gz": "5bb4306d7917f33e81efda02e6f791ae6a82e86bee121227a3ab2b4e8e40427f",
+    "llama-b11476-bin-ubuntu-vulkan-arm64.tar.gz": "8dae2f39afee01d3032a101d7c398a6734d6fd9697690d8f93bdce4e3a9efea2",
+    "llama-b11476-bin-macos-arm64.tar.gz": "577634a1b8a59e8dabe02ba10de1e610be0574dfaf1cf3020e6dd42853ed877e",
+    "llama-b11476-bin-macos-x64.tar.gz": "c2a0dfe7622a99fc3279454814045923e99f1cfdddb8f121c5969c5c675fc073",
+}
+
+
+def _releases(build: str) -> list[dict]:
+    api = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
+    if build == "latest":
+        # "latest" can be a source-only tag (v0.6.0 had no binaries); the binaries ride on the per-build bNNNNN releases
+        return json.load(urllib.request.urlopen(api + "?per_page=10"))
+    return [json.load(urllib.request.urlopen(f"{api}/tags/{build}"))]
+
+
+def expected_sha256(asset: dict) -> str | None:
+    """Pinned digest for the measured build, else the one GitHub lists for the asset ("sha256:..."), else None."""
+    if asset["name"] in LLAMA_SHA256:
+        return LLAMA_SHA256[asset["name"]]
+    digest = asset.get("digest") or ""
+    return digest.split(":", 1)[1] if digest.startswith("sha256:") else None
+
+
+def check_sha256(data: bytes, name: str, want: str | None) -> None:
+    import hashlib
+    if want is None:
+        raise RuntimeError(f"{name}: no SHA-256 to check it against, refusing to run it. Use the pinned build "
+                           f"({LLAMA_BUILD}) or set LOCALLLM_LLAMA_SERVER to a llama-server you built or trust.")
+    got = hashlib.sha256(data).hexdigest()
+    if got != want.lower():
+        raise RuntimeError(f"{name}: SHA-256 is {got}, expected {want}. Nothing was unpacked; try again, and open "
+                           "an issue if it keeps failing.")
+
+
 def fetch_server() -> Path:
-    # "latest" can be a source-only tag (v0.6.0 had no binaries); the binaries ride on the per-build bNNNNN releases
-    rels = json.load(urllib.request.urlopen("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"))
+    build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
     want = _asset()
-    rel, asset = next((r, a) for r in rels for a in r["assets"] if want in a["name"] and a["name"].startswith("llama-"))
+    rel, asset = next((r, a) for r in _releases(build) for a in r["assets"]
+                      if want in a["name"] and a["name"].startswith("llama-"))
     dest = HOME / "llama.cpp" / rel["tag_name"]
     print(f"downloading {asset['name']} ({asset['size'] / 2**20:.0f} MB) ...")
     data = urllib.request.urlopen(asset["browser_download_url"]).read()
+    try:
+        check_sha256(data, asset["name"], expected_sha256(asset))
+    except RuntimeError as e:
+        raise SystemExit(f"[localllm] {e}") from None
     if asset["name"].endswith(".zip"):
         zipfile.ZipFile(io.BytesIO(data)).extractall(dest)
     else:
