@@ -449,7 +449,7 @@ VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-
                "text-only use doesn't pay for it)")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="localllm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
     ap.add_argument("--model", choices=list(catalog.MODELS), help="override the automatic pick")
@@ -512,7 +512,11 @@ def main() -> None:
                         "codegen (EvalPlus, needs Docker), vision (MaXM image questions; the server needs a vision "
                         "projector)")
     e.set_defaults(fn=cmd_eval)
-    a = ap.parse_args()
+    return ap
+
+
+def main() -> None:
+    a = build_parser().parse_args()
     if a.fn is cmd_serve:
         a.model = a.model or None
     a.fn(a)

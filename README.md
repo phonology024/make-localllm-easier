@@ -342,6 +342,11 @@ Generated from shared reports by `tools/merge_reports.py`:
  See [ROADMAP.md](ROADMAP.md)
 for what's next: using less system RAM (0.2), working alongside cloud provider APIs (0.3), a speed-only release (0.4), and per-language compression research (0.5).
 
+## Stability
+
+Commands, flags, API endpoints, `X-Localllm-*` headers, file locations and the report format that stay working, and
+how anything gets removed: [docs/stability.md](docs/stability.md).
+
 ## License
 
 MIT. Models keep their own licenses; benchmark data keeps its own (Apache-2.0).
