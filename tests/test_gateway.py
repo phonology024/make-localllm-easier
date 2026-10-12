@@ -67,6 +67,15 @@ def test_openai_passthrough_reports_local_route(monkeypatch):
     g.shutdown(); up.shutdown()
 
 
+def test_responses_api_is_passed_through_for_codex(monkeypatch):
+    monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
+    up, uurl = _up(); g, gurl = _gw(uurl)
+    FakeLlama.seen.clear()
+    r = _post(gurl + "/v1/responses", {"model": "m", "input": "hi"})
+    assert r.status == 200 and FakeLlama.seen[-1][0] == "/v1/responses" and FakeLlama.seen[-1][2]["input"] == "hi"
+    g.shutdown(); up.shutdown()
+
+
 def test_ollama_chat_non_stream_and_stream(monkeypatch):
     monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
     up, uurl = _up(); g, gurl = _gw(uurl)

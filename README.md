@@ -25,6 +25,7 @@ localllm list       # every model we have measured, with scores per language
 localllm serve      # API only (OpenAI, Anthropic, Ollama and Gemini formats), no browser
 localllm route      # optional: mix in your own cloud key, compare local vs cloud
 localllm eval       # score any running server in English + your language
+localllm connect hermes   # point an agent (hermes, opencode, claude-code, codex, aider) at it
 ```
 
 ## FAQ
@@ -70,6 +71,11 @@ conversation is remembered, `/save` writes it to a file, `/think` shows the mode
 **Can I use it as an Ollama, OpenAI, Anthropic or Gemini replacement?** Yes. One local endpoint at
 `http://127.0.0.1:8080` speaks all four APIs, tool / function calling and images (`--vision`) included, so existing apps
 and SDKs only need a new base URL. See [docs/apis.md](docs/apis.md).
+
+**Can I use it with Hermes Agent, OpenCode, Claude Code, Codex or Aider?** Yes: `localllm connect hermes` (or
+`opencode`, `claude-code`, `codex`, `aider`, `cline`) writes that tool's config to use the local endpoint and backs up
+the old one; `--undo` restores it. Start the server with `localllm serve --ctx 65536` so long agent prompts fit. See
+[docs/apis.md](docs/apis.md#coding-agents-localllm-connect).
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
 and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.

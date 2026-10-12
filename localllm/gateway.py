@@ -1,6 +1,7 @@
 """One local endpoint that speaks the APIs apps already use, in front of llama-server.
 
   OpenAI     /v1/chat/completions /v1/completions /v1/models /v1/embeddings   -> passed through
+             /v1/responses (Codex)                                         -> passed through (llama-server native)
   Anthropic  /v1/messages /v1/messages/count_tokens                          -> passed through (llama-server native)
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
@@ -31,7 +32,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from . import router
 
-PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/messages",
+PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/responses", "/v1/messages",
                "/v1/messages/count_tokens", "/health", "/props", "/slots")
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}

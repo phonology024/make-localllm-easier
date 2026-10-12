@@ -5,7 +5,7 @@ app or SDK you already use at it - no code change beyond the base URL. Any API k
 
 | API your app speaks | Base URL | Endpoints |
 |---|---|---|
-| OpenAI | `http://127.0.0.1:8080/v1` | `/chat/completions`, `/completions`, `/models`, `/embeddings` |
+| OpenAI | `http://127.0.0.1:8080/v1` | `/chat/completions`, `/completions`, `/models`, `/embeddings`, `/responses` |
 | Anthropic Messages | `http://127.0.0.1:8080` | `/v1/messages`, `/v1/messages/count_tokens` (tools, vision, thinking) |
 | Ollama | `http://127.0.0.1:8080` | `/api/chat`, `/api/generate`, `/api/tags`, `/api/version` |
 | Gemini | `http://127.0.0.1:8080/v1beta` | `models/{m}:generateContent`, `models/{m}:streamGenerateContent` |
@@ -33,6 +33,34 @@ Gemini REST:
 curl http://127.0.0.1:8080/v1beta/models/local:generateContent -H "Content-Type: application/json" \
   -d "{\"contents\":[{\"parts\":[{\"text\":\"Hello\"}]}]}"
 ```
+
+## Coding agents: `localllm connect`
+
+```
+localllm serve --ctx 65536          # agents send long prompts; 64k is what Hermes asks for
+localllm connect hermes             # or opencode, claude-code, codex, aider, cline
+localllm connect hermes --undo      # put the old config back
+```
+
+`connect` changes only the base URL and the model name in the tool's own config. The first time, the original file is
+copied next to it as `<file>.localllm-backup`; `--undo` puts it back (or deletes the file if `connect` created it).
+`--dry-run` prints the new file without writing it, `--path` writes another file (a project config, say).
+
+| tool | file | what is set | then run |
+|---|---|---|---|
+| Hermes Agent | `~/.hermes/config.yaml` | the `model:` block: `provider: custom`, `base_url`, `default`, `context_length` | `hermes` |
+| OpenCode | `~/.config/opencode/opencode.json` | a `localllm` provider (`@ai-sdk/openai-compatible`) and `model` | `opencode` |
+| Claude Code | `~/.claude/settings.json` | `env`: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, the model names | `claude` |
+| Codex CLI | `~/.codex/config.toml` | a `localllm` provider (`wire_api = "responses"`) and a `localllm` profile; your default stays | `codex --profile localllm` |
+| Aider | `~/.aider.conf.yml` | `openai-api-base`, `openai-api-key`, `model: openai/<id>` | `aider` |
+| Cline | (inside VS Code) | nothing is written; `connect cline` prints the four fields to fill in | |
+
+The model name is the one the running server reports at `/v1/models` (pass `--model-id` to choose another).
+Claude Code with `connect` sends everything to the local model, including the small background requests; run
+`localllm connect claude-code --undo` to go back to your Anthropic account.
+
+Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
+uses at 20k+ tokens. Both are open issues (#77, #96); please report what you see.
 
 ## Tool / function calling
 
