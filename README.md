@@ -1,5 +1,9 @@
 # make-localllm-easier — run the best local LLM your GPU can handle, in one command
 
+[![PyPI](https://img.shields.io/pypi/v/make-localllm-easier)](https://pypi.org/project/make-localllm-easier/)
+[![tests](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml/badge.svg)](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Read this in: English | [தமிழ்](docs/README.ta.md)
 
 **The leanest way to run local AI: least CPU, RAM and GPU memory, smallest files, measured quality.**
@@ -329,7 +333,7 @@ reasoning in multiple choice, not writing quality.
 The catalog only grows with measurements. Run `localllm tune` and `localllm eval --langs en,<yours>` on your GPU, then
 `localllm report`: it collects your GPU, RAM, OS, llama.cpp build, tuned settings and scores into one JSON (no user
 names, paths or keys) and opens a prefilled GitHub issue you can review before submitting. Other languages' local exams
-are very welcome.
+are very welcome. More in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Measured on contributors' PCs
 
