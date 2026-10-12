@@ -339,6 +339,8 @@ def cmd_doctor(_a) -> None:
     vram = dev["total_gb"] if dev else 0.0
     bw = sizing.bandwidth(gpu)
     print(f"GPU {gpu}  {vram:.1f} GB" + (f"  ({bw} GB/s)" if bw else "") + f"    RAM {ram:.0f} GB    language: {lang}")
+    from .report import platform_label
+    print(f"Tested: {platform_label(dev['name'] if dev else None)}")
     print("\nModel sizes for this PC (whole model on the GPU = fast):")
     for r in sizing.tiers(vram, ram, gpu):
         speed = f"~{r['tok_s']} tok/s (est.)" if r["tok_s"] else ""

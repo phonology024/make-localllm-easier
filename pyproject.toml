@@ -22,3 +22,6 @@ make-localllm-easier = "localllm.cli:main"
 
 [tool.setuptools]
 packages = ["localllm"]
+
+[tool.setuptools.package-data]
+localllm = ["platforms.json"]

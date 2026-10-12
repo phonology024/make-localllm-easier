@@ -1,0 +1,133 @@
+{
+ "schema": 1,
+ "reports": 0,
+ "entries": [
+  {
+   "source": "maintainers",
+   "gpu": "AMD Radeon RX 9070 XT",
+   "vram_gb": 15.9,
+   "ram_gb": 32.0,
+   "os": "Windows 11",
+   "llama_cpp": "b11476",
+   "vendor": "AMD",
+   "os_family": "Windows",
+   "model": "qwen3.8-27b-q3",
+   "tok_s": 50,
+   "scores": {
+    "ar/global": 70.8,
+    "ar/regional": 71.2,
+    "ar/translate": 59.0,
+    "en/global": 81.5,
+    "en/math": 94.4,
+    "es/global": 80.2,
+    "es/regional": 76.8,
+    "hi/global": 69.0,
+    "hi/regional": 74.3,
+    "hi/translate": 58.1,
+    "ja/global": 73.5,
+    "ja/regional": 87.6,
+    "ja/translate": 46.4,
+    "th/math": 87.2,
+    "th/regional": 67.1,
+    "th/translate": 54.1,
+    "zh/global": 76.2,
+    "zh/math": 84.4,
+    "zh/regional": 74.7,
+    "zh/translate": 49.1
+   },
+   "flags": []
+  },
+  {
+   "source": "maintainers",
+   "gpu": "AMD Radeon RX 9070 XT",
+   "vram_gb": 15.9,
+   "ram_gb": 32.0,
+   "os": "Windows 11",
+   "llama_cpp": "b11476",
+   "vendor": "AMD",
+   "os_family": "Windows",
+   "model": "gemma4-26b-a4b-qat",
+   "tok_s": 90,
+   "scores": {
+    "ar/global": 71.5,
+    "ar/regional": 73.6,
+    "ar/translate": 61.9,
+    "en/global": 82.2,
+    "en/math": 96.8,
+    "es/global": 74.5,
+    "es/regional": 75.2,
+    "hi/global": 69.5,
+    "hi/regional": 71.0,
+    "hi/translate": 62.8,
+    "ja/global": 74.5,
+    "ja/regional": 81.9,
+    "ja/translate": 48.0,
+    "th/math": 89.6,
+    "th/regional": 65.7,
+    "th/translate": 55.6,
+    "zh/global": 73.5,
+    "zh/math": 88.8,
+    "zh/regional": 66.5,
+    "zh/translate": 47.7
+   },
+   "flags": []
+  },
+  {
+   "source": "maintainers",
+   "gpu": "AMD Radeon RX 9070 XT",
+   "vram_gb": 15.9,
+   "ram_gb": 32.0,
+   "os": "Windows 11",
+   "llama_cpp": "b11476",
+   "vendor": "AMD",
+   "os_family": "Windows",
+   "model": "qwen3.8-27b-iq2",
+   "tok_s": 40,
+   "scores": {
+    "ar/global": 60.8,
+    "ar/regional": 57.2,
+    "en/global": 74.2,
+    "es/global": 70.8,
+    "es/regional": 69.2,
+    "hi/global": 56.2,
+    "hi/regional": 55.5,
+    "ja/global": 65.8,
+    "ja/regional": 77.9,
+    "th/regional": 54.2,
+    "zh/global": 67.8,
+    "zh/regional": 67.8
+   },
+   "flags": []
+  }
+ ],
+ "platforms": {
+  "Windows/AMD": {
+   "maintainers": true,
+   "community_reports": 0
+  },
+  "Windows/NVIDIA": {
+   "maintainers": false,
+   "community_reports": 0
+  },
+  "Windows/Intel": {
+   "maintainers": false,
+   "community_reports": 0
+  },
+  "Linux/AMD": {
+   "maintainers": false,
+   "community_reports": 0
+  },
+  "Linux/NVIDIA": {
+   "maintainers": false,
+   "community_reports": 0
+  },
+  "Linux/Intel": {
+   "maintainers": false,
+   "community_reports": 0
+  },
+  "macOS/Apple": {
+   "maintainers": false,
+   "community_reports": 0
+  }
+ }
+}
