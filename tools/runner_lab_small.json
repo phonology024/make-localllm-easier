@@ -1,0 +1,16 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#38: the best models for 6-12 GB GPUs and CPU-only PCs, per language. Quality does not depend on the GPU, so it is measured on the RX 9070 XT; the cpu jobs measure CPU-only decode speed (-ngl 0 -dev none) on this PC's CPU (20 threads, DDR5). Files (Unsloth UD-Q4_K_XL) in ~/.localllm/lab: gemma-4-12B-it-qat (6.7 GB, 8-12 GB cards), Qwen3.5-9B (6.0 GB), gemma-4-E4B (5.1 GB, 6-8 GB cards), Qwen3.5-4B (2.9 GB) and gemma-4-E2B (3.2 GB, 4 GB cards / CPU).",
+ "jobs": [
+  {"id": "38-gemma4-12b-qat-q4", "file": "~/.localllm/lab/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "38-qwen35-9b-q4", "file": "~/.localllm/lab/Qwen3.5-9B-UD-Q4_K_XL.gguf", "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "38-gemma4-e4b-q4", "file": "~/.localllm/lab/gemma-4-E4B-it-UD-Q4_K_XL.gguf", "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "38-qwen35-4b-q4", "file": "~/.localllm/lab/Qwen3.5-4B-UD-Q4_K_XL.gguf", "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "38-gemma4-e2b-q4", "file": "~/.localllm/lab/gemma-4-E2B-it-UD-Q4_K_XL.gguf", "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "38-cpu-gemma4-e2b-q4", "file": "~/.localllm/lab/gemma-4-E2B-it-UD-Q4_K_XL.gguf", "args": ["-ngl", "0", "-dev", "none"], "memory": true},
+  {"id": "38-cpu-qwen35-4b-q4", "file": "~/.localllm/lab/Qwen3.5-4B-UD-Q4_K_XL.gguf", "args": ["-ngl", "0", "-dev", "none"], "memory": true},
+  {"id": "38-cpu-gemma4-e4b-q4", "file": "~/.localllm/lab/gemma-4-E4B-it-UD-Q4_K_XL.gguf", "args": ["-ngl", "0", "-dev", "none"], "memory": true},
+  {"id": "38-cpu-qwen35-9b-q4", "file": "~/.localllm/lab/Qwen3.5-9B-UD-Q4_K_XL.gguf", "args": ["-ngl", "0", "-dev", "none"], "memory": true},
+  {"id": "38-cpu-gemma4-12b-qat-q4", "file": "~/.localllm/lab/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", "args": ["-ngl", "0", "-dev", "none"], "memory": true}
+ ]
+}
