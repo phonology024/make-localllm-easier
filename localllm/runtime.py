@@ -32,10 +32,32 @@ def _asset() -> str:
 
 
 def find_server() -> Path:
+    """LOCALLLM_LLAMA_SERVER, else the wanted build under ~/.localllm/llama.cpp/<build>/ (downloaded once). With
+    LOCALLLM_LLAMA_BUILD=latest any build already there is used."""
     if os.environ.get("LOCALLLM_LLAMA_SERVER"):
         return Path(os.environ["LOCALLLM_LLAMA_SERVER"])
-    found = sorted((HOME / "llama.cpp").rglob(EXE)) if (HOME / "llama.cpp").exists() else []
+    build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
+    where = HOME / "llama.cpp" / ("" if build == "latest" else build)
+    found = sorted(where.rglob(EXE)) if where.exists() else []
     return found[-1] if found else fetch_server()
+
+
+def build_of(server: Path) -> str | None:
+    """bNNNNN of a llama-server: the folder we unpacked it into, else what `--version` prints."""
+    for part in reversed(server.parts):
+        if re.fullmatch(r"b\d+", part):
+            return part
+    try:
+        out = subprocess.run([str(server), "--version"], capture_output=True, text=True, timeout=20, errors="replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"version: (\d+)", out.stdout + out.stderr)
+    return f"b{m[1]}" if m else None
+
+
+def build_number(build: str | None) -> int | None:
+    m = re.fullmatch(r"b(\d+)", build or "")
+    return int(m[1]) if m else None
 
 
 # The llama.cpp build every catalog score and speed was measured on. Downloads are checked against these SHA-256s

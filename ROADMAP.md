@@ -221,7 +221,7 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
 - [x] (#92) Verify downloads: checksum llama.cpp builds and model files
 - [ ] (#93) Long-context quality suite per language (needle / RULER-style)
 - [x] (#94) Success metrics for this section: stars, PyPI downloads, reports received
-- [ ] (#95) llama.cpp upgrade process: smoke test before bumping, flag stale scores
+- [x] (#95) llama.cpp upgrade process: `tools/smoke_build.py` before bumping, `doctor` flags scores from another build ([docs/upgrading-llama-cpp.md](docs/upgrading-llama-cpp.md)); re-run of the 10-07 knowledge scores queued in `tools/runner_rebaseline.json`
 - [ ] (#46) One-click install for people without Python (winget, Homebrew, AppImage)
 - Not doing: a full desktop GUI against LM Studio; widening the core focus (AMD/Intel Vulkan on Windows, Thai/SEA) - other hardware comes from community reports via #73; chasing 2-bit/QTIP/NNC formats before the measurements (#49, #26, #25, #71) say
   they help; widening to every backend and language - the niche is the point

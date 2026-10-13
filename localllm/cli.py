@@ -376,6 +376,9 @@ def cmd_doctor(_a) -> None:
     in_ram = cpu_moe * m["moe"]["expert_gb_per_layer"] if cpu_moe else 0.0
     ctx = sizing.context_tokens(vram, {**m, "gb": m["gb"] - in_ram})
     print(f"\nBest measured model for you: {key}  ({m['note']})")
+    stale = catalog.build_note(key, runtime.build_of(server))
+    if stale:
+        print(f"  note: {stale}")
     if catalog.below_floor(key):
         print(f"  note: {m['bpw']} bits per weight is below the quality floor ({catalog.QUALITY_FLOOR_BPW}) - it fits, but"
               " expect noticeably weaker answers, especially outside English")
@@ -438,7 +441,9 @@ def cmd_list(_a) -> None:
     for k, m in sorted(catalog.MODELS.items(), key=lambda kv: -catalog.score(kv[0])):
         sc = "  ".join(f"{t} {v:.1f}" for t, v in m["scores"].items())
         print(f"{k:22} {m['gb']:6.1f}GB {m['tok_s_9070xt']:7}  {sc}")
+    builds = sorted({m.get("build") or "?" for m in catalog.MODELS.values()})
     print("* decode speed on an RX 9070 XT 16 GB.  scores: accuracy % from `localllm eval` (lang/suite)")
+    print(f"  measured on llama.cpp {', '.join(builds)} (`localllm doctor` says if yours differs)")
 
 
 def cmd_report(a) -> None:
