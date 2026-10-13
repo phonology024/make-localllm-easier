@@ -70,3 +70,17 @@ def test_vision_and_memory_options(tmp_path, monkeypatch):
         del Proc.pid
     assert rec["job"]["args_full"][-2] == "--mmproj"
     assert rec["job"]["memory"]["loaded"]["vram_gb"] == 14.0 and rec["job"]["memory"]["after"]["spill_gb"] == 0.5
+
+
+def test_speed_is_dropped_when_the_model_spilled(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "state", lambda server: STATE)
+    monkeypatch.setattr(runner, "wait_up", lambda proc, url: None)
+    monkeypatch.setattr(runner, "decode_speed", lambda url: 29.2)
+    monkeypatch.setattr(runner.runtime, "process_memory", lambda pid: {"ram_gb": 5.3, "vram_gb": 6.8, "spill_gb": 7.4})
+    Proc.pid = 7
+    try:
+        rec = runner.run_job({"id": "s", "model": "gemma4-26b-a4b-qat"}, "b11476", Path("llama-server"),
+                             lambda k: tmp_path / "g.gguf", popen=Proc)
+    finally:
+        del Proc.pid
+    assert rec["tune"] == {} and "spilled 7.4 GB" in rec["job"]["notes"][0]

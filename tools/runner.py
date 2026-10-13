@@ -120,12 +120,18 @@ def run_job(job: dict, build: str, server: Path, model_path, popen=subprocess.Po
         args += ["--mmproj", str(_mmproj_path(job["model"]))]
     env = runtime.server_env({"env": job.get("env", {})})
     url = f"http://127.0.0.1:{PORT}"
+    notes = []
     proc = popen([str(server), *args], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     try:
         wait_up(proc, url)
         pid = getattr(proc, "pid", None)
-        memory = {"loaded": runtime.process_memory(pid)} if job.get("memory") and pid else {}
+        loaded = runtime.process_memory(pid) if pid else {}
+        memory = {"loaded": loaded} if job.get("memory") else {}
+        spill = loaded.get("spill_gb") or 0
         tok_s = decode_speed(url) if job.get("speed", True) else None
+        if tok_s and spill > runtime.SPILL_WARN_GB:     # another app held VRAM: the speed says nothing about the model
+            notes.append(f"spilled {spill:.1f} GB into shared memory at load: decode speed {tok_s} tok/s not recorded")
+            tok_s = None
         scores = {}
         if job.get("suites"):
             langs = job.get("langs", "en").split(",")
@@ -147,7 +153,7 @@ def run_job(job: dict, build: str, server: Path, model_path, popen=subprocess.Po
         if tok_s else {},
         "results": {job["id"]: scores} if scores else {},
         "job": {**job, "status": "ok", "args_full": report.scrub(args), "state_before": before,
-                **({"memory": memory} if memory else {})},
+                **({"memory": memory} if memory else {}), **({"notes": notes} if notes else {})},
     }
 
 
