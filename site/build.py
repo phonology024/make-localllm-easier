@@ -33,8 +33,8 @@ LANG_NAMES = {"en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese", 
               "pt": "Portuguese", "ru": "Russian", "it": "Italian", "tr": "Turkish", "sw": "Swahili", "bn": "Bengali"}
 
 NAV = [("Features", "/features/"), ("How it works", "/how-it-works/"), ("Use cases", "/use-cases/"),
-       ("Compare", "/compare/"), ("Leaderboard", "/leaderboard/"), ("Guides", "/guides/"),
-       ("Get started", "/get-started/")]
+       ("Compare", "/compare/"), ("Leaderboard", "/leaderboard/"), ("Guides", "/guides/")]
+NAV_TH = [("วิธีเริ่มต้น", "/th/get-started/"), ("ตารางคะแนน", "/leaderboard/#th"), ("คู่มือ (อังกฤษ)", "/guides/")]
 LOGO = ('<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="4" fill="none" '
         'stroke="currentColor" stroke-width="2"/><path d="M7 9l3 3-3 3M12 15h5" fill="none" stroke="currentColor" '
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -92,9 +92,11 @@ def ram_bars() -> str:
 
 def layout(path: str, title: str, desc: str, body: str, lang: str = "en", schema: dict | None = None) -> None:
     nav = "".join(f'<a href="{href}"{" aria-current=page" if href == path else ""}>{name}</a>'
-                  for name, href in NAV)
+                  for name, href in (NAV if lang == "en" else NAV_TH))
     other = '<a class="lang" href="/th/" hreflang="th">ไทย</a>' if lang == "en" else \
         '<a class="lang" href="/" hreflang="en">English</a>'
+    start = ('<a class="btn primary nav-cta" href="/get-started/">Get started</a>' if lang == "en" else
+             '<a class="btn primary nav-cta" href="/th/get-started/">เริ่มใช้งาน</a>')
     full = title if title.startswith("localllm") else f"{title} | localllm"
     ld = f'<script type="application/ld+json">{json.dumps(schema, ensure_ascii=False)}</script>' if schema else ""
     alt = ('<link rel="alternate" hreflang="en" href="' + URL + '/">'
@@ -123,7 +125,7 @@ def layout(path: str, title: str, desc: str, body: str, lang: str = "en", schema
 <header class="top"><div class="wrap">
 <a class="brand" href="{'/th/' if lang == 'th' else '/'}">{LOGO}localllm</a>
 <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
-<nav class="nav" id="nav">{nav}<a href="{GH}">GitHub</a>{other}</nav>
+<nav class="nav" id="nav">{nav}<a href="{GH}">GitHub</a>{other}{start}</nav>
 </div></header>
 <main id="main">
 {body}
@@ -133,7 +135,8 @@ def layout(path: str, title: str, desc: str, body: str, lang: str = "en", schema
 <div><h4>localllm</h4><p>make-localllm-easier {__version__}. MIT licensed. Models keep their own licenses.</p></div>
 <div><h4>Use it</h4><a href="/get-started/">Get started</a><a href="/how-it-works/">How it works</a><a href="/leaderboard/">Leaderboard</a><a href="{GH}/blob/main/docs/apis.md">API docs</a></div>
 <div><h4>Read</h4><a href="/features/">Features</a><a href="/use-cases/">Use cases</a><a href="/compare/">Compare</a><a href="/guides/">Guides</a></div>
-<div><h4>Project</h4><a href="{GH}">GitHub</a><a href="{PYPI}">PyPI</a><a href="{GH}/blob/main/ROADMAP.md">Roadmap</a><a href="{GH}/blob/main/CONTRIBUTING.md">Contributing</a><a href="{ISSUES}">Issues</a></div>
+<div><h4>Project</h4><a href="{GH}">GitHub</a><a href="{PYPI}">PyPI</a><a href="{GH}/blob/main/ROADMAP.md">Roadmap</a><a href="{GH}/blob/main/CONTRIBUTING.md">Contributing</a><a href="{GH}/releases">Releases</a></div>
+<div><h4>Contact</h4><a href="{ISSUES}/new">Report a problem</a><a href="{ISSUES}/new?title=Report">Share a result</a><a href="{ISSUES}">Questions and ideas</a><a href="/th/">ภาษาไทย</a></div>
 </div>
 </div></footer>
 <script src="/assets/site.js" defer></script>
@@ -148,9 +151,12 @@ def cta(primary=("Get started", "/get-started/"), secondary=("View on GitHub", G
             f'<a class="btn" href="{secondary[1]}">{secondary[0]}</a></div>')
 
 
+STAR = f'<a class="btn" href="{GH}/stargazers">&#9734; Star on GitHub</a>'
+
+
 def end_cta(text: str, secondary=("Read the docs", GH + "#readme")) -> str:
-    return (f'<section><div class="wrap narrow"><h2>{text}</h2>{INSTALL}'
-            f'{cta(("Get started", "/get-started/"), secondary)}</div></section>')
+    btns = cta(("Get started", "/get-started/"), secondary).replace("</div>", STAR + "</div>")
+    return f'<section><div class="wrap narrow"><h2>{text}</h2>{INSTALL}{btns}</div></section>'
 
 
 def page_head(kicker: str, h1: str, lead: str, crumbs: str = "") -> str:
@@ -179,6 +185,11 @@ download, nothing leaves your PC.</p>
 <div>{doctor_sample()}</div>
 </div></section>
 
+<div class="trust"><div class="wrap">
+<span>AMD · NVIDIA · Intel · Apple</span><span>Picks from measured benchmarks</span><span>Offline and private</span>
+<span>Open source (MIT)</span><span>Downloads checked (SHA-256)</span>
+</div></div>
+
 <section><div class="wrap">
 <div class="facts">
 <div><b>{RAM_G['localllm_gb']:.1f} GB</b><span>system RAM after a 30-turn chat (llama.cpp defaults: {RAM_G['default_gb']:.1f} GB)</span></div>
@@ -203,7 +214,7 @@ about 13 points.</p></div>
 prompt cache in system RAM. localllm sizes the caches to your PC: about 4x less RAM in the same chat, same tok/s.</p></div>
 <div class="card"><div class="n">04</div><h3>Works with the apps you have</h3><p>One endpoint at
 <code>127.0.0.1:8080</code> speaks four APIs, with tool calling and images. <code>localllm connect</code> sets up
-Hermes, OpenCode, Claude Code, Codex or Aider.</p></div>
+Hermes, OpenCode, Claude Code, Codex, Aider or Obsidian.</p></div>
 </div>
 <p><a href="/features/">All features</a></p>
 </div></section>
@@ -252,7 +263,7 @@ conversation.</div></li>
 <tr><th></th><th>localllm</th><th>Ollama / LM Studio</th><th>llama.cpp yourself</th></tr>
 <tr><td>Which model?</td><td>Picked from measured scores for your language</td><td>You choose</td><td>You choose</td></tr>
 <tr><td>Settings</td><td>Profiled per model, <code>tune</code> per PC</td><td>Their defaults</td><td>All yours</td></tr>
-<tr><td>Interface</td><td>Browser chat, terminal, API</td><td>Polished apps</td><td>CLI and server</td></tr>
+<tr><td>Interface</td><td>Browser chat with saved chats, terminal, API</td><td>Polished apps</td><td>CLI and server</td></tr>
 </table></div>
 <p><a href="/compare/">Full comparison</a></p>
 </div>
@@ -315,9 +326,27 @@ embeddings), Anthropic (<code>/v1/messages</code>), Ollama (<code>/api/chat</cod
 Existing SDKs only need a new base URL. <code>localllm serve --host 0.0.0.0</code> shares it on your network behind an
 API key.</p>
 
-<h2>Agents: <code>localllm connect</code></h2>
-<p>Writes the config for Hermes Agent, OpenCode, Claude Code, Codex CLI or Aider so they use the local model, backs up
-the old file, and <code>--undo</code> puts it back.</p>
+<h2>Two profiles: lean or max</h2>
+<p><b>lean</b> (the default) keeps an 8k-token context and caches sized so system RAM stays around
+{RAM_G['localllm_gb']:.1f} GB. <b>max</b> (<code>--profile max</code>) spends what the PC has: a context that fills the
+free VRAM (about 78k tokens on a 16 GB card) and a larger prompt cache, for long documents and coding agents.
+<code>localllm doctor</code> shows both for your PC. Same model, same answers; only memory changes.</p>
+
+<h2>A chat page with saved chats</h2>
+<p><code>localllm --ui</code> opens our own chat page instead of llama-server's: chats saved as plain files on your
+disk, a model picker when you run several models, the speed of each answer, and live VRAM and RAM with a warning
+when the model spills out of the GPU. The page loads nothing from the internet. Shared on your network, it asks for
+the key printed in the terminal.</p>
+
+<h2>Agents and notes: <code>localllm connect</code></h2>
+<p>Writes the config for Hermes Agent, OpenCode, Claude Code, Codex CLI, Aider or Copilot for Obsidian so they use the
+local model, backs up the old file, and <code>--undo</code> puts it back. For Obsidian it also tells you what would
+still go to a cloud service.</p>
+
+<h2>See what running locally saves</h2>
+<p><code>localllm savings</code> counts the tokens this PC answered this month, how much of each prompt came from the
+cache, and, at the cloud prices you enter, what that would have cost. No prices are built in: they change, and a
+guess would be worse than none.</p>
 
 <h2>Optional extras</h2>
 <ul>
@@ -325,12 +354,16 @@ the old file, and <code>--undo</code> puts it back.</p>
 score for its language and task. Off by default: on a 16 GB card a swap costs 4-9 seconds.</li>
 <li><b>Your own cloud key</b> (<code>localllm route</code>): off by default. When you turn it on, a rule decides when
 a request goes to the cloud, and every answer says where it came from.</li>
-<li><b>Benchmarks</b> (<code>localllm eval</code>): score any OpenAI-compatible server in your language.</li>
+<li><b>Benchmarks</b> (<code>localllm eval</code>): score any OpenAI-compatible server in your language, including
+a long-context test that hides numbers deep in 8k-64k-token documents (<code>--suites longctx</code>).</li>
+<li><b>Safe upgrades</b>: llama.cpp is pinned to the build the numbers were measured on. A new build is smoke-tested
+on our PC first, and <code>doctor</code> says when yours differs.</li>
 </ul>
 
 <h2>What it doesn't do (yet)</h2>
 <ul>
 <li>No desktop app. The interface is a browser page, the terminal and the API.</li>
+<li>No numbers yet from the long-context test for the catalog models; they are queued.</li>
 <li>No models for cards under ~10 GB in the catalog yet. Measuring them is
 <a href="{GH}/issues/38">issue #38</a>.</li>
 <li>Only Windows with an AMD card is tested by us. Everything else depends on
@@ -364,7 +397,8 @@ and on a near tie (under 2 points) the faster one. You can override it: <code>lo
 <h2>3. It downloads and checks the files</h2>
 <p>llama.cpp comes from build b11476, the one the numbers were measured on. The model comes from a pinned commit on
 Hugging Face. Each file is checked against a SHA-256 stored in the code. Downloads resume if they stop. Everything goes
-to <code>~/.localllm/</code>.</p>
+to <code>~/.localllm/</code>. The first time, before the multi-GB model download, it shows what your PC can run and
+asks.</p>
 
 <h2>4. It starts the model</h2>
 <p>llama-server starts on a private port with the settings from the catalog: flash attention, an 8-bit KV cache, one
@@ -378,6 +412,7 @@ the four APIs on port 8080. Your browser opens the chat page.</p>
 Ctrl+C stops an answer).</li>
 <li>Point an app at <code>http://127.0.0.1:8080/v1</code> with any API key.</li>
 <li>Run <code>localllm tune</code> once to measure the speed settings on your PC.</li>
+<li>Want saved chats? <code>localllm --ui</code>. Long documents or an agent? <code>--profile max</code>.</li>
 </ul>
 
 <h2>What you don't have to do</h2>
@@ -422,6 +457,11 @@ def uses() -> None:
          "claude-code, codex, aider). <code>--undo</code> restores your old config.",
          "The agent talks to your GPU. How well each agent works with these models is still being measured "
          "(<a href=\"" + GH + "/issues/96\">#96</a>)."),
+        ("Your notes in Obsidian, kept on your PC",
+         "AI plugins for notes usually send your text to a cloud service, and it is easy to miss which setting does.",
+         "<code>localllm connect obsidian --path YOUR_VAULT</code> makes the local model the default in Copilot for "
+         "Obsidian and lists anything that would still reach the cloud, such as a cloud embedding model for search.",
+         "Chat about your notes with the model on your GPU; <code>--undo</code> puts the plugin's old settings back."),
         ("An AMD or Intel graphics card",
          "Guides and tools often assume NVIDIA and CUDA. On Windows without Resizable BAR, llama.cpp on Vulkan can be "
          "up to 1.7x slower.",
@@ -439,7 +479,7 @@ def uses() -> None:
         f'<div class="card"><h3>{t}</h3><p><b>The problem.</b> {p}</p><p><b>With localllm.</b> {s}</p>'
         f'<p class="muted"><b>Result.</b> {r}</p></div>' for t, p, s, r in items)
     body = page_head("Use cases", "What people use it for",
-                     "Six situations where it helps, with the commands. If yours isn't here, "
+                     "Seven situations where it helps, with the commands. If yours isn't here, "
                      f'<a href="{ISSUES}">open an issue</a>.') + f"""
 <section><div class="wrap"><div class="cards">{cards}</div>
 <div class="note warn" style="margin-top:24px"><b>Not a fit yet:</b> GPUs under ~10 GB and CPU-only PCs. The tool runs
@@ -465,7 +505,8 @@ def compare() -> None:
          "Ollama's defaults", "Settings in the app", "Every flag is yours"),
         ("System RAM in a long chat", f"~{RAM_G['localllm_gb']:.1f} GB (measured)", "Not measured by us",
          "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
-        ("Interface", "Browser chat page, terminal chat, API", "CLI, API, desktop app", "Desktop app with a GUI",
+        ("Interface", "Browser chat page with saved chats (<code>--ui</code>), terminal chat, API",
+         "CLI, API, desktop app", "Desktop app with a GUI",
          "CLI, server, simple web page"),
         ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own API plus OpenAI-compatible",
          "Its own API plus OpenAI-compatible", "OpenAI-compatible, Anthropic Messages"),
@@ -528,7 +569,9 @@ def start() -> None:
                 "localllm tune       <span class=\"p\"># measure the fastest settings once</span>\n"
                 "localllm eval       <span class=\"p\"># score a running server in your language</span>\n"
                 "localllm report     <span class=\"p\"># share your results (anonymous)</span>\n"
-                "localllm connect hermes   <span class=\"p\"># point an agent at it</span>")
+                "localllm connect hermes   <span class=\"p\"># point an agent at it</span>\n"
+                "localllm --ui       <span class=\"p\"># chat page with saved chats</span>\n"
+                "localllm savings    <span class=\"p\"># tokens answered locally this month</span>")
     faq = [
         ("<code>pip</code> is not found", "Install Python 3.9 or newer from python.org (on Windows, tick \"Add python.exe "
          "to PATH\"), then use <code>python -m pip install make-localllm-easier</code>."),
@@ -542,8 +585,12 @@ def start() -> None:
          "in your BIOS; see <a href=\"/guides/llama-cpp-slow-on-amd-intel-windows/\">this guide</a>."),
         ("The first answer takes a long time", "The first run of a new llama.cpp build compiles GPU shaders once "
          "(about 15 seconds). Later starts are fast."),
-        ("Where are the files?", "<code>~/.localllm/</code>: models, llama.cpp, tune results. Delete the folder to "
-         "remove everything. Use <code>LOCALLLM_MODELS</code> to point at a folder of GGUF files you already have."),
+        ("Where are the files?", "<code>~/.localllm/</code>: models, llama.cpp, tune results, saved chats. Delete the "
+         "folder to remove everything. Use <code>LOCALLLM_MODELS</code> to point at a folder of GGUF files you already "
+         "have."),
+        ("Windows or macOS warns about the downloaded file", "The single-file builds are not code-signed yet. Windows: "
+         "More info > Run anyway. macOS: right-click > Open once. Or install with <code>pip</code>, which has no "
+         "warning."),
     ]
     qa = "".join(f"<details><summary>{q}</summary><p>{a}</p></details>" for q, a in faq)
     body = page_head("Get started", "Install and run it",
@@ -557,8 +604,11 @@ def start() -> None:
 <li><div>Run <code>localllm</code>. The chat page opens when the model is loaded.</div></li>
 </ol>
 {INSTALL}
-<p class="small muted">Want to see what it would pick before downloading 8-14 GB? Run <code>localllm doctor</code>
-first. It only downloads llama.cpp.</p>
+<p class="small muted">The first run shows what your PC can run and asks before the 8-14 GB model download.
+<code>localllm doctor</code> shows the same without downloading a model.</p>
+<h3>No Python?</h3>
+<p>From version 0.7.0, every <a href="{GH}/releases">release</a> has a single <code>localllm</code> file for Windows,
+macOS and Linux, and an AppImage. Download it and run it from a terminal. winget and Homebrew packages follow.</p>
 </div>
 <div class="prose">
 <h2>Then</h2>
@@ -708,8 +758,8 @@ and the best measured model for your language.</p>
 """, [("Which local LLM should I run on a 16 GB GPU?",
        "gemma-4-26B-A4B QAT at 4 bits (13.3 GB, ~90 tok/s on an RX 9070 XT) or Qwen3.8-27B at ~3.5 bits (12.2 GB, "
        "~50 tok/s). They score within 2 points in most languages; Qwen3.8 leads in Chinese, Spanish and Japanese."),
-      ("Can a 16 GB GPU run a 27B model?", "Yes. Qwen3.8-27B at ~3.5 bits is 12.2 GB and runs at about 50 tok/s on "
-       "an RX 9070 XT with 81.8% on English Global-MMLU-Lite.")])
+      ("Can a 16 GB GPU run a 27B model?", f"Yes. Qwen3.8-27B at ~3.5 bits is {Q3['gb']} GB and runs at about "
+       f"{Q3['tok_s_9070xt']} tok/s on an RX 9070 XT with {Q3['scores']['en/global']}% on English Global-MMLU-Lite.")])
 
     guide("llama-cpp-slow-on-amd-intel-windows", "Why is llama.cpp slow on my AMD or Intel GPU on Windows?",
           "Usually Resizable BAR. Without it, llama.cpp's Vulkan backend can put buffers in a small host-visible heap, "
@@ -828,13 +878,109 @@ left for other apps.</p>
        f"{RAM_Q['localllm_gb']:.1f} GB of system RAM. With llama-server's defaults it grows to about "
        f"{RAM_Q['default_gb']:.1f} GB over a 30-turn chat, at the same speed.")])
 
+    guide("local-ai-vs-cloud-ai", "Local AI or cloud AI: when to use which",
+          "A local model on your GPU is private, free per token and works offline; a frontier cloud model knows more "
+          "and reasons better. Most people need both. Here is how to split the work, with our measurements.", f"""
+<h2>What a local model is good at today</h2>
+<p>On a 16 GB card, the best models we measured score {G4['scores']['en/global']}% on translated world-knowledge
+questions in English and {G4['scores']['en/math']}% on grade-school math, at {G4['tok_s_9070xt']} tok/s. That is enough
+for everyday writing, summaries, translation drafts, explaining code, and questions about your own documents.</p>
+<ul>
+<li><b>Private by construction.</b> Nothing leaves the PC; useful for client documents, health or finance notes, code
+under NDA.</li>
+<li><b>No per-token bill.</b> The cost is the electricity and the GPU you already have.</li>
+<li><b>Works offline</b>, on a plane or behind a strict firewall.</li>
+<li><b>Predictable.</b> The model doesn't change under you; you pick when to upgrade.</li>
+</ul>
+
+<h2>Where the cloud still wins</h2>
+<ul>
+<li>Hard multi-step reasoning, large refactors across many files, and questions that need the newest knowledge.</li>
+<li>Very long contexts: a 16 GB card holds about 78k tokens next to the model (<code>--profile max</code>); cloud
+models take far more.</li>
+<li>Lower-resource languages at small sizes: quantization costs Thai, Hindi and Arabic more than English (13 vs 8
+points at 2 bits on Qwen3.8-27B), so check the <a href="/leaderboard/">scores in your language</a>.</li>
+</ul>
+
+<h2>Using both</h2>
+<p><code>localllm route</code> can send a request to your own cloud API key when a rule says so (a prompt too long for
+the local model, a language below the quality floor). It is off by default, the cost and destination are shown, and
+every answer is labelled with where it came from. Keys stay in your OS keychain.</p>
+<p><code>localllm savings</code> shows how many tokens your PC answered this month and, at the prices you enter, what
+they would have cost in the cloud.</p>
+<p>One thing localllm will not do: pass a Claude or ChatGPT <em>subscription</em> login on to another tool. Use an API
+key; the providers' terms don't allow the other way and it risks your account.</p>
+""", [("Is a local LLM as good as ChatGPT or Claude?",
+       "Not for hard reasoning or the newest knowledge. On a 16 GB GPU the best local models we measured score about "
+       f"{G4['scores']['en/global']}% on translated world-knowledge questions and {G4['scores']['en/math']}% on "
+       "grade-school math in English, which is enough for everyday writing, summaries and questions about your own "
+       "files, privately and without a per-token bill."),
+      ("Can I use a local model and a cloud model together?",
+       "Yes. localllm route sends a request to your own cloud API key only when a rule you enable says so, shows the "
+       "cost first, and labels every answer with where it came from.")])
+
+    guide("coding-agent-with-a-local-model", "Run a coding agent on a local model (Hermes, OpenCode, Aider, Claude Code)",
+          "Three commands point an agent at the model on your GPU, with a context large enough for agent prompts. "
+          "What works, what to expect, and how to go back.", f"""
+<h2>Set it up</h2>
+<pre class="block">localllm serve --profile max     # a context that fills the GPU: agents send long prompts
+localllm connect hermes          # or opencode, claude-code, codex, aider, cline
+hermes                           # use the agent as usual</pre>
+<p><code>connect</code> changes only the base URL and the model name in the agent's own config file, keeps a backup,
+and <code>localllm connect hermes --undo</code> restores it. On a 16 GB card <code>--profile max</code> gives about
+78k tokens of context with gemma-4-26B-A4B; Hermes asks for 64k.</p>
+
+<h2>What to expect</h2>
+<ul>
+<li>Speed: about {G4['tok_s_9070xt']} tok/s decode on an RX 9070 XT; long prompts take longer the first time and are
+re-used from the prompt cache after that.</li>
+<li>Quality: fine for small edits, explanations, tests and scripts. Large multi-file refactors are where a frontier
+cloud model is still clearly better.</li>
+<li>Agent-by-agent results on our models are still being measured (<a href="{GH}/issues/96">#96</a>).</li>
+</ul>
+
+<h2>Check the prompt cache and the savings</h2>
+<p><code>localllm savings</code> shows the share of prompt tokens that came from the cache. Agents resend the same
+instructions on every call, so this should be high; if it is low, the agent's prompt changes between calls and every
+call is slower than it needs to be.</p>
+""", [("Can I use Claude Code or OpenCode with a local model?",
+       "Yes. Start the model with localllm serve --profile max, then localllm connect claude-code (or opencode, "
+       "hermes, codex, aider). It writes the tool's config to use the local endpoint and backs up the old one; "
+       "--undo restores it.")])
+
+    guide("obsidian-with-a-local-llm", "Use Obsidian with a local LLM, without sending notes to the cloud",
+          "Copilot for Obsidian can talk to the model on your GPU. One command sets it up and tells you which "
+          "settings would still send notes to a cloud service.", f"""
+<h2>Set it up</h2>
+<ol>
+<li>In Obsidian, install and enable the <b>Copilot</b> community plugin.</li>
+<li>Start the model: <code>localllm serve</code></li>
+<li>Run <code>localllm connect obsidian --path "PATH/TO/YOUR/VAULT"</code>, then reload Obsidian.</li>
+</ol>
+<p>The local model becomes Copilot's default chat model; your other models stay in the list.
+<code>--undo --path ...</code> restores the plugin's previous settings.</p>
+
+<h2>Check what still leaves your PC</h2>
+<p>The command lists two things to look at: a cloud <b>embedding model</b> for vault search (building the index sends
+chunks of your notes to it), and cloud chat models still enabled in the menu. Turn those off in Copilot's settings if
+nothing should leave the PC.</p>
+
+<h2>Local search over your notes</h2>
+<p>For vault search, run a small local embedding model next to the chat model. localllm already downloads one for its
+router, multilingual-e5-small (126 MB, about 100 languages). The exact commands are in the
+<a href="{GH}/blob/main/docs/apis.md#obsidian">API docs</a>.</p>
+""", [("Can Obsidian use a local LLM?",
+       "Yes, through the Copilot for Obsidian plugin. localllm connect obsidian --path YOUR_VAULT makes the local model "
+       "the default and lists any setting that would still send notes to a cloud service.")])
+
     cards = "".join(f'<div class="card"><h3><a href="/guides/{s}/">{t}</a></h3><p class="muted">{d}</p></div>'
                     for s, t, d, _ in GUIDES)
     body = page_head("Guides", "Guides", "Answers to the questions people ask most about running LLMs locally, "
                      "with the measurements behind them.") + \
         f'<section><div class="wrap"><div class="cards">{cards}</div></div></section>'
     layout("/guides/", "Guides", "Which local LLM fits a 16 GB GPU, why llama.cpp is slow on AMD/Intel Windows, the "
-           "best local model for your language, and how much RAM a local LLM needs.", body)
+           "best local model for your language, how much RAM a local LLM needs, local vs cloud AI, coding agents and "
+           "Obsidian on a local model.", body)
 
 
 # ---- Thai home -------------------------------------------------------------------------------------------------------
@@ -849,7 +995,7 @@ def thai() -> None:
 ซึ่งใส่การ์ดได้พอดี จากนั้นดาวน์โหลดและเปิดใช้ด้วย llama.cpp ที่ตั้งค่าไว้แล้ว ฟรี ใช้ออฟไลน์ได้หลังดาวน์โหลดครั้งแรก
 ข้อมูลไม่ออกจากเครื่อง</p>
 {INSTALL}
-<div class="btns"><a class="btn primary" href="/get-started/">เริ่มใช้งาน (อังกฤษ)</a><a class="btn" href="{GH}">ดูบน GitHub</a></div>
+<div class="btns"><a class="btn primary" href="/th/get-started/">เริ่มใช้งาน</a><a class="btn" href="{GH}">ดูบน GitHub</a></div>
 <p class="small muted">ต้องมี Python 3.9 ขึ้นไป โมเดลที่มีตอนนี้ต้องใช้การ์ดจอ VRAM 10 GB ขึ้นไป
 ถ้าไม่แน่ใจ ให้รัน <code>localllm doctor</code> ก่อน จะบอกว่าการ์ดของคุณรันอะไรได้บ้าง</p>
 </div>
@@ -894,6 +1040,54 @@ localllm จึงเก็บคะแนนแยกตามภาษา แ�
            "รองรับ AMD, NVIDIA, Intel และ Apple ฟรีและโอเพนซอร์ส", body, lang="th")
 
 
+def thai_start() -> None:
+    body = page_head("เริ่มต้นใช้งาน", "ติดตั้งและเปิดใช้", "สองคำสั่ง ครั้งแรกจะดาวน์โหลด llama.cpp (~30 MB) และโมเดลหนึ่งตัว "
+                     "(8-14 GB) ครั้งเดียว ก่อนดาวน์โหลดโมเดลจะแสดงว่าเครื่องคุณรันอะไรได้และถามก่อน") + f"""
+<section><div class="wrap two">
+<div class="prose">
+<h2>ติดตั้ง</h2>
+<ol class="steps">
+<li><div>มี Python 3.9 ขึ้นไป (เช็กด้วย <code>python --version</code>) บน Windows ตอนติดตั้งให้ติ๊ก "Add python.exe to PATH"</div></li>
+<li><div>ติดตั้ง: <code>pip install make-localllm-easier</code></div></li>
+<li><div>พิมพ์ <code>localllm</code> หน้าแชทจะเปิดในเบราว์เซอร์เมื่อโมเดลโหลดเสร็จ</div></li>
+</ol>
+{INSTALL}
+<h3>ไม่มี Python?</h3>
+<p>ตั้งแต่เวอร์ชัน 0.7.0 ทุก <a href="{GH}/releases">release</a> จะมีไฟล์ <code>localllm</code> ไฟล์เดียวสำหรับ Windows,
+macOS และ Linux ดาวน์โหลดแล้วรันจาก terminal ได้เลย</p>
+</div>
+<div class="prose">
+<h2>คำสั่งที่ใช้บ่อย</h2>
+<pre class="block">localllm chat        # แชทใน terminal (พิมพ์ไทยได้)
+localllm --ui        # หน้าแชทที่บันทึกบทสนทนาไว้ในเครื่อง
+localllm doctor      # การ์ดจอนี้รันโมเดลขนาดไหนได้ เร็วแค่ไหน ใช้ RAM เท่าไร
+localllm list        # โมเดลทั้งหมดที่วัดแล้ว พร้อมคะแนนแต่ละภาษา
+localllm tune        # วัดค่าที่เร็วที่สุดสำหรับเครื่องนี้ (ครั้งเดียว ไม่กี่นาที)
+localllm eval --langs en,th   # วัดคะแนนภาษาไทยของ server ที่รันอยู่</pre>
+<p class="small">ใช้กับแอปอื่น: base URL <code>http://127.0.0.1:8080/v1</code> ใส่ API key อะไรก็ได้
+(<a href="{GH}/blob/main/docs/apis.md">ตัวอย่าง API</a>)</p>
+</div>
+</div></section>
+
+<section><div class="wrap narrow">
+<h2>ปัญหาที่พบบ่อย</h2>
+<details><summary>พิมพ์ <code>localllm</code> แล้วไม่เจอคำสั่ง</summary><p>pip ติดตั้งไว้ในโฟลเดอร์ที่ไม่อยู่ใน PATH
+ใช้ <code>python -m localllm</code> แทนได้ ผลเหมือนกัน</p></details>
+<details><summary>ขึ้นว่า "no measured model fits this GPU yet"</summary><p>โมเดลที่เล็กที่สุดในตอนนี้ต้องใช้ VRAM ประมาณ
+10 GB รัน <code>localllm doctor</code> เพื่อดูว่าการ์ดของคุณใส่โมเดลขนาดไหนได้</p></details>
+<details><summary>ช้ากว่าตัวเลขบนเว็บ</summary><p>รัน <code>localllm tune</code> ถ้าเป็นการ์ด AMD/Intel บน Windows
+ให้เปิด Resizable BAR ใน BIOS (<a href="/guides/llama-cpp-slow-on-amd-intel-windows/">อ่านเพิ่ม</a>) และถ้า doctor
+เตือนว่าโมเดลล้นไปใช้ RAM ให้ปิดโปรแกรมที่ใช้การ์ดจอหนัก ๆ</p></details>
+<details><summary>ไฟล์อยู่ที่ไหน ลบยังไง</summary><p>ทุกอย่างอยู่ใน <code>~/.localllm/</code> (โมเดล, llama.cpp,
+บทสนทนาที่บันทึก) ลบโฟลเดอร์นี้ก็ลบหมด</p></details>
+<p>เจอปัญหาอื่น <a href="{ISSUES}">เปิด issue</a> แนบผลของ <code>localllm doctor</code> มาด้วย (เขียนภาษาไทยได้)</p>
+</div></section>
+"""
+    layout("/th/get-started/", "เริ่มต้นใช้งาน localllm: ติดตั้งและรัน AI ในเครื่อง",
+           "ติดตั้งด้วย pip install make-localllm-easier แล้วพิมพ์ localllm คำสั่งที่ใช้บ่อย และวิธีแก้ปัญหาที่พบบ่อย",
+           body, lang="th")
+
+
 def not_found() -> None:
     body = page_head("404", "Page not found", 'Try the <a href="/">home page</a> or the <a href="/guides/">guides</a>.')
     layout("/404/", "Page not found", "This page does not exist.", body)
@@ -916,13 +1110,15 @@ def write() -> None:
     (OUT / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {URL}/sitemap.xml\n", encoding="utf-8",
                                     newline="\n")
     shutil.copy2(ROOT / "llms.txt", OUT / "llms.txt")
+    for f in (SITE / "static").glob("*") if (SITE / "static").exists() else []:   # e.g. a Search Console file
+        shutil.copy2(f, OUT / f.name)
     (OUT / "_headers").write_text("/assets/*\n  Cache-Control: public, max-age=3600\n/*\n"
                                   "  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n",
                                   encoding="utf-8", newline="\n")
 
 
 def main() -> None:
-    for build in (home, features, how, uses, compare, start, leaderboard, guides, thai, not_found):
+    for build in (home, features, how, uses, compare, start, leaderboard, guides, thai, thai_start, not_found):
         build()
     write()
     print(f"{len(pages)} pages -> {OUT}  ({URL})")
