@@ -1,0 +1,122 @@
+{
+ "version": 1,
+ "frozen": "2026-10-14",
+ "note": "#96 task set, fixed before any harness is run. Changing a task after results exist needs a new version number and a rerun of every harness. Repo tasks start from tools/agent_bench/fixture/ (a copy per run); each check is Python run in the Docker sandbox against the files the agent left, and passes only if it reaches its end. The agent never sees the checks.",
+ "repo_tasks": [
+  {
+   "id": "R1-fix-remove",
+   "lang": "en",
+   "prompt": "Store.remove silently ignores items that are not in the store. Make it raise KeyError for an unknown item, and ValueError when asked to remove more than there is. Keep the existing tests passing.",
+   "check": "from inventory import Store\ns = Store(); s.add('pen', 2, 1.0)\nfor call, err in ((lambda: s.remove('cup', 1), KeyError), (lambda: s.remove('pen', 3), ValueError)):\n    try:\n        call()\n        raise SystemExit(f'no {err.__name__}')\n    except err:\n        pass\ns.remove('pen', 2); assert s.names() == []"
+  },
+  {
+   "id": "R2-value",
+   "lang": "en",
+   "prompt": "Add Store.value() that returns the total stock value (quantity times price, summed over all items), and a test for it in tests/test_store.py.",
+   "check": "from inventory import Store\ns = Store(); s.add('pen', 3, 10.0); s.add('cup', 2, 2.5)\nassert abs(s.value() - 35.0) < 1e-9\nassert Store().value() == 0\nimport pathlib; assert 'value' in pathlib.Path('tests/test_store.py').read_text()"
+  },
+  {
+   "id": "R3-rename",
+   "lang": "en",
+   "prompt": "Rename Store.total to Store.count everywhere in the project, tests included. No method called total may remain.",
+   "check": "from inventory import Store\ns = Store(); s.add('pen', 3, 1.0)\nassert s.count() == 3 and not hasattr(s, 'total')\nimport pathlib\nimport re\nassert not re.search(r'\\.total\\(', pathlib.Path('tests/test_store.py').read_text())"
+  },
+  {
+   "id": "R4-json",
+   "lang": "en",
+   "prompt": "Add a --json flag to the `list` command of inventory/cli.py that prints the items as a JSON array of objects with name, qty and price, instead of the tab-separated lines.",
+   "check": "import io, json, contextlib\nfrom inventory import Store\nfrom inventory.cli import main\ns = Store(); s.add('pen', 3, 10.0)\nbuf = io.StringIO()\nwith contextlib.redirect_stdout(buf): main(['list', '--json'], store=s)\nassert json.loads(buf.getvalue()) == [{'name': 'pen', 'qty': 3, 'price': 10.0}]\nbuf = io.StringIO()\nwith contextlib.redirect_stdout(buf): main(['list'], store=s)\nassert buf.getvalue().startswith('pen\\t3\\t10.00')"
+  },
+  {
+   "id": "R5-csv",
+   "lang": "en",
+   "prompt": "Add Store.load_csv(path) that reads a CSV file with the header name,qty,price and adds every row to the store. Rows with a non-positive qty are skipped. Return the number of rows added.",
+   "check": "import pathlib\nfrom inventory import Store\np = pathlib.Path('/tmp/s.csv'); p.write_text('name,qty,price\\npen,3,10\\ncup,0,5\\nink,2,1.5\\n')\ns = Store(); assert s.load_csv(str(p)) == 2\nassert s.names() == ['ink', 'pen'] and s.items['ink']['price'] == 1.5"
+  },
+  {
+   "id": "R6-money",
+   "lang": "en",
+   "prompt": "Create inventory/format.py with money(x) that formats a number of baht like '฿1,234.50' (thousands separator, two decimals, minus sign before the ฿ for negatives), and use it for the price column of `list`.",
+   "check": "import io, contextlib\nfrom inventory.format import money\nassert money(1234.5) == '฿1,234.50' and money(0) == '฿0.00' and money(-3) == '-฿3.00'\nfrom inventory import Store\nfrom inventory.cli import main\ns = Store(); s.add('pen', 1, 1500)\nbuf = io.StringIO()\nwith contextlib.redirect_stdout(buf): main(['list'], store=s)\nassert '฿1,500.00' in buf.getvalue()"
+  }
+ ],
+ "thai_tasks": [
+  {
+   "id": "T1-value-th",
+   "lang": "th",
+   "same_check_as": "R2-value",
+   "prompt": "เพิ่มเมธอด Store.value() ที่คืนมูลค่าสินค้าคงคลังทั้งหมด (จำนวน x ราคา แล้วรวมทุกรายการ) และเพิ่มเทสต์ของมันใน tests/test_store.py"
+  },
+  {
+   "id": "T2-money-th",
+   "lang": "th",
+   "same_check_as": "R6-money",
+   "prompt": "สร้างไฟล์ inventory/format.py ที่มีฟังก์ชัน money(x) จัดรูปแบบจำนวนเงินบาทแบบ '฿1,234.50' (มีจุลภาคคั่นหลักพัน ทศนิยมสองตำแหน่ง ถ้าติดลบให้ใส่เครื่องหมายลบหน้า ฿) แล้วใช้มันกับคอลัมน์ราคาในคำสั่ง list"
+  },
+  {
+   "id": "T3-error-th",
+   "lang": "th",
+   "prompt": "ให้ Store.remove แจ้ง KeyError เมื่อไม่มีสินค้านั้น โดยข้อความ error เป็นภาษาไทยว่า 'ไม่พบสินค้า: <ชื่อสินค้า>' เช่น 'ไม่พบสินค้า: ปากกา'",
+   "check": "from inventory import Store\ntry:\n    Store().remove('ปากกา', 1)\n    raise SystemExit(1)\nexcept KeyError as e:\n    assert 'ไม่พบสินค้า: ปากกา' in str(e)"
+  },
+  {
+   "id": "T4-json-th",
+   "lang": "th",
+   "same_check_as": "R4-json",
+   "prompt": "เพิ่มตัวเลือก --json ให้คำสั่ง list ใน inventory/cli.py ให้พิมพ์รายการสินค้าเป็น JSON array ของอ็อบเจกต์ที่มี name, qty และ price แทนบรรทัดที่คั่นด้วยแท็บ"
+  }
+ ],
+ "code_tasks": {
+  "note": "Function-level tasks: the EvalPlus problems below, judged by EvalPlus's extended tests (bench.codegen_program). The harness gets the problem text and may run its own checks.",
+  "ids": [
+   "HumanEval/10",
+   "HumanEval/32",
+   "HumanEval/38",
+   "HumanEval/50",
+   "HumanEval/65",
+   "HumanEval/76",
+   "HumanEval/91",
+   "HumanEval/108",
+   "HumanEval/129",
+   "HumanEval/132",
+   "HumanEval/145",
+   "HumanEval/151",
+   "HumanEval/160",
+   "HumanEval/163",
+   "Mbpp/2",
+   "Mbpp/17",
+   "Mbpp/89",
+   "Mbpp/125",
+   "Mbpp/239",
+   "Mbpp/280",
+   "Mbpp/301",
+   "Mbpp/409",
+   "Mbpp/448",
+   "Mbpp/585",
+   "Mbpp/600",
+   "Mbpp/630",
+   "Mbpp/740",
+   "Mbpp/773",
+   "Mbpp/790",
+   "Mbpp/803"
+  ]
+ },
+ "long_session": {
+  "note": "tools/agent_session.py's 30 questions about this repository, read-only tools, 32k context. Scored per turn: the answer names a file that really contains the answer (expected_files) and the session never fails or spills.",
+  "turns": 30
+ },
+ "metrics": [
+  "task success (check passes)",
+  "tool-call error rate",
+  "wall time",
+  "generated tokens",
+  "peak RAM / VRAM of llama-server and of the harness",
+  "spill events"
+ ],
+ "runs": "3 runs per harness and model; report mean and min-max, and every failure",
+ "models": [
+  "gemma4-26b-a4b-qat",
+  "qwen3.8-27b-q3"
+ ],
+ "pass_rule": "A harness 'beats' another on a model when its success rate over repo_tasks + thai_tasks + code_tasks is higher by more than the larger of the two run-to-run ranges, AND its peak RAM is lower. Decided before running; a loss is published the same way."
+}
