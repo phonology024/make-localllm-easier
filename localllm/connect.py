@@ -164,7 +164,7 @@ def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run:
     path.write_text(new, encoding="utf-8", newline="")
     saved = f" (old file: {backup.name})" if state[str(path)]["backup"] else ""
     return (f"wrote {path}{saved}\n"
-            f"start the model with room for agent sessions:  localllm serve --ctx {AGENT_CTX}\n"
+            f"start the model with room for agent sessions:  localllm serve --profile max\n"
             f"then run:  {run}\n"
             f"undo:  localllm connect {tool} --undo")
 

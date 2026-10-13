@@ -216,7 +216,7 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
 - [x] (#79) Live footprint/spill status: `/status` in chat (UI part waits for #76)
 - [x] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
 - [ ] (#29) Local voice -> text -> LLM pipeline with babelscribe, Thai first (speech slot of the specialist pool): one VRAM budget for both
-- [ ] (#90) Two profiles: `lean` (default) and `max`
+- [x] (#90) Two profiles: `lean` (default) and `max` (`--profile`, both shown by `doctor`)
 - [x] (#91) Measurement runner: a queue of benchmark jobs that runs overnight (`tools/runner.py`; first batch #49 to run)
 - [x] (#92) Verify downloads: checksum llama.cpp builds and model files
 - [ ] (#93) Long-context quality suite per language (needle / RULER-style)

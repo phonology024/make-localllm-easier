@@ -83,6 +83,21 @@ def cpu_moe_layers(key: str, vram_gb: float, ram_free_gb: float) -> int | None:
     return None
 
 
+MAX_PROFILE_CTX = 131072   # the `max` profile's context: what fits next to the model, up to this
+
+
+def context_for(key: str, vram_gb: float, ram_free_gb: float, profile: str = "lean") -> int:
+    """Context the launch asks for: 8k in `lean`; in `max` whatever fits the GPU next to the weights left on it (the
+    experts kept in RAM free VRAM for it), in steps of 1024, up to MAX_PROFILE_CTX and the model's own limit."""
+    if profile != "max":
+        return MIN_CTX
+    from .sizing import context_tokens
+    m = MODELS[key]
+    in_ram = (cpu_moe_layers(key, vram_gb, ram_free_gb) or 0) * m.get("moe", {}).get("expert_gb_per_layer", 0)
+    fit = context_tokens(vram_gb, {**m, "gb": m["gb"] - in_ram}) // 1024 * 1024
+    return max(MIN_CTX, min(fit, MAX_PROFILE_CTX))
+
+
 QUALITY_FLOOR_BPW = 2.7   # below ~UD-Q2_K_XL-class quants accuracy falls off a cliff (non-English most: -13 pts at 2.5 bpw)
 
 

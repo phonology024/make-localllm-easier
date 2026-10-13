@@ -37,7 +37,7 @@ curl http://127.0.0.1:8080/v1beta/models/local:generateContent -H "Content-Type:
 ## Coding agents: `localllm connect`
 
 ```
-localllm serve --ctx 65536          # agents send long prompts; 64k is what Hermes asks for
+localllm serve --profile max        # agents send long prompts: a context that fills the GPU (Hermes asks for 64k)
 localllm connect hermes             # or opencode, claude-code, codex, aider, cline
 localllm connect hermes --undo      # put the old config back
 ```

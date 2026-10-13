@@ -418,7 +418,7 @@ def uses() -> None:
         ("A coding agent on a local model",
          "Agent tools like Hermes, OpenCode or Aider can run up large API bills, and you would like to try a local "
          "model for part of the work.",
-         "<code>localllm serve --ctx 65536</code>, then <code>localllm connect hermes</code> (or opencode, "
+         "<code>localllm serve --profile max</code>, then <code>localllm connect hermes</code> (or opencode, "
          "claude-code, codex, aider). <code>--undo</code> restores your old config.",
          "The agent talks to your GPU. How well each agent works with these models is still being measured "
          "(<a href=\"" + GH + "/issues/96\">#96</a>)."),

@@ -79,7 +79,7 @@ and SDKs only need a new base URL. See [docs/apis.md](docs/apis.md).
 
 **Can I use it with Hermes Agent, OpenCode, Claude Code, Codex or Aider?** Yes: `localllm connect hermes` (or
 `opencode`, `claude-code`, `codex`, `aider`, `cline`) writes that tool's config to use the local endpoint and backs up
-the old one; `--undo` restores it. Start the server with `localllm serve --ctx 65536` so long agent prompts fit. See
+the old one; `--undo` restores it. Start the server with `localllm serve --profile max` so long agent prompts fit. See
 [docs/apis.md](docs/apis.md#coding-agents-localllm-connect).
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
@@ -132,9 +132,18 @@ What it can do here:
   leaves ~15 GB of RAM free for other apps (est.)
   answers at ~90 tok/s
   speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
+
+Profiles (--profile):
+  lean (default)    8k context  ~ 2.2 GB RAM  least memory
+  max              78k context  ~ 9.6 GB RAM  long documents, agent sessions
 ```
 
 Speeds marked *est.* come from your card's memory bandwidth, calibrated on measured runs. Everything else is measured.
+
+**lean or max?** `lean` is the default: an 8k context and caches sized so RAM stays around 2 GB - right for chat and
+short questions. `--profile max` spends what the PC has: a context that fills the free VRAM (78k on a 16 GB card) and
+a prompt cache of up to a quarter of the RAM, so coding agents and long documents don't re-read their prompt every
+turn. Same model, same answers; only memory changes.
 
 ## Less RAM than running llama.cpp yourself (0.2)
 

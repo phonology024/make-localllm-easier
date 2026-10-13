@@ -7,9 +7,9 @@ from localllm import catalog, cli, gateway
 
 COMMANDS = {"doctor", "list", "tune", "chat", "serve", "route", "eval", "report", "connect"}
 TOP_FLAGS = {"--model", "--port", "--ctx", "--no-browser", "--models", "--idle-unload", "--host", "--api-key",
-             "--require-key-local", "--vision"}
+             "--require-key-local", "--vision", "--profile"}
 SUB_FLAGS = {"eval": {"--url", "--name", "--limit", "--langs", "--suites"}, "chat": {"--url"},
-             "report": {"--no-browser"}, "serve": {"--port", "--ctx", "--models", "--host", "--api-key", "--vision"},
+             "report": {"--no-browser"}, "serve": {"--port", "--ctx", "--models", "--host", "--api-key", "--vision", "--profile"},
              "connect": {"--undo", "--dry-run", "--url", "--model-id", "--path"}}
 ENDPOINTS = {"/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/responses",
              "/v1/messages", "/v1/messages/count_tokens", "/health"}

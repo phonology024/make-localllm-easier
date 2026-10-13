@@ -162,9 +162,10 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
     return host, api_key, shown
 
 
-def _start(key: str | None, port: int, ctx: int, models: str | None = None, host: str | None = None,
+def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False):
+           vision: bool = False, profile: str = "lean"):
+    """ctx None = the profile's context (8k lean; what fits the GPU in max)."""
     host, api_key, shown = _lan(host, api_key, require_local)
     trust = not require_local
     if shown != "127.0.0.1":
@@ -183,7 +184,8 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None, host
         from . import gateway, pool
         first = catalog.pick(dev["total_gb"], system_language(), ram_free, candidates=keys)
         _say(f"smart routing between {', '.join(keys)}")
-        need = sum(catalog.MODELS[k]["gb"] + catalog.MODELS[k]["kv_kb_per_token"] * ctx / 2**20
+        ctxs = {k: ctx or catalog.context_for(k, dev["total_gb"], ram_free, profile) for k in keys}
+        need = sum(catalog.MODELS[k]["gb"] + catalog.MODELS[k]["kv_kb_per_token"] * ctxs[k] / 2**20
                    + catalog.MODELS[k]["fixed_cache_gb"] + (catalog.MODELS[k].get("mmproj_gb", 0) if vision else 0)
                    for k in keys) + 1.0     # + ~1 GB driver/compute buffers
         resident = need <= dev["total_gb"]
@@ -191,7 +193,8 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None, host
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
         from . import taskclf
         clf = taskclf.Classifier(server)    # math/code/translate in any language; its server starts on the 1st message
-        p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctx, ram_free, vision), dev["total_gb"], ram_free, first,
+        p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctxs[k], ram_free, vision, profile), dev["total_gb"],
+                      ram_free, first,
                       resident, files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf,
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
@@ -200,7 +203,7 @@ def _start(key: str | None, port: int, ctx: int, models: str | None = None, host
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
-    proc, url = _launch(key, server, dev, ctx, ram_free, vision)
+    proc, url = _launch(key, server, dev, ctx, ram_free, vision, profile)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
                                   trust_loopback=trust, status=lambda: _status(proc, key))
@@ -221,9 +224,11 @@ def _warn_spill(pid: int) -> None:
              "slower. Close other GPU-heavy apps or pick a smaller model (`localllm list`).")
 
 
-def _launch(key: str, server, dev, ctx: int, ram_free: float, vision: bool = False) -> tuple[subprocess.Popen, str]:
+def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: bool = False,
+            profile: str = "lean") -> tuple[subprocess.Popen, str]:
     """Start llama-server for `key` on a private port; return once it answers /health. The vision projector is loaded
     only with `vision`, so text-only use costs no extra VRAM or RAM."""
+    ctx = ctx or catalog.context_for(key, dev["total_gb"] if dev else 0.0, ram_free, profile)
     cpu_moe = (catalog.cpu_moe_layers(key, dev["total_gb"], ram_free) or 0) if dev else 0
     if cpu_moe:
         _say(f"{key} doesn't fit the GPU whole: keeping the experts of {cpu_moe} layers in system RAM")
@@ -232,7 +237,9 @@ def _launch(key: str, server, dev, ctx: int, ram_free: float, vision: bool = Fal
     tuned = tune.load().get(tune.machine_key(dev["name"] if dev else "cpu", model.name, server))
     mtp = (tuned["mtp"] if tuned else catalog.MODELS[key]["mtp"]) if catalog.MODELS[key]["mtp"] else False
     inner = _free_port()   # llama-server listens privately; the gateway on `port` speaks OpenAI/Anthropic/Ollama/Gemini
-    args = runtime.server_args(model, dev["id"] if dev else None, inner, ctx, mtp, cpu_moe=cpu_moe)
+    args = runtime.server_args(model, dev["id"] if dev else None, inner, ctx, mtp, cpu_moe=cpu_moe, profile=profile)
+    if profile == "max":
+        _say(f"profile max: {ctx // 1000}k-token context, larger prompt cache in RAM")
     if vision:
         mmproj = _mmproj_path(key)
         if mmproj:
@@ -261,7 +268,7 @@ def _launch(key: str, server, dev, ctx: int, ram_free: float, vision: bool = Fal
 def cmd_run(a) -> None:
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
-                       vision=getattr(a, "vision", False))
+                       vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"))
     _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
@@ -281,7 +288,8 @@ def cmd_chat(a) -> None:
     if a.url:
         sys.exit(f"[localllm] nothing is answering at {a.url}")
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None),
-                       idle_min=getattr(a, "idle_unload", None), vision=getattr(a, "vision", False))
+                       idle_min=getattr(a, "idle_unload", None), vision=getattr(a, "vision", False),
+                       profile=getattr(a, "profile", "lean"))
     try:
         chat.repl(url, a.model or "")
     finally:
@@ -317,7 +325,7 @@ def cmd_route(a) -> None:
     url = f"http://127.0.0.1:{a.port}"
     proc = None
     if not chat.server_alive(url):
-        proc, url = _start(None, a.port, 8192)
+        proc, url = _start(None, a.port, None)
     try:
         for r in router.compare(a.test, url, cfg):
             if "error" in r:
@@ -391,9 +399,7 @@ def cmd_doctor(_a) -> None:
     if others:
         print(f"  also measured in {', '.join(others)} (`localllm list`)")
     print(f"  holds ~{ctx // 1000}k tokens at once (~{ctx // sizing.TOKENS_PER_PAGE} pages of text) next to the model")
-    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"], cpu_moe=cpu_moe)
-    ram_est = sizing.ram_estimate_gb(m, launch)
-    ram_est["total_gb"] = round(ram_est["total_gb"] + in_ram, 1)
+    ram_est = _ram_for(m, dev, ctx, cpu_moe, in_ram, "lean")
     ram_free = max(0.0, ram_avail - ram_est["total_gb"])
     print(f"  uses ~{ram_est['total_gb']:.1f} GB of system RAM: ~{ram_est['embed_gb']:.1f} GB embeddings/CPU-mapped"
           f" + ~{ram_est['prompt_cache_gb']:.1f} GB prompt cache + ~{ram_est['checkpoints_gb']:.1f} GB ctx checkpoints"
@@ -409,7 +415,22 @@ def cmd_doctor(_a) -> None:
         if est and not cpu_moe:
             print(f"  answers at ~{est} tok/s" + ("" if same else " (estimated from memory bandwidth)"))
         print("  speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)")
+    max_ctx = catalog.context_for(key, vram, ram_avail, "max")
+    max_ram = _ram_for(m, dev, max_ctx, cpu_moe, in_ram, "max")["total_gb"]
+    print("\nProfiles (--profile):")
+    print(f"  lean (default)  {catalog.MIN_CTX // 1000:>3}k context  ~{ram_est['total_gb']:4.1f} GB RAM  least memory")
+    print(f"  max             {round(max_ctx / 1000):>3}k context  ~{max_ram:4.1f} GB RAM  long documents, agent sessions")
     print(f"\nRun it: localllm        (llama.cpp: {server})")
+
+
+def _ram_for(m: dict, dev, ctx: int, cpu_moe: int, in_ram: float, profile: str) -> dict:
+    """System-RAM estimate of one launch (doctor), experts kept in RAM included."""
+    from . import sizing
+    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"], cpu_moe=cpu_moe,
+                                 profile=profile)
+    est = sizing.ram_estimate_gb(m, launch)
+    est["total_gb"] = round(est["total_gb"] + in_ram, 1)
+    return est
 
 
 def cmd_list(_a) -> None:
@@ -452,6 +473,8 @@ def cmd_eval(a) -> None:
     bench.run(a.url, a.name, langs, a.limit, tuple(a.suites.split(",")))
 
 
+PROFILE_HELP = ("lean (default): least RAM and VRAM, 8k context. max: use what this PC has - a context that fills the "
+                "GPU and a bigger prompt cache for agents (`localllm doctor` shows both)")
 VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-1.1 GB of VRAM; off by default so "
                "text-only use doesn't pay for it)")
 
@@ -461,7 +484,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--version", action="version", version=__version__)
     ap.add_argument("--model", choices=list(catalog.MODELS), help="override the automatic pick")
     ap.add_argument("--port", type=int, default=8080)
-    ap.add_argument("--ctx", type=int, default=8192, help="context length in tokens")
+    ap.add_argument("--ctx", type=int, help="context length in tokens (default: 8192 in lean, what fits in max)")
+    ap.add_argument("--profile", choices=runtime.PROFILES, default="lean", help=PROFILE_HELP)
     ap.add_argument("--no-browser", action="store_true")
     idle = {"type": float, "metavar": "MIN", "help": "with --models: stop the models after MIN minutes without a "
             "request (default 15, 0 = never); the next message loads them again"}
@@ -489,7 +513,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     c = sub.add_parser("chat"); c.add_argument("model", nargs="?", choices=list(catalog.MODELS))
     c.add_argument("--url", help="chat with an already running OpenAI-compatible server instead")
-    c.add_argument("--port", type=int, default=8080); c.add_argument("--ctx", type=int, default=8192)
+    c.add_argument("--port", type=int, default=8080); c.add_argument("--ctx", type=int)
+    c.add_argument("--profile", choices=runtime.PROFILES, default="lean", help=PROFILE_HELP)
     c.add_argument("--models", metavar="auto|A,B"); c.add_argument("--idle-unload", **idle)
     c.add_argument("--vision", action="store_true", help=VISION_HELP)
     c.set_defaults(fn=cmd_chat)
@@ -497,7 +522,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--test", metavar="PROMPT"); r.add_argument("--port", type=int, default=8080)
     r.set_defaults(fn=cmd_route)
     s = sub.add_parser("serve"); s.add_argument("model", nargs="?", choices=list(catalog.MODELS))
-    s.add_argument("--port", type=int, default=8080); s.add_argument("--ctx", type=int, default=8192)
+    s.add_argument("--port", type=int, default=8080); s.add_argument("--ctx", type=int)
+    s.add_argument("--profile", choices=runtime.PROFILES, default="lean", help=PROFILE_HELP)
     s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--idle-unload", **idle)
     s.add_argument("--vision", action="store_true", help=VISION_HELP)
     for flags, kw in lan:
