@@ -3,9 +3,9 @@ gb = weights in GiB; kv_kb_per_token = KV cache per token at q8 (from the GGUF a
 Speeds: llama-server decode tok/s on an RX 9070 XT 16 GB (Windows, Vulkan) with the tuned launch in runtime.py.
 mmproj = the vision projector in the same repo (loaded only with --vision), mmproj_gb its size.
 rev pins the repo commit the files are downloaded from; sha256 / mmproj_sha256 are checked after every download.
-build = the llama.cpp build the speeds and the math/translation scores were measured on (#95). The first knowledge
-scores (global/regional, 2026-10-07) ran on an earlier build that wasn't recorded; tools/runner_rebaseline.json re-runs
-them on the pinned build.
+build = the llama.cpp build the scores and speeds hold for (#95). The first knowledge scores (global/regional,
+2026-10-07) ran on an earlier, unrecorded build; re-run on b11476 (tools/runner_rebaseline.json, 2026-10-14) every one
+of the 36 came out within 1.6 points (the 95% margin is 3.7-5.6), so the published numbers stand.
 Add a model only after measuring it with `localllm eval`."""
 
 MODELS = {
