@@ -354,8 +354,10 @@ def cmd_tune(a) -> None:
     base = [a for a in runtime.server_args(model, dev["id"], 0, 4096, False, cpu_moe=cpu_moe) if True]
     i = base.index("--port"); del base[i:i + 2]
     _say(f"tuning {key} on {dev['name']} (a few minutes; each setting is kept only if it is >= 1.1x faster) ...")
-    chosen = tune.run(server, model, dev["name"], base, bool(catalog.MODELS[key]["mtp"]), log=lambda s: _say("  " + s))
-    _say(f"kept: env {chosen['env'] or 'none'}, MTP draft {chosen['mtp'] or 'off'} -> {chosen['tok_s']} tok/s "
+    chosen = tune.run(server, model, dev["name"], base, bool(catalog.MODELS[key]["mtp"]), log=lambda s: _say("  " + s),
+                      prefer_energy=getattr(a, "prefer_energy", False))
+    energy = f", {chosen['watts']:.0f} W GPU, {chosen['j_per_token']:.2f} J/token" if chosen.get("j_per_token") else ""
+    _say(f"kept: env {chosen['env'] or 'none'}, MTP draft {chosen['mtp'] or 'off'} -> {chosen['tok_s']} tok/s{energy} "
          f"(saved to {tune.CACHE})")
 
 
@@ -458,7 +460,8 @@ def cmd_doctor(_a) -> None:
     from . import tune
     tuned = tune.load().get(tune.machine_key(gpu, m["file"], server))
     if tuned:
-        print(f"  answers at ~{tuned['tok_s']:.0f} tok/s (measured here by `localllm tune`)")
+        energy = f", ~{tuned['j_per_token']:.2f} J/token at ~{tuned['watts']:.0f} W GPU" if tuned.get("j_per_token") else ""
+        print(f"  answers at ~{tuned['tok_s']:.0f} tok/s{energy} (measured here by `localllm tune`)")
     else:
         if est and not cpu_moe:
             print(f"  answers at ~{est} tok/s" + ("" if same else " (estimated from memory bandwidth)"))
@@ -579,6 +582,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp.set_defaults(fn=cmd_report)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
+    t.add_argument("--prefer-energy", action="store_true",
+                   help="also keep a setting that saves > 15%% GPU energy per token at < 5%% speed loss")
     c = sub.add_parser("chat"); c.add_argument("model", nargs="?", choices=list(catalog.MODELS))
     c.add_argument("--url", help="chat with an already running OpenAI-compatible server instead")
     c.add_argument("--port", type=int, default=8080); c.add_argument("--ctx", type=int)
