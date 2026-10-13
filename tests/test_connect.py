@@ -80,3 +80,30 @@ def test_dry_run_and_cline_write_nothing(home):
 
 def test_model_id_falls_back_when_nothing_runs():
     assert connect.model_id("http://127.0.0.1:9") == "localllm"
+
+
+def test_obsidian_sets_copilot_default_and_flags_cloud_left(home, tmp_path):
+    vault = tmp_path / "vault"
+    data = vault / ".obsidian" / "plugins" / "copilot" / "data.json"
+    data.parent.mkdir(parents=True)
+    old = {"activeModels": [{"name": "gpt-4o", "provider": "openai", "enabled": True, "isBuiltIn": True}],
+           "defaultModelKey": "gpt-4o|openai", "embeddingModelKey": "text-embedding-3-small|openai", "temperature": 0.1}
+    data.write_text(json.dumps(old))
+    msg = connect.connect("obsidian", BASE, "gemma", vault)
+    d = json.loads(data.read_text(encoding="utf-8"))
+    assert d["defaultModelKey"] == f"gemma|{connect.COPILOT_PROVIDER}" and d["temperature"] == 0.1
+    assert d["activeModels"][0]["baseUrl"] == BASE + "/v1" and d["activeModels"][1]["name"] == "gpt-4o"
+    assert "embeddings" in msg and "gpt-4o (openai)" in msg           # what still reaches the cloud is said
+    connect.connect("obsidian", BASE, "gemma", vault)                   # again: no duplicate entry
+    assert len(json.loads(data.read_text(encoding="utf-8"))["activeModels"]) == 2
+    assert "restored" in connect.undo("obsidian", vault) and json.loads(data.read_text()) == old
+
+
+def test_obsidian_needs_a_vault_with_the_plugin(home, tmp_path):
+    with pytest.raises(SystemExit, match="not an Obsidian vault"):
+        connect.connect("obsidian", BASE, "m", tmp_path)
+    (tmp_path / ".obsidian").mkdir()
+    with pytest.raises(SystemExit, match="Copilot community plugin"):
+        connect.connect("obsidian", BASE, "m", tmp_path)
+    with pytest.raises(SystemExit, match="give the vault"):
+        connect.connect("obsidian", BASE, "m")

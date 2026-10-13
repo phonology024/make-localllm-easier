@@ -71,8 +71,10 @@ only at 1.58 bit, and our own 2-bit results already cost 8-13 points. The realis
 in system RAM, expert pruning, SSD expert streaming and test-time compute. We are measuring them, none is shipped yet:
 [docs/research-big-models.md](docs/research-big-models.md) and ROADMAP 0.9.
 
-**Is there a harness or an Obsidian plugin?** Not yet. Both are planned as optional add-ons that never touch the base
-install, with what each costs you spelled out in [docs/addons.md](docs/addons.md).
+**Can I use it in Obsidian?** Yes, through the Copilot for Obsidian plugin: `localllm connect obsidian --path
+YOUR_VAULT` makes the local model its default and tells you anything that would still go to a cloud service
+([docs/apis.md](docs/apis.md#obsidian)). A harness and our own Obsidian plugin are planned as optional add-ons that never
+touch the base install ([docs/addons.md](docs/addons.md)).
 
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,

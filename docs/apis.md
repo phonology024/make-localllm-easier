@@ -54,10 +54,36 @@ copied next to it as `<file>.localllm-backup`; `--undo` puts it back (or deletes
 | Codex CLI | `~/.codex/config.toml` | a `localllm` provider (`wire_api = "responses"`) and a `localllm` profile; your default stays | `codex --profile localllm` |
 | Aider | `~/.aider.conf.yml` | `openai-api-base`, `openai-api-key`, `model: openai/<id>` | `aider` |
 | Cline | (inside VS Code) | nothing is written; `connect cline` prints the four fields to fill in | |
+| Obsidian (Copilot plugin) | `<vault>/.obsidian/plugins/copilot/data.json` (`--path VAULT`) | a `3rd party (openai-format)` chat model, made the default | reload Obsidian |
 
 The model name is the one the running server reports at `/v1/models` (pass `--model-id` to choose another).
 Claude Code with `connect` sends everything to the local model, including the small background requests; run
 `localllm connect claude-code --undo` to go back to your Anthropic account.
+
+### Obsidian
+
+```
+localllm serve
+localllm connect obsidian --path "D:/Notes"     # the vault folder; Copilot for Obsidian must be installed there
+localllm connect obsidian --undo --path "D:/Notes"
+```
+
+`connect obsidian` adds the local model to [Copilot for Obsidian](https://github.com/logancyang/obsidian-copilot) and
+makes it the default chat model. Your other models stay in the list. It then tells you what would still reach a cloud
+service: a cloud embedding model for vault search (indexing sends note chunks to it) and any cloud chat model still
+enabled in the menu. Turn those off in Copilot's settings if nothing should leave the PC.
+
+Vault search needs an embedding model. A small local one: the multilingual e5 model `localllm` already downloads for
+its task router (`~/.localllm/models/multilingual-e5-small-Q8_0.gguf`, 126 MB, ~100 languages):
+
+```
+llama-server -m ~/.localllm/models/multilingual-e5-small-Q8_0.gguf --embedding --pooling mean --port 8081
+```
+
+In Copilot: Settings > QA > Embedding model > add a custom model, provider "3rd party (openai-format)", base URL
+`http://127.0.0.1:8081/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
+way through its "custom local (OpenAI format)" option. An Obsidian plugin of our own (#89, part B) comes only if this
+isn't enough.
 
 Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
 uses at 20k+ tokens. Both are open issues (#77, #96); please report what you see.

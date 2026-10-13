@@ -9,7 +9,7 @@
   localllm serve [MODEL]    start an OpenAI-compatible server only (http://127.0.0.1:8080/v1)
   localllm eval             score a running server in English + your language (global and local exams)
   localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
-  localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline at the local endpoint
+  localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline / obsidian at the local endpoint
 """
 from __future__ import annotations
 
@@ -535,12 +535,13 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)
     cn = sub.add_parser("connect", help="point a coding agent at the local endpoint (the old config is backed up)")
-    cn.add_argument("tool", choices=["hermes", "opencode", "claude-code", "codex", "aider", "cline"])
+    cn.add_argument("tool", choices=["hermes", "opencode", "claude-code", "codex", "aider", "cline", "obsidian"])
     cn.add_argument("--undo", action="store_true", help="put the old config back")
     cn.add_argument("--dry-run", action="store_true", help="print the new config, change nothing")
     cn.add_argument("--url", default="http://127.0.0.1:8080", help="the localllm endpoint")
     cn.add_argument("--model-id", help="model name to write (default: what the running server reports)")
-    cn.add_argument("--path", help="write this file instead of the tool's usual one (e.g. a project config)")
+    cn.add_argument("--path", help="write this file instead of the tool's usual one (e.g. a project config); for "
+                                   "obsidian, the vault folder")
     cn.set_defaults(fn=cmd_connect)
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)
