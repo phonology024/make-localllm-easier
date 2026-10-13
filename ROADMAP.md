@@ -59,7 +59,8 @@ measurement and whatever it supports; harness, chat workspace and Obsidian plugi
 ## Test lab
 Hardware we don't own is the bottleneck for measurements. Cheapest first: a crowdsourced lab via `localllm report`, then a
 small cloud-rental matrix for NVIDIA and Apple Silicon (about $200-300, #101). Cloud has little consumer Radeon or Intel,
-so those come from community reports.
+so those come from community reports. The rented-machine run is one script, `tools/cloud_lab.sh` (install, doctor, tune,
+eval, report); its rows are marked `cloud:<provider>` on the leaderboard. Renting is the maintainer's call.
 
 ## 0.1 - one command (released)
 - `localllm`: detect GPU/RAM, pick the most accurate measured model for your language, download, start a tuned

@@ -35,14 +35,14 @@ def rows(reports: list[dict]) -> list[dict]:
         for model, builds in (r.get("tune") or {}).items():
             for build, t in builds.items():
                 out[(gpu, model, build)] = {"gpu": gpu, "vram": r.get("vram_gb"), "ram": r.get("ram_gb"),
-                                            "os": r.get("os"), "build": build, "model": model,
+                                            "os": r.get("os"), "build": build, "model": model, "host": r.get("host"),
                                             "tok_s": t.get("tok_s"), "settings": _settings(t), "scores": {}}
         for name, res in (r.get("results") or {}).items():
             scores = {k: v.get("acc") for k, v in res.items() if not k.startswith("_") and isinstance(v, dict)}
             hit = [row for (g, m, _b), row in out.items() if g == gpu and _same_model(m, name)]
             for row in hit or [out.setdefault((gpu, name, r.get("llama_cpp")), {
                     "gpu": gpu, "vram": r.get("vram_gb"), "ram": r.get("ram_gb"), "os": r.get("os"),
-                    "build": r.get("llama_cpp"), "model": name, "tok_s": None, "settings": "", "scores": {}})]:
+                    "build": r.get("llama_cpp"), "host": r.get("host"), "model": name, "tok_s": None, "settings": "", "scores": {}})]:
                 row["scores"].update(scores)
     return sorted(out.values(), key=lambda x: (str(x["gpu"]), str(x["model"])))
 

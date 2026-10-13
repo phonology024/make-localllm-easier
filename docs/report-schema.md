@@ -20,6 +20,7 @@ Written by `localllm/report.py`, saved as `~/.localllm/report-<date>.json`.
 | `devices` | list | every GPU llama.cpp sees: `{name, vram_gb}` |
 | `pick` | str or null | the catalog model `localllm` would pick here |
 | `tune` | object | `{model file: {llama.cpp build: {gpu, env, mtp, tok_s}}}` from `localllm tune` |
+| `host` | str, optional | `cloud` or `cloud:<provider>` for a rented machine (`LOCALLLM_REPORT_HOST`, set by `tools/cloud_lab.sh`); absent for your own PC |
 | `results` | object | `{run name: {"lang/suite": {acc, ...}, "_meta": {...}}}` from `localllm eval` |
 
 No user names, home folders, paths or keys: `report.scrub` removes them before anything is printed or saved.
@@ -40,6 +41,7 @@ Written by `tools/build_leaderboard.py` from the catalog and `reports/`.
    "model": "gemma4-26b-a4b-qat",   // catalog key when we know the file, else the name in the report
    "tok_s": 90,                     // decode tok/s, null if not tuned
    "scores": {"th/math": 89.6, ...}, // accuracy %, chrF++ for */translate
+   "host": "cloud:runpod",          // only for rows measured on a rented cloud machine
    "flags": ["..."]                 // reasons to double-check this row
  }],
  "platforms": {"Windows/AMD": {"maintainers": true, "community_reports": 0}, ...}

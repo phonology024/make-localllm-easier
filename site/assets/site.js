@@ -28,8 +28,15 @@
   var suites = [["global", "Knowledge (translated)", "%"], ["regional", "Local exams", "%"],
                 ["math", "Math", "%"], ["translate", "Translation", "chrF++"]];
 
+  // report fields are written by whoever shared the report: never put them into HTML unescaped
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+    });
+  }
+
   function cell(v, best) {
-    if (v === undefined || v === null) return '<td class="num muted">-</td>';
+    if (typeof v !== "number") return '<td class="num muted">-</td>';
     return '<td class="num' + (best ? " best" : "") + '">' + v.toFixed(1) + "</td>";
   }
 
@@ -48,16 +55,17 @@
       suites.map(function (s) { return '<th class="num">' + s[1] + "<br><span class=\"muted small\">" + s[2] + "</span></th>"; }).join("") +
       "<th>Source</th></tr>";
     var body = rows.map(function (e) {
-      return "<tr><td><code>" + e.model + "</code></td><td>" + e.gpu + " <span class=\"muted small\">" + e.vram_gb +
-        " GB</span></td><td>" + e.os + "</td>" +
-        '<td class="num">' + (e.tok_s || "-") + "</td>" +
+      return "<tr><td><code>" + esc(e.model) + "</code></td><td>" + esc(e.gpu) + " <span class=\"muted small\">" +
+        esc(e.vram_gb) + " GB</span></td><td>" + esc(e.os) + "</td>" +
+        '<td class="num">' + esc(e.tok_s || "-") + "</td>" +
         suites.map(function (s) { var k = lang + "/" + s[0]; return cell(e.scores[k], e.scores[k] === best[k] && rows.length > 1); }).join("") +
-        '<td><span class="tag' + (e.source === "maintainers" ? " ours" : "") + '">' + e.source + "</span>" +
-        (e.flags.length ? ' <span class="small" title="' + e.flags.join("; ") + '">(check)</span>' : "") + "</td></tr>";
+        '<td><span class="tag' + (e.source === "maintainers" ? " ours" : "") + '">' + esc(e.source) + "</span>" +
+        (e.host ? ' <span class="tag" title="rented cloud machine">' + esc(e.host) + "</span>" : "") +
+        (e.flags.length ? ' <span class="small" title="' + esc(e.flags.join("; ")) + '">(check)</span>' : "") + "</td></tr>";
     }).join("");
     board.innerHTML = "<table><thead>" + head + "</thead><tbody>" +
-      (body || '<tr><td colspan="9" class="muted">Nothing measured in ' + (names[lang] || lang) +
-        " yet. Run <code>localllm eval --langs en," + lang + "</code> and share it with <code>localllm report</code>.</td></tr>") +
+      (body || '<tr><td colspan="9" class="muted">Nothing measured in ' + esc(names[lang] || lang) +
+        " yet. Run <code>localllm eval --langs en," + esc(lang) + "</code> and share it with <code>localllm report</code>.</td></tr>") +
       "</tbody></table>";
     try { history.replaceState(null, "", "#" + lang); } catch (e) {}
   }
