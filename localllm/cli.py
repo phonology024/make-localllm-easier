@@ -164,8 +164,8 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
 
 def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False, profile: str = "lean"):
-    """ctx None = the profile's context (8k lean; what fits the GPU in max)."""
+           vision: bool = False, profile: str = "lean", ui: bool = False):
+    """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /."""
     host, api_key, shown = _lan(host, api_key, require_local)
     trust = not require_local
     if shown != "127.0.0.1":
@@ -198,7 +198,8 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
                       resident, files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf,
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
-                                            trust_loopback=trust, status=lambda: _status(p.proc, p.current))),
+                                            trust_loopback=trust, status=lambda: _status(p.proc, p.current),
+                                            ui=_ui(keys, True) if ui else None)),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
@@ -206,8 +207,17 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     proc, url = _launch(key, server, dev, ctx, ram_free, vision, profile)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
-                                  trust_loopback=trust, status=lambda: _status(proc, key))
+                                  trust_loopback=trust, status=lambda: _status(proc, key),
+                                  ui=_ui([key], False) if ui else None)
     return proc, f"http://127.0.0.1:{port}"
+
+
+def _ui(keys: list[str], choosable: bool) -> dict:
+    from . import workspace
+    from .bench import system_language
+    store = workspace.Sessions()
+    _say(f"chat workspace: chats are saved in {store.dir}")
+    return {"sessions": store, "catalog": workspace.catalog_info(keys, system_language(), choosable)}
 
 
 def _status(proc, key: str | None) -> dict:
@@ -268,7 +278,8 @@ def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: boo
 def cmd_run(a) -> None:
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
-                       vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"))
+                       vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
+                       ui=getattr(a, "ui", False))
     _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
@@ -478,6 +489,8 @@ def cmd_eval(a) -> None:
     bench.run(a.url, a.name, langs, a.limit, tuple(a.suites.split(",")))
 
 
+UI_HELP = ("our chat workspace at / instead of llama-server's page: saved chats (plain files in ~/.localllm/sessions), "
+           "a model picker with --models, live VRAM/RAM; on the LAN it asks for the key")
 PROFILE_HELP = ("lean (default): least RAM and VRAM, 8k context. max: use what this PC has - a context that fills the "
                 "GPU and a bigger prompt cache for agents (`localllm doctor` shows both)")
 VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-1.1 GB of VRAM; off by default so "
@@ -507,6 +520,7 @@ def build_parser() -> argparse.ArgumentParser:
     for flags, kw in lan:
         ap.add_argument(*flags, **kw)
     ap.add_argument("--vision", action="store_true", help=VISION_HELP)
+    ap.add_argument("--ui", action="store_true", help=UI_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
@@ -531,6 +545,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--profile", choices=runtime.PROFILES, default="lean", help=PROFILE_HELP)
     s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--idle-unload", **idle)
     s.add_argument("--vision", action="store_true", help=VISION_HELP)
+    s.add_argument("--ui", action="store_true", help=UI_HELP)
     for flags, kw in lan:
         s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)

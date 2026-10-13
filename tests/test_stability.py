@@ -7,7 +7,7 @@ from localllm import catalog, cli, gateway
 
 COMMANDS = {"doctor", "list", "tune", "chat", "serve", "route", "eval", "report", "connect"}
 TOP_FLAGS = {"--model", "--port", "--ctx", "--no-browser", "--models", "--idle-unload", "--host", "--api-key",
-             "--require-key-local", "--vision", "--profile"}
+             "--require-key-local", "--vision", "--profile", "--ui"}
 SUB_FLAGS = {"eval": {"--url", "--name", "--limit", "--langs", "--suites"}, "chat": {"--url"},
              "report": {"--no-browser"}, "serve": {"--port", "--ctx", "--models", "--host", "--api-key", "--vision", "--profile"},
              "connect": {"--undo", "--dry-run", "--url", "--model-id", "--path"}}

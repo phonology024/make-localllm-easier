@@ -192,10 +192,10 @@ whatever models it is given. Ours should be that, but fully local: your GPU, you
 llama-server's chat page has none of the session, model-switching or LAN-login pieces, and coding agents (OpenCode,
 Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so they are also the best RAM/context test.
 
-- [ ] (#76) `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
+- [x] (#76) `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
       files), a model picker fed by the catalog and the router (`X-Localllm-Model` shown per answer), per-model speed and
       RAM readout from `doctor`, no cloud assets or telemetry
-- [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
+- [x] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
       API key, still refuses to listen on the network without it
 - [x] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline, hermes): write the tool's config to point at the
       local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`

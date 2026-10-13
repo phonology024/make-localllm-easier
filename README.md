@@ -76,6 +76,11 @@ YOUR_VAULT` makes the local model its default and tells you anything that would 
 ([docs/apis.md](docs/apis.md#obsidian)). A harness and our own Obsidian plugin are planned as optional add-ons that never
 touch the base install ([docs/addons.md](docs/addons.md)).
 
+**Is there a chat window with saved chats?** `localllm --ui` (or `localllm serve --ui`) opens our own chat page
+instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`, a model picker when you run several
+models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
+internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
+
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,
 context used and the last answer's speed, Ctrl+C stops an answer.
