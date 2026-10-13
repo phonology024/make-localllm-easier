@@ -355,7 +355,11 @@ score for its language and task. Off by default: on a 16 GB card a swap costs 4-
 <li><b>Your own cloud key</b> (<code>localllm route</code>): off by default. When you turn it on, a rule decides when
 a request goes to the cloud, and every answer says where it came from.</li>
 <li><b>Benchmarks</b> (<code>localllm eval</code>): score any OpenAI-compatible server in your language, including
-a long-context test that hides numbers deep in 8k-64k-token documents (<code>--suites longctx</code>).</li>
+a long-context test that hides numbers deep in 8k-64k-token documents (<code>--suites longctx</code>) and news
+summaries in 24 languages (<code>--suites summarize</code>).</li>
+<li><b>Energy per answer</b> (<code>localllm tune</code>): the GPU's own power reading while it answers, shown as
+joules per token in <code>doctor</code>. AMD and NVIDIA; <code>--prefer-energy</code> keeps settings that save
+more than 15% energy for less than 5% speed.</li>
 <li><b>Safe upgrades</b>: llama.cpp is pinned to the build the numbers were measured on. A new build is smoke-tested
 on our PC first, and <code>doctor</code> says when yours differs.</li>
 </ul>

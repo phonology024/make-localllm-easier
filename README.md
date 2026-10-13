@@ -166,6 +166,11 @@ short questions. `--profile max` spends what the PC has: a context that fills th
 a prompt cache of up to a quarter of the RAM, so coding agents and long documents don't re-read their prompt every
 turn. Same model, same answers; only memory changes.
 
+**Energy.** `localllm tune` also reads the GPU's board power while it measures (AMD through the driver on Windows or
+hwmon on Linux, NVIDIA through `nvidia-smi`), and `doctor` then shows joules per token next to the speed. Only the GPU
+board is counted, not the CPU or the power supply. `localllm tune --prefer-energy` keeps a setting that saves more than
+15% energy per token while costing less than 5% speed.
+
 ## Less RAM than running llama.cpp yourself (0.2)
 
 llama-server's defaults keep a prompt cache of up to 8 GiB plus 32 conversation checkpoints in system RAM, so RAM keeps
