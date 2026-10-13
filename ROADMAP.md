@@ -203,7 +203,7 @@ Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so
 - [ ] (#77) Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
       context, defaults vs our tuned profile (same method as the 0.2 chat test)
 - [x] README: the RAM-over-30-turns bar chart at the top (`docs/img/ram-30-turns.png`)
-- [ ] (#81) README: a short terminal GIF at the top
+- [ ] (#81) README: a short terminal GIF at the top (`tools/record_demo.py` records it from a real run; needs the model downloaded once)
 
 ## 0.8 - reach and trust: be the local-LLM chooser that tells the truth
 Positioning: Ollama, LM Studio and plain llama.cpp users complain about silent defaults - small context, many slots eating
