@@ -90,19 +90,21 @@ CODEGEN_FIXES = {
 SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx")
 LONGCTX_LENGTHS = (8192, 32768, 65536)
 NEEDLE_NAMES = ("Orchid", "Falcon", "Copper", "Lantern", "Willow", "Harbor")
-# (needle, question for one, question for three) per language
+# (needle, question for one, question for three) per language. Words that also mean "digit" (th ตัวเลข, zh/ja 数字,
+# ar أرقام, hi अंक) are avoided in the questions: "three digits" got 3-digit answers (gemma-4 in Thai). Thai has no
+# sentence punctuation, so its needle ends with a space like the sentences around it.
 NEEDLES = {
     "en": ("The secret number of {name} is {num}.", "What is the secret number of {name}? Reply with the number only.",
            "What are the secret numbers of {name}? Reply with the three numbers only, in that order."),
-    "th": ("เลขลับของ {name} คือ {num}", "เลขลับของ {name} คืออะไร ตอบเป็นตัวเลขเท่านั้น",
-           "เลขลับของ {name} คืออะไร ตอบเป็นตัวเลขสามตัวตามลำดับเท่านั้น"),
-    "hi": ("{name} का गुप्त अंक {num} है।", "{name} का गुप्त अंक क्या है? केवल संख्या लिखें।",
-           "{name} के गुप्त अंक क्या हैं? केवल तीनों संख्याएँ क्रम से लिखें।"),
-    "ar": ("الرقم السري لـ {name} هو {num}.", "ما هو الرقم السري لـ {name}؟ أجب بالرقم فقط.",
-           "ما هي الأرقام السرية لـ {name}؟ أجب بالأرقام الثلاثة فقط بالترتيب."),
-    "zh": ("{name}的秘密数字是{num}。", "{name}的秘密数字是多少？只回答数字。", "{name}的秘密数字分别是多少？只按顺序回答三个数字。"),
-    "ja": ("{name}の秘密の番号は{num}です。", "{name}の秘密の番号は何ですか？数字だけで答えてください。",
-           "{name}の秘密の番号はそれぞれ何ですか？三つの数字だけを順番に答えてください。"),
+    "th": ("เลขลับของ {name} คือ {num} ", "เลขลับของ {name} คืออะไร ตอบเฉพาะเลขลับเท่านั้น",
+           "เลขลับของ {name} คืออะไรบ้าง ตอบเฉพาะเลขลับทั้งสามจำนวนตามลำดับเท่านั้น"),
+    "hi": ("{name} की गुप्त संख्या {num} है।", "{name} की गुप्त संख्या क्या है? केवल वह संख्या लिखें।",
+           "{name} की गुप्त संख्याएँ क्या हैं? केवल तीनों पूरी संख्याएँ क्रम से लिखें।"),
+    "ar": ("الرقم السري لـ {name} هو {num}.", "ما هو الرقم السري لـ {name}؟ أجب بالرقم السري فقط.",
+           "ما هي الأرقام السرية لـ {name}؟ أجب بالأرقام السرية الثلاثة كاملة فقط بالترتيب."),
+    "zh": ("{name}的秘密号码是{num}。", "{name}的秘密号码是多少？只回答号码。", "{name}的秘密号码分别是多少？只按顺序回答这三个完整的号码。"),
+    "ja": ("{name}の秘密の番号は{num}です。", "{name}の秘密の番号は何ですか？番号だけで答えてください。",
+           "{name}の秘密の番号はそれぞれ何ですか？三つの番号だけを順番に答えてください。"),
     "es": ("El número secreto de {name} es {num}.", "¿Cuál es el número secreto de {name}? Responde solo con el número.",
            "¿Cuáles son los números secretos de {name}? Responde solo con los tres números, en ese orden."),
 }

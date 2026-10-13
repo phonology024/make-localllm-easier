@@ -34,3 +34,11 @@ def test_reply_must_hold_every_number():
     assert not bench.needles_found("12345 and 67890", [12345, 67890, 11111])
     assert bench.needles_found("الرقم هو ١٢٣٤٥", [12345])               # Arabic-Indic digits count
     assert not bench.needles_found("1234", [12345])
+
+
+def test_three_needle_questions_ask_for_numbers_not_digits():
+    """'three digits' (Thai ตัวเลขสามตัว, Chinese 三个数字) made gemma-4 answer 3-digit prefixes of the needles."""
+    for lang, (needle, one, many) in bench.NEEDLES.items():
+        for word in ("ตัวเลข", "数字", "أرقام الثلاثة", "अंक"):
+            assert word not in one + many, (lang, word)
+    assert bench.NEEDLES["th"][0].endswith(" ")
