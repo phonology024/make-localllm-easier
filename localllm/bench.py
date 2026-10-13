@@ -87,7 +87,7 @@ CODEGEN_FIXES = {
                      r"rel_tol=1e-07, abs_tol=\1)"),
     "Mbpp/255": (r"\[\['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'\], 77\], ", ""),
 }
-SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx")
+SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx", "summarize")
 LONGCTX_LENGTHS = (8192, 32768, 65536)
 NEEDLE_NAMES = ("Orchid", "Falcon", "Copper", "Lantern", "Willow", "Harbor")
 # (needle, question for one, question for three) per language. Words that also mean "digit" (th ตัวเลข, zh/ja 数字,
@@ -108,6 +108,14 @@ NEEDLES = {
     "es": ("El número secreto de {name} es {num}.", "¿Cuál es el número secreto de {name}? Responde solo con el número.",
            "¿Cuáles son los números secretos de {name}? Responde solo con los tres números, en ese orden."),
 }
+# Summarization (#43): LR-Sum (Palen-Michel & Lignos 2023, VOA news, CC BY 4.0 - commercial use allowed, unlike
+# XL-Sum's CC BY-NC-SA). ISO -> LR-Sum config. First SUMMARIZE_N test articles, cut to SUMMARIZE_CHARS characters.
+LRSUM = {"en": "eng", "th": "tha", "zh": "cmn_s", "es": "spa", "fr": "fra", "pt": "por", "ru": "rus", "vi": "vie",
+         "id": "ind", "ko": "kor", "tr": "tur", "uk": "ukr", "ur": "urd", "fa": "fas", "bn": "ben", "km": "khm",
+         "lo": "lao", "my": "mya", "sw": "swh", "am": "amh", "el": "ell", "hy": "hye", "ka": "kat", "uz": "uzb"}
+SUMMARIZE_N, SUMMARIZE_CHARS = 100, 6000
+SUMMARIZE_SYSTEM = "Summarize the news article in one or two sentences, in {lang}. Reply with the summary only."
+NO_SPACES = ("th", "zh", "ja", "lo", "km", "my")      # ROUGE-L over characters for scripts without word spaces
 LONGCTX_SYSTEM = "Read the document and answer the question at the end from it."
 MAXM = {"en": "en", "fr": "fr", "hi": "hi", "he": "iw", "ro": "ro", "th": "th", "zh": "zh"}   # ISO -> dataset split
 VISION_SYSTEM = "Look at the image and answer the question in {lang} with one word or a short phrase. Reply with the answer only."
@@ -127,7 +135,7 @@ def system_language() -> str:
 def available(lang: str, suites: tuple[str, ...] = ("global", "regional")) -> list[str]:
     have = {"global": lang in GLOBAL_LANGS, "regional": lang in INCLUDE or lang == "th", "math": lang in MGSM_LANGS,
             "translate": lang in FLORES and lang != "en", "code": lang == "en", "codegen": lang == "en",
-            "vision": lang in MAXM, "longctx": lang in NEEDLES}
+            "vision": lang in MAXM, "longctx": lang in NEEDLES, "summarize": lang in LRSUM}
     return [s for s in suites if have[s]]
 
 
@@ -210,6 +218,9 @@ def load(suite: str, lang: str, limit: int = 0) -> list[dict]:
                 path.write_bytes(data)
             refs = sorted({a for a in (r.get("answers") or []) + (r.get("processed_answers") or []) if a})
             items.append({"q": r["question"], "img": path.name, "refs": refs, "lang": lang})
+    elif suite == "summarize" and lang in LRSUM:
+        for r in _rows("bltlab/lr-sum", LRSUM[lang], "test", limit=SUMMARIZE_N)[:SUMMARIZE_N]:
+            items.append({"text": r["text"][:SUMMARIZE_CHARS], "ref": r["summary"], "lang": lang})
     elif suite == "longctx" and lang in NEEDLES:
         items = longctx_items(lang, [r["sentence"] for r in _rows("gsarti/flores_101", FLORES.get(lang, "eng"),
                                                                     "devtest")])
@@ -320,6 +331,37 @@ def ask_translate(url: str, item: dict) -> float:
                                  headers={"Content-Type": "application/json"})
     text = json.load(urllib.request.urlopen(req, timeout=600))["choices"][0]["message"].get("content") or ""
     return chrf(text.strip(), item["ref"])
+
+
+def rouge_l(hyp: str, ref: str, chars: bool = False) -> float:
+    """ROUGE-L F1 (0-100) over lowercased words, or characters for scripts written without spaces."""
+    a = [c for c in hyp.lower() if not c.isspace()] if chars else hyp.lower().split()
+    b = [c for c in ref.lower() if not c.isspace()] if chars else ref.lower().split()
+    if not a or not b:
+        return 0.0
+    prev = [0] * (len(b) + 1)
+    for x in a:                                   # longest common subsequence, one row at a time
+        cur = [0]
+        for j, y in enumerate(b):
+            cur.append(prev[j] + 1 if x == y else max(prev[j + 1], cur[j]))
+        prev = cur
+    lcs = prev[-1]
+    if not lcs:
+        return 0.0
+    p, r = lcs / len(a), lcs / len(b)
+    return 100 * 2 * p * r / (p + r)
+
+
+def ask_summarize(url: str, item: dict) -> tuple[float, float]:
+    """(chrF++, ROUGE-L) of the model's summary against LR-Sum's reference summary."""
+    lang = LANG_NAMES.get(item["lang"]) or INCLUDE.get(item["lang"]) or {"th": "Thai"}.get(item["lang"], item["lang"])
+    body = {"messages": [{"role": "system", "content": SUMMARIZE_SYSTEM.format(lang=lang)},
+                         {"role": "user", "content": item["text"]}],
+            "max_tokens": 200, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    text = (json.load(urllib.request.urlopen(req, timeout=600))["choices"][0]["message"].get("content") or "").strip()
+    return chrf(text, item["ref"]), rouge_l(text, item["ref"], item["lang"] in NO_SPACES)
 
 
 def same_value(pred: str, gold: str) -> bool:
@@ -497,6 +539,14 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                 acc = round(sum(scores) / len(scores), 1)
                 res[f"{lang}/{suite}"] = {"acc": acc, "chrf": acc, "n": len(items)}
                 print(f"  {lang:3} {suite:9} chrF++ {acc:5.1f}  (en<->{lang}, {len(items)} sentences)", flush=True)
+                _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
+                continue
+            if suite == "summarize":          # chrF++ (the headline, like translate) and ROUGE-L
+                got = [ask_summarize(url, it) for it in items]
+                cf = round(sum(c for c, _ in got) / len(got), 1)
+                rl = round(sum(r for _, r in got) / len(got), 1)
+                res[f"{lang}/{suite}"] = {"acc": cf, "chrf": cf, "rougeL": rl, "n": len(items)}
+                print(f"  {lang:3} {suite:9} chrF++ {cf:5.1f}  ROUGE-L {rl:5.1f}  ({len(items)} LR-Sum articles)", flush=True)
                 _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
                 continue
             if suite == "longctx":            # per length; lengths the server can't hold are skipped

@@ -47,6 +47,10 @@ TRANSLATE = re.compile(r"\b(translate|translation|traduce|traduis|traduza|übers
                        r"แปล|翻译|翻譯|翻訳|번역|ترجم|अनुवाद|перевед", re.I)
 
 
+SUMMARIZE = re.compile(r"\b(summari[sz]e|summary|tl;?dr|resum(?:ir|en|a)|résum\w*|resúme\w*|zusammenfass\w*|tóm tắt|ringkas\w*)\b|"
+                       r"สรุป|总结|總結|摘要|要約|まとめ|요약|لخص|ملخص|सारांश|кратк|резюм", re.I)
+
+
 def detect_task(text: str) -> str:
     """Cheap task guess (no model): 'translate', 'math' for word problems and arithmetic, else 'general'."""
     if TRANSLATE.search(text[:200]):          # the request is usually stated up front
@@ -188,6 +192,8 @@ def pick_local(text: str, keys: list[str], current: str | None, vram_gb: float, 
     Returns (model key, reason)."""
     from . import catalog
     lang, (task, how) = detect_language(text), classify_task(text, clf)
+    if task == "general" and SUMMARIZE.search(text[:200]):  # a kind of 'general' for the classifier (#43)
+        task, how = "summarize", "keyword"
     tag = f"{lang} {task} by {how}"
     best = catalog.pick(vram_gb, lang, ram_free_gb, candidates=keys, task=task) or current or keys[0]
     if current and best != current and current in keys:

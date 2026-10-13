@@ -456,10 +456,11 @@ def cmd_doctor(_a) -> None:
         kind = {"global": "translated world-knowledge exam", "math": "grade-school math word problems",
                 "translate": "translation to/from English",
                 "code": "predicting what Python code returns",
-                "codegen": "writing code that passes tests"}.get(
+                "codegen": "writing code that passes tests",
+                "summarize": "summarizing news articles"}.get(
             suite, "real local school/licence exams")
         mark = "  <- your language" if tl == lang else ""
-        unit = "chrF++ (0-100)" if suite == "translate" else "% correct"
+        unit = "chrF++ (0-100)" if suite in ("translate", "summarize") else "% correct"
         print(f"  {tl.upper():3} {kind:32} {acc:5.1f}{'' if unit[0] == '%' else ' '}{unit}{mark}")
     if others:
         print(f"  also measured in {', '.join(others)} (`localllm list`)")
@@ -638,7 +639,8 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--suites", default="global,regional",
                    help="global,regional (knowledge), math (MGSM), translate (FLORES, chrF++), code (CRUXEval), "
                         "codegen (EvalPlus, needs Docker), vision (MaXM image questions; the server needs a vision "
-                        "projector), longctx (needles in 8k-64k documents; start the server with --profile max)")
+                        "projector), longctx (needles in 8k-64k documents; start the server with --profile max), "
+                        "summarize (LR-Sum news, chrF++ and ROUGE-L)")
     e.set_defaults(fn=cmd_eval)
     return ap
 

@@ -56,7 +56,8 @@ def build_note(key: str, running: str | None) -> str | None:
             f"({'newer' if have > ran else 'older'}) - they may differ a little")
 
 
-TASK_SUITES = {"general": ("global", "regional"), "math": ("math",), "translate": ("translate",), "code": ("code",)}
+TASK_SUITES = {"general": ("global", "regional"), "math": ("math",), "translate": ("translate",), "code": ("code",),
+               "summarize": ("summarize",)}
 
 
 def score(key: str, lang: str | None = None, task: str = "general") -> float:
