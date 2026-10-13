@@ -81,6 +81,9 @@ instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`
 models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
 internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
 
+**How much does running an agent locally save?** `localllm savings` counts what this PC answered this month and,
+at the cloud prices you enter once, what it would have cost ([docs/apis.md](docs/apis.md#hermes-with-localllm-and-what-it-saves)).
+
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
 conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,
 context used and the last answer's speed, Ctrl+C stops an answer.

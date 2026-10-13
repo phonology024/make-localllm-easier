@@ -9,6 +9,7 @@
   localllm serve [MODEL]    start an OpenAI-compatible server only (http://127.0.0.1:8080/v1)
   localllm eval             score a running server in English + your language (global and local exams)
   localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
+  localllm savings          tokens answered locally this month (and $ at the prices you set)
   localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline / obsidian at the local endpoint
 """
 from __future__ import annotations
@@ -199,7 +200,7 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
                                             trust_loopback=trust, status=lambda: _status(p.proc, p.current),
-                                            ui=_ui(keys, True) if ui else None)),
+                                            ui=_ui(keys, True) if ui else None, meter=_meter())),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
@@ -208,8 +209,13 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
                                   trust_loopback=trust, status=lambda: _status(proc, key),
-                                  ui=_ui([key], False) if ui else None)
+                                  ui=_ui([key], False) if ui else None, meter=_meter())
     return proc, f"http://127.0.0.1:{port}"
+
+
+def _meter():
+    from . import meter
+    return meter.Meter()
 
 
 def _ui(keys: list[str], choosable: bool) -> dict:
@@ -222,9 +228,12 @@ def _ui(keys: list[str], choosable: bool) -> dict:
 
 def _status(proc, key: str | None) -> dict:
     """For GET /localllm/status: what the running llama-server uses right now."""
+    from . import meter
+    saved = meter.line(meter.Meter().month())
     if proc is None:
-        return {"loaded": False}
-    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, **runtime.process_memory(proc.pid)}
+        return {"loaded": False, "savings": saved}
+    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved,
+            **runtime.process_memory(proc.pid)}
 
 
 def _warn_spill(pid: int) -> None:
@@ -435,6 +444,10 @@ def cmd_doctor(_a) -> None:
     print(f"  lean (default)  {catalog.MIN_CTX // 1000:>3}k context  ~{ram_est['total_gb']:4.1f} GB RAM  least memory")
     print(f"  max             {round(max_ctx / 1000):>3}k context  ~{max_ram:4.1f} GB RAM  long documents, agent sessions")
     print(f"\nRun it: localllm        (llama.cpp: {server})")
+    from . import meter
+    used = meter.Meter().month()
+    if used["requests"]:
+        print(f"Local answers {meter.line(used)}")
 
 
 def _ram_for(m: dict, dev, ctx: int, cpu_moe: int, in_ram: float, profile: str) -> dict:
@@ -470,6 +483,16 @@ def cmd_report(a) -> None:
     _say(f"share it (you review everything before submitting): {url}")
     if not a.no_browser:
         webbrowser.open(url)
+
+
+def cmd_savings(a) -> None:
+    from . import meter
+    m = meter.Meter()
+    if a.price:
+        m.set_price(a.price[0], a.price[1], a.label or "")
+        _say(f"prices saved: ${a.price[0]:g} in / ${a.price[1]:g} out per million tokens")
+    print(meter.line(m.month()))
+    print(f"(an estimate: tokens this PC answered x the prices you set; data in {m.path})")
 
 
 def cmd_connect(a) -> None:
@@ -549,6 +572,11 @@ def build_parser() -> argparse.ArgumentParser:
     for flags, kw in lan:
         s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)
+    sv = sub.add_parser("savings", help="tokens answered locally this month, and what they would have cost")
+    sv.add_argument("--price", nargs=2, type=float, metavar=("IN", "OUT"),
+                    help="$ per million input and output tokens of the cloud model you would otherwise use")
+    sv.add_argument("--label", help="name for those prices, e.g. the model")
+    sv.set_defaults(fn=cmd_savings)
     cn = sub.add_parser("connect", help="point a coding agent at the local endpoint (the old config is backed up)")
     cn.add_argument("tool", choices=["hermes", "opencode", "claude-code", "codex", "aider", "cline", "obsidian"])
     cn.add_argument("--undo", action="store_true", help="put the old config back")

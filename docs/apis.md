@@ -60,6 +60,26 @@ The model name is the one the running server reports at `/v1/models` (pass `--mo
 Claude Code with `connect` sends everything to the local model, including the small background requests; run
 `localllm connect claude-code --undo` to go back to your Anthropic account.
 
+### Hermes with localllm, and what it saves
+
+```
+localllm serve --profile max          # long context + a bigger prompt cache, so Hermes' fixed prefix is re-used
+localllm connect hermes
+localllm savings --price 3 15 --label "my cloud model"     # $ per million tokens in / out, once
+localllm savings                      # this month: answers, tokens, % of the prompt from the cache, $ estimate
+```
+
+Every local answer is counted from the token numbers llama-server reports (`~/.localllm/savings.json`); `/status` in
+`localllm chat`, the `--ui` page and `doctor` show the same line. The dollar figure is only an estimate at the prices
+you entered: localllm ships none, because they change. "% from the cache" is the share of prompt tokens the server
+re-used instead of reading again; for an agent that resends the same instructions every call it should be high, and
+if it is low, the agent's prefix changes between calls.
+
+Use your own API key for anything that goes to the cloud (`localllm route`, keys in the OS keychain). localllm does
+not and will not pass a Claude or ChatGPT *subscription* login on to another tool: the providers' terms don't allow it
+and it puts your account at risk. Which agent calls a local model can take without losing quality is being measured in
+#96/#97.
+
 ### Obsidian
 
 ```

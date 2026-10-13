@@ -318,11 +318,22 @@ def error_body(api: str, msg: str, code: int = 400) -> dict:
     return {"error": {"message": msg, "type": "invalid_request_error", "code": code}}
 
 
+METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/responses")
+
+
 def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
-                 ui=None):
+                 ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
-    ui: a dict {"sessions": workspace.Sessions, "catalog": dict} to serve the chat workspace instead of llama-server's page."""
+    ui: a dict {"sessions": workspace.Sessions, "catalog": dict} to serve the chat workspace instead of llama-server's page.
+    meter: a meter.Meter that counts the tokens of every local answer (#97)."""
+
+    def count(usage):
+        if meter and usage:
+            try:
+                meter.add(usage)
+            except OSError:
+                pass                                    # a full disk must not break an answer
     def local(body: dict, stay: bool = False):
         return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body, stay=stay)
 
@@ -442,9 +453,17 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 self.send_header("X-Localllm-Model", model_hdr)
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
+            metered = meter and not hdrs and method == "POST" and self.path in METERED and \
+                getattr(r, "status", 0) == 200
+            tail = b""
             while chunk := r.read(8192) if not hasattr(r, "read1") else r.read1(8192):
                 self._chunk(chunk)
+                if metered:
+                    tail = (tail + chunk)[-16384:]      # usage/timings come in the last chunk
             self._stream_end()
+            if metered:
+                from .meter import parse_usage
+                count(parse_usage(tail))
 
         def _page(self):
             from .workspace import PAGE
@@ -550,6 +569,9 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                                  + "\n").encode())
                 text.append(piece)
             calls = tools.calls()
+            if timings:
+                from .meter import parse_usage
+                count(parse_usage(json.dumps({"timings": timings}).encode()))
             if stream:                                  # tool calls go out whole, in the final chunk, as Ollama does
                 self._chunk((json.dumps(openai_to_ollama("", model_name, chat, True, timings, calls),
                                         ensure_ascii=False) + "\n").encode())
@@ -567,8 +589,10 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 self._gemini_reply(url, req, stream, {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
         def _gemini_reply(self, url: str, req: dict, stream: bool, extra: dict | None):
+            from .meter import parse_usage
             if not stream:
                 r = json.load(_post(url + "/v1/chat/completions", {**req, "stream": False}))
+                count(parse_usage(json.dumps(r).encode()))
                 ch = r["choices"][0]
                 return self._json(200, openai_to_gemini(ch["message"].get("content") or "", ch.get("finish_reason"),
                                                         r.get("usage"), ch["message"].get("tool_calls")), extra)
@@ -576,6 +600,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self._stream_start("text/event-stream", extra)
             tools = ToolCalls()
             for c in _sse_chunks(r):
+                if c.get("timings"):
+                    count(parse_usage(json.dumps(c).encode()))
                 ch = (c.get("choices") or [{}])[0]
                 tools.add(ch.get("delta", {}))
                 text = ch.get("delta", {}).get("content") or ""
@@ -606,11 +632,11 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True, status=None, ui=None) -> ThreadingHTTPServer:
+          trust_loopback: bool = True, status=None, ui=None, meter=None) -> ThreadingHTTPServer:
     """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
-    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, ui))
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, ui, meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

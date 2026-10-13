@@ -20,6 +20,7 @@ def _doctor(monkeypatch) -> str:
     monkeypatch.setattr(cli, "_machine", lambda: (Path("llama-server"), [DEV], DEV, 32.0))
     monkeypatch.setattr(runtime, "ram_available_gb", lambda: 17.5)
     monkeypatch.setattr(tune, "load", lambda: {})
+    monkeypatch.setattr(runtime, "build_of", lambda server: None)
     monkeypatch.setattr(bench, "system_language", lambda: "th")
     monkeypatch.setattr("platform.system", lambda: "Windows")
     out = io.StringIO()
