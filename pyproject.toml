@@ -25,3 +25,6 @@ packages = ["localllm"]
 
 [tool.setuptools.package-data]
 localllm = ["platforms.json", "ui.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]          # tools/agent_bench/fixture/tests belongs to the benchmark's fixture project
