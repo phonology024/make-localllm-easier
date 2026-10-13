@@ -53,3 +53,20 @@ def test_done_ids_skip_finished_and_retry_failed(tmp_path):
 def test_example_manifest_is_valid():
     m = json.loads((Path(runner.__file__).with_name("runner_example.json")).read_text(encoding="utf-8"))
     assert runner.validate(m) == []
+
+
+def test_vision_and_memory_options(tmp_path, monkeypatch):
+    import localllm.cli
+    monkeypatch.setattr(runner, "state", lambda server: STATE)
+    monkeypatch.setattr(runner, "wait_up", lambda proc, url: None)
+    monkeypatch.setattr(runner, "decode_speed", lambda url: 50.0)
+    monkeypatch.setattr(localllm.cli, "_mmproj_path", lambda key: tmp_path / "mmproj.gguf")
+    monkeypatch.setattr(runner.runtime, "process_memory", lambda pid: {"ram_gb": 2.0, "vram_gb": 14.0, "spill_gb": 0.5})
+    Proc.pid = 123
+    try:
+        job = {"id": "v", "model": "gemma4-26b-a4b-qat", "vision": True, "memory": True}
+        rec = runner.run_job(job, "b11476", Path("llama-server"), lambda k: tmp_path / "g.gguf", popen=Proc)
+    finally:
+        del Proc.pid
+    assert rec["job"]["args_full"][-2] == "--mmproj"
+    assert rec["job"]["memory"]["loaded"]["vram_gb"] == 14.0 and rec["job"]["memory"]["after"]["spill_gb"] == 0.5

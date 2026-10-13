@@ -10,7 +10,9 @@ Manifest (see tools/runner_example.json):
    "jobs": [{"id": "kv-q4-th",               # unique; a finished id is skipped next time
              "model": "qwen3.8-27b-q3",      # catalog key (downloaded if needed), or "file": "path/to/x.gguf"
              "ctx": 8192, "args": ["-ctk", "q4_0", "-ctv", "q4_0"], "env": {},   # env: exactly these vars
-             "suites": "global,regional", "langs": "en,th", "limit": 0, "speed": true}]}
+             "suites": "global,regional", "langs": "en,th", "limit": 0, "speed": true,
+             "vision": false,                        # true: load the catalog model's projector (--mmproj)
+             "memory": false}]}                      # true: record the server's RAM / VRAM / spill after load and at the end
 
 Each finished job is one line in tools/runner_results.jsonl, written right away. A line is a valid `localllm report`
 (schema 1: gpu, vram_gb, ram_gb, os, llama_cpp, tune, results) plus the job and the machine state before it started
@@ -75,6 +77,7 @@ def state(server: Path) -> dict:
 def launch_args(job: dict, model: Path, dev_id: str | None) -> list[str]:
     key = job.get("model")
     mtp = catalog.MODELS[key]["mtp"] if key in catalog.MODELS else False
+    mtp = job.get("mtp", mtp)                                    # 0 = off, N = draft N tokens (models with an MTP head)
     args = runtime.server_args(model, dev_id, PORT, job.get("ctx", 8192), mtp)
     return args + [str(a) for a in job.get("args", [])]          # later flags win in llama.cpp
 
@@ -110,18 +113,25 @@ def decode_speed(url: str) -> float:
 def run_job(job: dict, build: str, server: Path, model_path, popen=subprocess.Popen) -> dict:
     """One job -> one report-shaped dict. Raises on failure (the caller records it)."""
     before = state(server)
-    model = Path(job["file"]) if job.get("file") else model_path(job["model"])
+    model = Path(job["file"]).expanduser() if job.get("file") else model_path(job["model"])
     args = launch_args(job, model, before["dev_id"])
+    if job.get("vision"):                                         # the catalog model's projector, as --vision loads it
+        from localllm.cli import _mmproj_path
+        args += ["--mmproj", str(_mmproj_path(job["model"]))]
     env = runtime.server_env({"env": job.get("env", {})})
     url = f"http://127.0.0.1:{PORT}"
     proc = popen([str(server), *args], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     try:
         wait_up(proc, url)
+        pid = getattr(proc, "pid", None)
+        memory = {"loaded": runtime.process_memory(pid)} if job.get("memory") and pid else {}
         tok_s = decode_speed(url) if job.get("speed", True) else None
         scores = {}
         if job.get("suites"):
             langs = job.get("langs", "en").split(",")
             scores = bench.run(url, job["id"], langs, job.get("limit", 0), tuple(job["suites"].split(",")))
+        if memory:
+            memory["after"] = runtime.process_memory(pid)
     finally:
         proc.terminate()
         try:
@@ -136,7 +146,8 @@ def run_job(job: dict, build: str, server: Path, model_path, popen=subprocess.Po
         "tune": {model.name: {build: {"gpu": before["gpu"], "env": job.get("env", {}), "mtp": 0, "tok_s": tok_s}}}
         if tok_s else {},
         "results": {job["id"]: scores} if scores else {},
-        "job": {**job, "status": "ok", "args_full": report.scrub(args), "state_before": before},
+        "job": {**job, "status": "ok", "args_full": report.scrub(args), "state_before": before,
+                **({"memory": memory} if memory else {})},
     }
 
 
@@ -164,7 +175,7 @@ def main() -> None:
     from localllm.cli import _model_path
     for i, job in enumerate(todo, 1):
         if a.dry_run:
-            model = Path(job["file"]) if job.get("file") else runtime.HOME / "models" / catalog.MODELS[job["model"]]["file"]
+            model = Path(job["file"]).expanduser() if job.get("file") else runtime.HOME / "models" / catalog.MODELS[job["model"]]["file"]
             print(f"[{i}/{len(todo)}] {job['id']}: {server.name} {' '.join(launch_args(job, model, 'GPU'))}")
             continue
         print(f"[{i}/{len(todo)}] {job['id']} ...", flush=True)

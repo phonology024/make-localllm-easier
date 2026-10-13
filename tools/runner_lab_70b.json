@@ -1,0 +1,8 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#86: a dense 70B at ~2 bit on 16 GB VRAM + 32 GB RAM vs the catalog model, on the same first 100 questions per test. unsloth/Llama-3.3-70B-Instruct-GGUF UD-IQ2_XXS (19.4 GB) in ~/.localllm/lab; 54 of 80 layers on the GPU (-ngl 54), the rest in RAM.",
+ "jobs": [
+  {"id": "86-llama33-70b-iq2xxs", "file": "~/.localllm/lab/Llama-3.3-70B-Instruct-UD-IQ2_XXS.gguf", "args": ["-ngl", "54"], "suites": "global,math", "langs": "en,th,hi,ar,zh,ja,es", "limit": 100},
+  {"id": "86-gemma-first100", "model": "gemma4-26b-a4b-qat", "suites": "global,math", "langs": "en,th,hi,ar,zh,ja,es", "limit": 100}
+ ]
+}

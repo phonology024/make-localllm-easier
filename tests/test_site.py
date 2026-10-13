@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_site_builds_and_internal_links_resolve(tmp_path):
     subprocess.run([sys.executable, str(ROOT / "site" / "build.py")], check=True, capture_output=True)
     out = ROOT / "site" / "public"
-    pages = list(out.rglob("*.html"))
+    static = {f.name for f in (ROOT / "site" / "static").glob("*")}       # copied as-is (e.g. Search Console's file)
+    pages = [p for p in out.rglob("*.html") if p.name not in static]
     assert len(pages) >= 12 and (out / "sitemap.xml").exists() and (out / "robots.txt").exists()
     for page in pages:
         html = page.read_text(encoding="utf-8")
