@@ -171,7 +171,7 @@ def main() -> None:
                  f"Delete {server.parent} or set LOCALLLM_LLAMA_SERVER to a {build} build.")
     finished = done_ids(a.results)
     todo = [j for j in manifest["jobs"] if j["id"] not in finished]
-    print(f"{len(todo)} of {len(manifest['jobs'])} jobs to run ({len(finished)} done) on llama.cpp {build}")
+    print(f"{len(todo)} of {len(manifest['jobs'])} jobs to run ({len(manifest['jobs']) - len(todo)} done) on llama.cpp {build}")
     from localllm.cli import _model_path
     for i, job in enumerate(todo, 1):
         if a.dry_run:
