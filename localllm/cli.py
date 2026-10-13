@@ -548,7 +548,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--suites", default="global,regional",
                    help="global,regional (knowledge), math (MGSM), translate (FLORES, chrF++), code (CRUXEval), "
                         "codegen (EvalPlus, needs Docker), vision (MaXM image questions; the server needs a vision "
-                        "projector)")
+                        "projector), longctx (needles in 8k-64k documents; start the server with --profile max)")
     e.set_defaults(fn=cmd_eval)
     return ap
 

@@ -219,7 +219,8 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
 - [x] (#90) Two profiles: `lean` (default) and `max` (`--profile`, both shown by `doctor`)
 - [x] (#91) Measurement runner: a queue of benchmark jobs that runs overnight (`tools/runner.py`; first batch #49 to run)
 - [x] (#92) Verify downloads: checksum llama.cpp builds and model files
-- [ ] (#93) Long-context quality suite per language (needle / RULER-style)
+- [ ] (#93) Long-context quality suite per language (needle / RULER-style): `--suites longctx` done (en, th, hi, ar, zh, ja, es;
+      8k/32k/64k, one and three needles); catalog numbers wait for the run in `tools/runner_longctx.json`
 - [x] (#94) Success metrics for this section: stars, PyPI downloads, reports received
 - [x] (#95) llama.cpp upgrade process: `tools/smoke_build.py` before bumping, `doctor` flags scores from another build ([docs/upgrading-llama-cpp.md](docs/upgrading-llama-cpp.md)); re-run of the 10-07 knowledge scores queued in `tools/runner_rebaseline.json`
 - [ ] (#46) One-click install for people without Python (winget, Homebrew, AppImage)

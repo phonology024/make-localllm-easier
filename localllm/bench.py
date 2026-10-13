@@ -24,6 +24,11 @@ Task suites (opt-in with --suites, they generate text so they are slower):
             language's own region, in 7 languages incl. Thai; a short answer counts when it matches a reference after
             normalising case, punctuation and spaces (or contains it, for answers phrased as a short sentence).
             Needs a server started with the vision projector (`localllm serve --vision`)
+  longctx   Needle retrieval in a long document (RULER-style, #93): FLORES-101 sentences in the language as the haystack,
+            five-digit "secret numbers" hidden at 10/50/90% depth (one needle) and at 20/50/80% (three needles), at
+            8k, 32k and 64k tokens. Correct = every hidden number is in the reply. Lengths the server's context can't
+            hold are skipped, so `localllm serve --profile max` (or --ctx 70000) runs them all. Shows whether the
+            context `doctor` promises keeps its quality, not only whether it fits
 """
 from __future__ import annotations
 
@@ -82,7 +87,26 @@ CODEGEN_FIXES = {
                      r"rel_tol=1e-07, abs_tol=\1)"),
     "Mbpp/255": (r"\[\['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'\], 77\], ", ""),
 }
-SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision")
+SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx")
+LONGCTX_LENGTHS = (8192, 32768, 65536)
+NEEDLE_NAMES = ("Orchid", "Falcon", "Copper", "Lantern", "Willow", "Harbor")
+# (needle, question for one, question for three) per language
+NEEDLES = {
+    "en": ("The secret number of {name} is {num}.", "What is the secret number of {name}? Reply with the number only.",
+           "What are the secret numbers of {name}? Reply with the three numbers only, in that order."),
+    "th": ("เลขลับของ {name} คือ {num}", "เลขลับของ {name} คืออะไร ตอบเป็นตัวเลขเท่านั้น",
+           "เลขลับของ {name} คืออะไร ตอบเป็นตัวเลขสามตัวตามลำดับเท่านั้น"),
+    "hi": ("{name} का गुप्त अंक {num} है।", "{name} का गुप्त अंक क्या है? केवल संख्या लिखें।",
+           "{name} के गुप्त अंक क्या हैं? केवल तीनों संख्याएँ क्रम से लिखें।"),
+    "ar": ("الرقم السري لـ {name} هو {num}.", "ما هو الرقم السري لـ {name}؟ أجب بالرقم فقط.",
+           "ما هي الأرقام السرية لـ {name}؟ أجب بالأرقام الثلاثة فقط بالترتيب."),
+    "zh": ("{name}的秘密数字是{num}。", "{name}的秘密数字是多少？只回答数字。", "{name}的秘密数字分别是多少？只按顺序回答三个数字。"),
+    "ja": ("{name}の秘密の番号は{num}です。", "{name}の秘密の番号は何ですか？数字だけで答えてください。",
+           "{name}の秘密の番号はそれぞれ何ですか？三つの数字だけを順番に答えてください。"),
+    "es": ("El número secreto de {name} es {num}.", "¿Cuál es el número secreto de {name}? Responde solo con el número.",
+           "¿Cuáles son los números secretos de {name}? Responde solo con los tres números, en ese orden."),
+}
+LONGCTX_SYSTEM = "Read the document and answer the question at the end from it."
 MAXM = {"en": "en", "fr": "fr", "hi": "hi", "he": "iw", "ro": "ro", "th": "th", "zh": "zh"}   # ISO -> dataset split
 VISION_SYSTEM = "Look at the image and answer the question in {lang} with one word or a short phrase. Reply with the answer only."
 
@@ -101,7 +125,7 @@ def system_language() -> str:
 def available(lang: str, suites: tuple[str, ...] = ("global", "regional")) -> list[str]:
     have = {"global": lang in GLOBAL_LANGS, "regional": lang in INCLUDE or lang == "th", "math": lang in MGSM_LANGS,
             "translate": lang in FLORES and lang != "en", "code": lang == "en", "codegen": lang == "en",
-            "vision": lang in MAXM}
+            "vision": lang in MAXM, "longctx": lang in NEEDLES}
     return [s for s in suites if have[s]]
 
 
@@ -184,6 +208,9 @@ def load(suite: str, lang: str, limit: int = 0) -> list[dict]:
                 path.write_bytes(data)
             refs = sorted({a for a in (r.get("answers") or []) + (r.get("processed_answers") or []) if a})
             items.append({"q": r["question"], "img": path.name, "refs": refs, "lang": lang})
+    elif suite == "longctx" and lang in NEEDLES:
+        items = longctx_items(lang, [r["sentence"] for r in _rows("gsarti/flores_101", FLORES.get(lang, "eng"),
+                                                                    "devtest")])
     elif suite == "regional":
         for r in _rows("CohereLabs/include-lite-44", INCLUDE[lang]):
             opts = r["choices"] if isinstance(r["choices"], list) else ast.literal_eval(r["choices"])
@@ -377,6 +404,74 @@ def ask_vision(url: str, item: dict) -> bool:
     return vqa_match(text.strip(), item["refs"])
 
 
+def longctx_items(lang: str, sentences: list[str], seed: int = 93) -> list[dict]:
+    """Per length: one needle at 10/50/90% depth and three needles at 20/50/80%. Deterministic (fixed seed)."""
+    import random
+    rnd = random.Random(seed)
+    items = []
+    for length in LONGCTX_LENGTHS:
+        for depths in ((0.1,), (0.5,), (0.9,), (0.2, 0.5, 0.8)):
+            names = rnd.sample(NEEDLE_NAMES, len(depths))
+            items.append({"lang": lang, "tokens": length, "depths": list(depths), "names": names,
+                          "nums": [rnd.randint(10000, 99999) for _ in depths], "filler": sentences})
+    return items
+
+
+def needle_prompt(item: dict, n_sentences: int) -> str:
+    """The document (n_sentences of filler, cycled, with the needles at their depths) and the question."""
+    needle, one, many = NEEDLES[item["lang"]]
+    pool = item["filler"]
+    sents = [pool[i % len(pool)] for i in range(n_sentences)]
+    for depth, name, num in sorted(zip(item["depths"], item["names"], item["nums"]), reverse=True):
+        sents.insert(int(depth * len(sents)), needle.format(name=name, num=num))
+    sep = "" if item["lang"] in ("th", "zh", "ja") else " "
+    q = (one if len(item["nums"]) == 1 else many).format(name=", ".join(item["names"]))
+    return sep.join(sents) + "\n\n" + q
+
+
+def needles_found(reply: str, nums: list[int]) -> bool:
+    import re
+    found = {int(n) for n in re.findall(r"\d{5}", reply.replace(",", "").replace(" ", ""))}
+    return set(nums) <= found
+
+
+def _tokens(url: str, text: str) -> int:
+    """llama-server's /tokenize; other servers: ~3 characters per token (an estimate, labelled in the output)."""
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/tokenize", data=json.dumps({"content": text}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        return len(json.load(urllib.request.urlopen(req, timeout=120))["tokens"])
+    except (OSError, ValueError, KeyError):
+        return len(text) // 3
+
+
+def server_ctx(url: str) -> int | None:
+    try:
+        props = json.load(urllib.request.urlopen(url.rstrip("/") + "/props", timeout=10))
+    except (OSError, ValueError):
+        return None
+    return (props.get("default_generation_settings") or {}).get("n_ctx") or props.get("n_ctx")
+
+
+def ask_longctx(url: str, item: dict, ctx: int | None) -> bool | None:
+    """None = skipped: the server's context can't hold this length."""
+    if ctx and item["tokens"] + 512 > ctx:
+        return None
+    probe = needle_prompt(item, 200)
+    per = max(1.0, _tokens(url, probe) / 200)                  # tokens per filler sentence in this language
+    n = max(10, int(item["tokens"] * 0.97 / per))
+    prompt = needle_prompt(item, n)
+    while n > 10 and _tokens(url, prompt) > item["tokens"]:   # trim to the target length
+        n = int(n * 0.97)
+        prompt = needle_prompt(item, n)
+    body = {"messages": [{"role": "system", "content": LONGCTX_SYSTEM}, {"role": "user", "content": prompt}],
+            "max_tokens": 64, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    text = json.load(urllib.request.urlopen(req, timeout=1800))["choices"][0]["message"].get("content") or ""
+    return needles_found(text, item["nums"])
+
+
 def _save(name: str, res: dict) -> None:
     out = HOME / "results.json"
     allres = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
@@ -400,6 +495,25 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                 acc = round(sum(scores) / len(scores), 1)
                 res[f"{lang}/{suite}"] = {"acc": acc, "chrf": acc, "n": len(items)}
                 print(f"  {lang:3} {suite:9} chrF++ {acc:5.1f}  (en<->{lang}, {len(items)} sentences)", flush=True)
+                _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
+                continue
+            if suite == "longctx":            # per length; lengths the server can't hold are skipped
+                ctx = server_ctx(url)
+                got = [(it["tokens"], ask_longctx(url, it, ctx)) for it in items]
+                by = {}
+                for length, ok in got:
+                    if ok is not None:
+                        by.setdefault(length, []).append(ok)
+                if not by:
+                    print(f"  {lang:3} {suite:9} skipped: the server holds {ctx} tokens; start it with "
+                          "`--profile max` or --ctx 70000", flush=True)
+                    continue
+                ran = [ok for v in by.values() for ok in v]
+                acc = round(100 * sum(ran) / len(ran), 1)
+                res[f"{lang}/{suite}"] = {"acc": acc, "correct": sum(ran), "n": len(ran),
+                                          "by_tokens": {str(k): round(100 * sum(v) / len(v), 1) for k, v in by.items()}}
+                per = "  ".join(f"{k // 1024}k {100 * sum(v) / len(v):.0f}%" for k, v in sorted(by.items()))
+                print(f"  {lang:3} {suite:9} {acc:5.1f}%  ({per})", flush=True)
                 _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
                 continue
             if suite == "codegen":            # write everything first, then run the tests in the Docker sandbox

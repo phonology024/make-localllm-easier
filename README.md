@@ -57,6 +57,11 @@ Measure any server yourself with `localllm eval --suites math --langs en,de,ja`.
 Qwen3.8-27B Q3 in Hindi (+4.7), Arabic (+2.9), Japanese (+1.6) and Thai (+1.5); Qwen leads Chinese by 1.4. Try
 `localllm eval --suites translate --langs th,ja,sw` (101 languages).
 
+**Does the model still find things deep in a long document?** `localllm serve --profile max`, then
+`localllm eval --suites longctx --langs en,th,hi,ar`: secret numbers hidden at 10-90% depth of 8k, 32k and 64k-token
+documents written in the language itself (FLORES sentences), one and three at a time. It checks the context `doctor`
+promises, not just whether it fits. Catalog numbers are not measured yet (queued in `tools/runner_longctx.json`).
+
 **Why is llama.cpp slow on my AMD (or Intel) GPU on Windows?** If Resizable BAR is off, llama.cpp's Vulkan backend puts
 buffers in a 256 MB host-visible heap backed by system RAM and decode drops up to 1.7x. `localllm` sets
 `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` for you ([llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097)).

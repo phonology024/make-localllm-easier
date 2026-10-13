@@ -34,7 +34,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 from . import router
 
 PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/responses", "/v1/messages",
-               "/v1/messages/count_tokens", "/health", "/props", "/slots")
+               "/v1/messages/count_tokens", "/health", "/props", "/slots", "/tokenize")
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
