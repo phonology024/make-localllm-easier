@@ -457,7 +457,10 @@ def cmd_doctor(_a) -> None:
                 "translate": "translation to/from English",
                 "code": "predicting what Python code returns",
                 "codegen": "writing code that passes tests",
-                "summarize": "summarizing news articles"}.get(
+                "summarize": "summarizing news articles",
+                "vision": "questions about photos",
+                "longctx": "finding facts in 8k-64k documents",
+                "regional": "real local school/licence exams"}.get(
             suite, "real local school/licence exams")
         mark = "  <- your language" if tl == lang else ""
         unit = "chrF++ (0-100)" if suite in ("translate", "summarize") else "% correct"
