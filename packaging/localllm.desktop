@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=localllm
+Comment=Run the best local AI your PC can handle
+Exec=localllm
+Icon=localllm
+Terminal=true
+Categories=Development;Utility;

@@ -81,6 +81,19 @@ def _hf_url(m: dict, name: str) -> str:
     return f"https://huggingface.co/{m['repo']}/resolve/{m.get('rev', 'main')}/{name}"
 
 
+ASSUME_YES = False   # --yes, or LOCALLLM_YES=1: never ask (scripts, installers)
+
+
+def confirm(question: str) -> bool:
+    """Ask before a big download when a person is at the terminal; scripts (no TTY) and --yes go ahead."""
+    if ASSUME_YES or os.environ.get("LOCALLLM_YES") or not sys.stdin.isatty():
+        return True
+    try:
+        return input(f"[localllm] {question} [Y/n] ").strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return True
+
+
 def _model_path(key: str) -> Path:
     m = catalog.MODELS[key]
     for d in filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)):
@@ -88,6 +101,8 @@ def _model_path(key: str) -> Path:
             return Path(d) / m["file"]
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
+        if not confirm(f"download {key} ({m['gb']} GB, once, to {dest.parent})?"):
+            sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks another.")
         _say(f"downloading {key} ({m['gb']} GB, one time) ...")
         _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
     return dest
@@ -284,7 +299,17 @@ def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: boo
     sys.exit("[localllm] model did not load within 5 minutes")
 
 
+def first_run() -> bool:
+    """No model downloaded yet (and none in LOCALLLM_MODELS): the first `localllm` shows doctor before anything big."""
+    have = list((runtime.HOME / "models").glob("*.gguf")) if (runtime.HOME / "models").exists() else []
+    return not have and not os.environ.get("LOCALLLM_MODELS")
+
+
 def cmd_run(a) -> None:
+    if first_run() and not a.model and sys.stdin.isatty():
+        _say("first run: here is what this PC can run")
+        cmd_doctor(a)
+        print()
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
@@ -523,6 +548,7 @@ VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="localllm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
+    ap.add_argument("--yes", "-y", action="store_true", help="don't ask before downloading a model (also LOCALLLM_YES=1)")
     ap.add_argument("--model", choices=list(catalog.MODELS), help="override the automatic pick")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--ctx", type=int, help="context length in tokens (default: 8192 in lean, what fits in max)")
@@ -599,6 +625,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     a = build_parser().parse_args()
+    global ASSUME_YES
+    ASSUME_YES = a.yes
     if a.fn is cmd_serve:
         a.model = a.model or None
     a.fn(a)

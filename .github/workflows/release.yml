@@ -1,0 +1,83 @@
+name: release
+# #46: self-contained executables (no Python needed) for every v* tag, attached to the GitHub release, plus a Linux
+# AppImage, SHA256SUMS, and the winget manifests + Homebrew formula made from those exact files (as a build artifact;
+# submitting them is a manual step, see packaging/README.md). Can also be started from the Actions tab to test a build.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, asset: localllm-windows-x64.exe, exe: localllm.exe}
+          - {os: ubuntu-22.04, asset: localllm-linux-x64, exe: localllm}
+          - {os: macos-latest, asset: localllm-macos-arm64, exe: localllm}
+          - {os: macos-15-intel, asset: localllm-macos-x64, exe: localllm}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and smoke-test the executable
+        run: |
+          python -m pip install pyinstaller==6.11.1
+          python packaging/build_exe.py
+      - name: Name it for the release
+        shell: bash
+        run: mv "dist/${{ matrix.exe }}" "dist/${{ matrix.asset }}"
+      - name: AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSfL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          mkdir -p AppDir/usr/bin
+          cp dist/localllm-linux-x64 AppDir/usr/bin/localllm
+          cp packaging/localllm.png AppDir/localllm.png
+          cp packaging/localllm.desktop AppDir/localllm.desktop
+          printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/localllm" "$@"\n' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir dist/localllm-linux-x64.AppImage
+          ./dist/localllm-linux-x64.AppImage --appimage-extract-and-run --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/localllm-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: sdist (the file Homebrew installs from PyPI)
+        run: python -m pip install build && python -m build --sdist --outdir assets
+      - name: Checksums, winget manifests, Homebrew formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "$GITHUB_REF_TYPE" = tag ] || VERSION=$(python -c "import localllm; print(localllm.__version__)")
+          (cd assets && sha256sum localllm-* > SHA256SUMS && cat SHA256SUMS)
+          python packaging/manifests.py "$VERSION" --exe assets/localllm-windows-x64.exe \
+            --sdist "assets/make_localllm_easier-$VERSION.tar.gz" --out manifests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifests
+          path: manifests
+      - name: Attach to the GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
+          gh release upload "$GITHUB_REF_NAME" assets/localllm-* assets/SHA256SUMS --clobber
