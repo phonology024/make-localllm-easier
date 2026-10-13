@@ -182,7 +182,7 @@ def main() -> None:
         t0 = time.time()
         try:
             rec = run_job(job, build, server, _model_path)
-        except Exception as e:  # noqa: BLE001 - record it and go on with the next job
+        except (Exception, SystemExit) as e:  # noqa: BLE001 - record it (a failed download exits) and go on
             rec = {"job": {**job, "status": "failed", "error": f"{type(e).__name__}: {e}",
                            "trace": traceback.format_exc(limit=3)}, "date": time.strftime("%Y-%m-%d")}
             print(f"  failed: {rec['job']['error']}")

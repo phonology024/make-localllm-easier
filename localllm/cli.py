@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import subprocess
@@ -30,6 +31,10 @@ from . import __version__, catalog, runtime
 
 def _say(msg: str) -> None:
     print(f"[localllm] {msg}", flush=True)
+
+
+class IncompleteDownload(Exception):
+    """The server closed the connection before Content-Length bytes arrived (the .part file is kept)."""
 
 
 class ChecksumError(Exception):
@@ -63,6 +68,8 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
                     speed = got / max(time.time() - t0, 1e-3) / 2**20
                     print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
     print()
+    if total and done + got < total:                    # the link closed early: keep the .part to resume from
+        raise IncompleteDownload(f"{label}: got {done + got} of {total} bytes")
     if sha256 and h.hexdigest() != sha256.lower():
         tmp.unlink()
         raise ChecksumError(f"{label}: SHA-256 is {h.hexdigest()}, expected {sha256}. The file was deleted; "
@@ -70,11 +77,19 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
     tmp.replace(dest)
 
 
-def _fetch(url: str, dest: Path, label: str, sha256: str | None) -> None:
-    try:
-        _download(url, dest, label, sha256=sha256)
-    except ChecksumError as e:
-        sys.exit(f"[localllm] {e}")
+def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5) -> None:
+    """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits."""
+    for attempt in range(1, tries + 1):
+        try:
+            _download(url, dest, label, sha256=sha256)
+            return
+        except ChecksumError as e:
+            sys.exit(f"[localllm] {e}")
+        except (IncompleteDownload, OSError, http.client.HTTPException) as e:   # URLError, timeouts, resets
+            if attempt == tries:
+                sys.exit(f"[localllm] download failed {tries} times ({e}); run the command again to resume it")
+            _say(f"connection dropped ({e}); resuming ({attempt}/{tries - 1}) ...")
+            time.sleep(min(30, 2 ** attempt))
 
 
 def _hf_url(m: dict, name: str) -> str:
