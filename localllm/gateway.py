@@ -6,7 +6,8 @@
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
   localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
-             with --ui: the chat workspace at / and /localllm/catalog, /localllm/sessions[/<id>] (see workspace.py)
+             with --ui: the chat workspace at / and /localllm/catalog, /localllm/models, /localllm/sessions[/<id>]
+             (see workspace.py)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
@@ -39,6 +40,7 @@ PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/emb
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
+MODEL_DOWNLOAD = re.compile(r"^/localllm/models/([a-z0-9][a-z0-9.-]{0,63})/download$")   # Models tab (#107)
 KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
 
 
@@ -501,6 +503,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._page()
             if ui and self.path == "/localllm/catalog":
                 return self._json(200, ui["catalog"])
+            if ui and self.path == "/localllm/models" and "models" in ui:
+                return self._json(200, ui["models"]())
             if ui and self.path.startswith("/localllm/sessions"):
                 return self._sessions("GET")
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
@@ -536,6 +540,12 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
         def do_POST(self):
             if not self._authorized():
                 return self._deny()
+            m = MODEL_DOWNLOAD.match(self.path)
+            if ui and m and "downloads" in ui:
+                try:
+                    return self._json(202, ui["downloads"].start(m.group(1)))
+                except ValueError as e:
+                    return self._json(404, {"error": str(e)})
             if self.path in ("/api/chat", "/api/generate"):
                 return self._ollama(self.path == "/api/chat")
             m = GEMINI.match(self.path)

@@ -49,6 +49,13 @@ instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`
 models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
 internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
 
+**Which model should I download?** Open the **Models** tab in `localllm --ui`: every model we have measured, marked
+*fits on your GPU*, *fits, some of it in RAM (slower)* or *too big for this PC*, with its exam scores in your language,
+the expected speed and a download button (checked against its SHA-256). The best one for your PC and language is
+marked.
+
+![The Models tab on a 12 GB card, Thai](img/models-tab.png)
+
 **How much does running an agent locally save?** `localllm savings` counts what this PC answered this month and,
 at the cloud prices you enter once, what it would have cost ([docs/apis.md](apis.md#hermes-with-localllm-and-what-it-saves)).
 
