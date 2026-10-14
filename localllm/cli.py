@@ -11,6 +11,7 @@
   localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
   localllm savings          tokens answered locally this month (and $ at the prices you set)
   localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline / obsidian at the local endpoint
+  localllm import           reuse models Ollama / LM Studio / Jan already downloaded (dry run; --apply links them)
 """
 from __future__ import annotations
 
@@ -542,6 +543,18 @@ def cmd_savings(a) -> None:
     print(f"(an estimate: tokens this PC answered x the prices you set; data in {m.path})")
 
 
+def cmd_import(a) -> None:
+    from . import importer
+    found = importer.scan_ollama() + importer.scan_folders()
+    if found:
+        _say(f"found {len(found)} GGUF file(s) from other apps; checking them against the catalog "
+             "(hashing only files the size of a catalog model) ...")
+    rows = importer.plan(importer.match(found))
+    if a.apply:
+        importer.apply(rows)
+    print(importer.describe(rows, a.apply))
+
+
 def cmd_connect(a) -> None:
     from . import connect
     path = Path(a.path) if a.path else None
@@ -627,6 +640,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="$ per million input and output tokens of the cloud model you would otherwise use")
     sv.add_argument("--label", help="name for those prices, e.g. the model")
     sv.set_defaults(fn=cmd_savings)
+    im = sub.add_parser("import", help="reuse models Ollama, LM Studio or Jan already downloaded (hard links, no copy)")
+    im.add_argument("--apply", action="store_true", help="make the links (default: only show what would happen)")
+    im.set_defaults(fn=cmd_import)
     cn = sub.add_parser("connect", help="point a coding agent at the local endpoint (the old config is backed up)")
     cn.add_argument("tool", choices=["hermes", "opencode", "claude-code", "codex", "aider", "cline", "obsidian"])
     cn.add_argument("--undo", action="store_true", help="put the old config back")
