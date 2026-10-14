@@ -1,6 +1,6 @@
 {
  "llama_cpp": "pr25294",
- "note": "#84: llama.cpp PR #25294 (stream MoE routed experts from disk), built with Vulkan on Windows (LOCALLLM_LLAMA_SERVER=<that build>/llama-server.exe). Same gpt-oss-120b MXFP4 file as runner_lab_gptoss.json, so the two compare: mmap + --n-cpu-moe there, a GPU expert cache fed from the SSD here. Speed and memory only: the PR reports output bit-exact with a non-streamed run.",
+ "note": "#84: llama.cpp PR #25294 (stream MoE routed experts from disk), built with Vulkan on Windows (LOCALLLM_LLAMA_SERVER=<that build>/llama-server.exe). Same gpt-oss-120b MXFP4 file as runner_lab_gptoss.json, so the two compare: mmap + --n-cpu-moe there, a GPU expert cache fed from the SSD here. Speed and memory only: the PR reports output bit-exact with a non-streamed run. The PR branch predates --load-mode, so the jobs drop it (the PR turns mmap off itself when streaming).",
  "jobs": [
   {
    "id": "84-gptoss120b-stream10g-direct",
@@ -11,7 +11,10 @@
     "--moe-stream-direct",
     "--jinja"
    ],
-   "memory": true
+   "memory": true,
+   "drop_args": [
+    "--load-mode"
+   ]
   },
   {
    "id": "84-gptoss120b-stream10g-buffered",
@@ -21,7 +24,10 @@
     "10",
     "--jinja"
    ],
-   "memory": true
+   "memory": true,
+   "drop_args": [
+    "--load-mode"
+   ]
   },
   {
    "id": "84-gptoss120b-stream6g-direct",
@@ -32,7 +38,10 @@
     "--moe-stream-direct",
     "--jinja"
    ],
-   "memory": true
+   "memory": true,
+   "drop_args": [
+    "--load-mode"
+   ]
   }
  ]
 }

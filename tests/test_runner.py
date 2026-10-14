@@ -84,3 +84,9 @@ def test_speed_is_dropped_when_the_model_spilled(tmp_path, monkeypatch):
     finally:
         del Proc.pid
     assert rec["tune"] == {} and "spilled 7.4 GB" in rec["job"]["notes"][0]
+
+
+def test_drop_args_removes_a_flag_and_its_value(tmp_path):
+    args = runner.launch_args({"model": "gemma4-26b-a4b-qat", "drop_args": ["--load-mode"], "args": ["--x", "1"]},
+                              tmp_path / "g.gguf", "Vulkan0")
+    assert "--load-mode" not in args and "none" not in args and args[-2:] == ["--x", "1"]

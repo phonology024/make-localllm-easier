@@ -79,6 +79,10 @@ def launch_args(job: dict, model: Path, dev_id: str | None) -> list[str]:
     mtp = catalog.MODELS[key]["mtp"] if key in catalog.MODELS else False
     mtp = job.get("mtp", mtp)                                    # 0 = off, N = draft N tokens (models with an MTP head)
     args = runtime.server_args(model, dev_id, PORT, job.get("ctx", 8192), mtp)
+    for flag in job.get("drop_args", []):                         # a flag an older build doesn't know, with its value
+        if flag in args:
+            i = args.index(flag)
+            del args[i:i + 2]
     return args + [str(a) for a in job.get("args", [])]          # later flags win in llama.cpp
 
 
