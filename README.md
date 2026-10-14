@@ -39,7 +39,7 @@ More: `localllm list` (every measured model), `localllm connect hermes` (point a
 - **Measured in your language.** Models are ranked by real exam scores in Thai, Hindi, Arabic, Japanese and 20+ more
   languages, not by English benchmarks alone.
 - **Uses less RAM.** llama.cpp tuned op by op: about 4x less system RAM than its defaults, same speed (below).
-- **Private.** After the first download nothing leaves your PC; downloads are checked against pinned SHA-256s.
+- **Private.** Your chats never leave your PC, there is no account and no telemetry ([Privacy](#privacy)).
 
 ## Less RAM, same speed
 
@@ -49,6 +49,14 @@ Same 30-turn chat, RX 9070 XT, 32 GB RAM:
 |---|---|---|---|
 | Qwen3.8-27B Q3 | 9.30 GB RAM | **2.37 GB** | 35.2 tok/s both |
 | gemma-4-26B-A4B QAT | 9.24 GB RAM | **2.21 GB** | ~85 tok/s both |
+
+## Privacy
+
+Chats, files and settings stay on your PC. localllm only goes online to download llama.cpp and models (each checked
+against a pinned SHA-256) and, once a day, to read the public model list for update notices ("localllm 0.8 is out",
+"a better model for Thai now fits your PC"). That request sends nothing about you or your PC and never installs
+anything; turn it off with `localllm updates off` or `LOCALLLM_NO_UPDATE_CHECK=1`. Cloud routing with your own key is
+off unless you turn it on.
 
 ## Learn more
 

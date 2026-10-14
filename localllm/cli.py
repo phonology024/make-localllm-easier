@@ -205,6 +205,7 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
     ram_free = runtime.ram_available_gb()
+    _update_notice(dev, ram_free)
     if models:
         if not dev:
             sys.exit("[localllm] --models needs a GPU")
@@ -261,10 +262,37 @@ def _status(proc, key: str | None) -> dict:
     """For GET /localllm/status: what the running llama-server uses right now."""
     from . import meter
     saved = meter.line(meter.Meter().month())
+    extra = {"notice": NOTICE[0]} if NOTICE[0] else {}
     if proc is None:
-        return {"loaded": False, "savings": saved}
-    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved,
+        return {"loaded": False, "savings": saved, **extra}
+    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved, **extra,
             **runtime.process_memory(proc.pid)}
+
+
+NOTICE: list[str | None] = [None]     # the update notice shown in the chat page's status box
+
+
+def _update_notice(dev: dict | None, ram_free: float) -> None:
+    """Show the saved update notice, if any, and refresh it in the background (at most once a day; #120)."""
+    from . import updates
+    from .bench import system_language
+    try:
+        NOTICE[0] = updates.notice(dev["total_gb"] if dev else 0.0, system_language(), ram_free)
+        if NOTICE[0]:
+            _say(NOTICE[0] + "   (off: localllm updates off)")
+        updates.fetch_in_background()
+    except Exception:  # noqa: BLE001 - a notice must never stop localllm from starting
+        pass
+
+
+def cmd_updates(a) -> None:
+    from . import updates
+    if a.action == "check":
+        if updates.enabled():
+            updates.fetch(force=True)
+        print(updates.notice() or ("no update notices are on" if not updates.enabled() else "up to date"))
+        return
+    print(updates.set_enabled(a.action == "on"))
 
 
 def _warn_spill(pid: int) -> None:
@@ -612,6 +640,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
     rp.add_argument("--share", action="store_true", help="also draw a card of your result (SVG) to post anywhere")
     rp.set_defaults(fn=cmd_report)
+    up = sub.add_parser("updates", help="update notices: on, off, or check now (one request a day when on)")
+    up.add_argument("action", choices=["on", "off", "check"])
+    up.set_defaults(fn=cmd_updates)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     t.add_argument("--prefer-energy", action="store_true",

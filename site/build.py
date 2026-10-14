@@ -179,7 +179,7 @@ def home() -> None:
 <h1>Run the best local LLM your PC can handle, in one command.</h1>
 <p class="lead"><code>localllm</code> checks your GPU and RAM, picks the most accurate model we have measured for your
 language that fits the card, and runs it on llama.cpp with settings we profiled. Free, offline after the first
-download, nothing leaves your PC.</p>
+download, and your chats never leave your PC.</p>
 {INSTALL}
 {cta()}
 <p class="small muted">Needs Python 3.9+. The models we ship today want a GPU with 10 GB of VRAM or more;
@@ -988,7 +988,7 @@ left for other apps.</p>
 questions in English and {G4['scores']['en/math']}% on grade-school math, at {G4['tok_s_9070xt']} tok/s. That is enough
 for everyday writing, summaries, translation drafts, explaining code, and questions about your own documents.</p>
 <ul>
-<li><b>Private by construction.</b> Nothing leaves the PC; useful for client documents, health or finance notes, code
+<li><b>Private by construction.</b> Your prompts and answers never leave the PC; useful for client documents, health or finance notes, code
 under NDA.</li>
 <li><b>No per-token bill.</b> The cost is the electricity and the GPU you already have.</li>
 <li><b>Works offline</b>, on a plane or behind a strict firewall.</li>
@@ -1217,6 +1217,9 @@ def write() -> None:
     (OUT / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {URL}/sitemap.xml\n", encoding="utf-8",
                                     newline="\n")
     shutil.copy2(ROOT / "llms.txt", OUT / "llms.txt")
+    # what `localllm` reads once a day for update notices (localllm/updates.py): version + every measured model
+    (OUT / "catalog.json").write_text(json.dumps({"version": __version__, "models": catalog.MODELS}, ensure_ascii=False),
+                                      encoding="utf-8", newline="\n")
     for f in (SITE / "static").glob("*") if (SITE / "static").exists() else []:   # e.g. a Search Console file
         shutil.copy2(f, OUT / f.name)
     (OUT / "_headers").write_text("/assets/*\n  Cache-Control: public, max-age=3600\n/*\n"

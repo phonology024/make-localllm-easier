@@ -232,7 +232,8 @@ async function status() {
     const spill = d.spill_gb != null && d.spill_gb > d.spill_warn_gb;
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
       + (spill ? `<br><span class="warn">${esc(gb(d.spill_gb))} spilled to system RAM: slower answers</span>` : "")
-      + (d.savings ? `<br>${esc(d.savings)}` : "");
+      + (d.savings ? `<br>${esc(d.savings)}` : "")
+      + (d.notice ? `<br>${esc(d.notice)}` : "");                         // update notice (#120)
   } catch (e) { $("status").textContent = "status unavailable"; }
 }
 
