@@ -43,9 +43,11 @@ class ChecksumError(Exception):
     """A downloaded file is not the one we measured: it was deleted, nothing was run from it."""
 
 
-def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str | None = None) -> None:
-    """Resumable download with a one-line progress bar. timeout is per connect/read: a stalled link raises.
-    With sha256 the finished file must match it, else it is deleted and ChecksumError says so."""
+def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str | None = None, progress=None) -> None:
+    """Resumable download with a one-line progress bar and ETA. timeout is per connect/read: a stalled link raises.
+    With sha256 the finished file must match it, else it is deleted and ChecksumError says so.
+    progress(done_bytes, total_bytes, bytes_per_s) replaces the bar (background downloads, #116)."""
+    from .downloads import eta
     import hashlib
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -65,11 +67,16 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
                 f.write(chunk); got += len(chunk)
                 if sha256:
                     h.update(chunk)
-                if total:
+                rate = got / max(time.time() - t0, 1e-3)
+                if progress:
+                    progress(done + got, total, rate)
+                elif total:
                     pct = 100 * (done + got) / total
-                    speed = got / max(time.time() - t0, 1e-3) / 2**20
-                    print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
-    print()
+                    left = eta((total - done - got) / rate if rate else None)
+                    print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({rate / 2**20:.0f} MB/s"
+                          f"{', ' + left + ' left' if left else ''})  ", end="", flush=True)
+    if not progress:
+        print()
     if total and done + got < total:                    # the link closed early: keep the .part to resume from
         raise IncompleteDownload(f"{label}: got {done + got} of {total} bytes")
     if sha256 and h.hexdigest() != sha256.lower():
@@ -79,18 +86,19 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
     tmp.replace(dest)
 
 
-def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5) -> None:
+def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5, progress=None) -> None:
     """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits."""
     for attempt in range(1, tries + 1):
         try:
-            _download(url, dest, label, sha256=sha256)
+            _download(url, dest, label, sha256=sha256, progress=progress)
             return
         except ChecksumError as e:
             sys.exit(f"[localllm] {e}")
         except (IncompleteDownload, OSError, http.client.HTTPException) as e:   # URLError, timeouts, resets
             if attempt == tries:
                 sys.exit(f"[localllm] download failed {tries} times ({e}); run the command again to resume it")
-            _say(f"connection dropped ({e}); resuming ({attempt}/{tries - 1}) ...")
+            if not progress:
+                _say(f"connection dropped ({e}); resuming ({attempt}/{tries - 1}) ...")
             time.sleep(min(30, 2 ** attempt))
 
 
@@ -301,9 +309,13 @@ def _status(proc, key: str | None) -> dict:
     """For GET /localllm/status: what the running llama-server uses right now."""
     from . import meter
     saved = meter.line(meter.Meter().month())
+    from . import downloads
+    st = downloads.state()
+    dl = downloads.line(st)
+    extra = {"download": dl, "download_state": st} if dl else {}   # text for `localllm chat`, state for the page
     if proc is None:
-        return {"loaded": False, "savings": saved}
-    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved,
+        return {"loaded": False, "savings": saved, **extra}
+    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved, **extra,
             **runtime.process_memory(proc.pid)}
 
 
@@ -361,23 +373,60 @@ def first_run() -> bool:
     return not have and not os.environ.get("LOCALLLM_MODELS")
 
 
+def _starter_plan(a) -> tuple[str | None, str | None]:
+    """(model to start with, model to download behind it). On a first run whose best model isn't downloaded, start the
+    small starter model so chat works in about a minute and fetch the best one in the background (#116)."""
+    if a.model or getattr(a, "models", None) or os.environ.get("LOCALLLM_NO_STARTER"):
+        return a.model, None
+    from .bench import system_language
+    _server, _devs, dev, _ram = _machine()
+    if not dev:
+        return None, None
+    ram_free = runtime.ram_available_gb()
+    best = catalog.pick(dev["total_gb"], system_language(), ram_free)
+    if not best or _have_model(best):
+        return best, None
+    start = catalog.starter(dev["total_gb"], ram_free)
+    if not start or start == best:
+        return best, None
+    return start, best
+
+
 def cmd_run(a) -> None:
     if first_run() and not a.model and sys.stdin.isatty():
         _say(i18n.t("cli_first_run"))
         cmd_doctor(a)
         print()
-    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
+    key, later = _starter_plan(a)
+    if later:
+        s, b = catalog.MODELS[key], catalog.MODELS[later]
+        _say(f"starting with {key} ({s['gb']} GB) so you can chat in about a minute; {later} ({b['gb']} GB), the best "
+             "model for this PC, downloads in the background (`/status` in chat shows how far)")
+    proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
                        ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False))
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
+    if later:
+        _background(later)
     if not a.no_browser:
         webbrowser.open(url)
     try:
         proc.wait()
     except KeyboardInterrupt:
         proc.terminate()
+
+
+def _background(key: str):
+    """Download `key` behind the running starter model; say once when it is ready."""
+    from . import downloads
+    m = catalog.MODELS[key]
+    dest = runtime.HOME / "models" / m["file"]
+    return downloads.start(
+        key, lambda progress: _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"), progress=progress),
+        on_done=lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
+                               "again to switch to it."))
 
 
 def cmd_chat(a) -> None:
