@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "make-localllm-easier"
-version = "0.7.0"
+version = "0.7.1"
 description = "One command runs the best local AI your PC can handle: measured model picks + a tuned llama.cpp (AMD, NVIDIA, Intel, Apple)"
 readme = "README.md"
 license = { text = "MIT" }

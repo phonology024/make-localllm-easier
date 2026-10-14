@@ -34,6 +34,7 @@ jobs:
       - name: AppImage (Linux)
         if: runner.os == 'Linux'
         run: |
+          sudo apt-get update -q && sudo apt-get install -y -q desktop-file-utils   # appimagetool validates the .desktop file
           curl -sSfL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
           chmod +x appimagetool
           mkdir -p AppDir/usr/bin

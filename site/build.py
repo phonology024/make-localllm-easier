@@ -611,7 +611,7 @@ def start() -> None:
 <p class="small muted">The first run shows what your PC can run and asks before the 8-14 GB model download.
 <code>localllm doctor</code> shows the same without downloading a model.</p>
 <h3>No Python?</h3>
-<p>From version 0.7.0, every <a href="{GH}/releases">release</a> has a single <code>localllm</code> file for Windows,
+<p>From version 0.7.1, every <a href="{GH}/releases">release</a> has a single <code>localllm</code> file for Windows,
 macOS and Linux, and an AppImage. Download it and run it from a terminal. winget and Homebrew packages follow.</p>
 </div>
 <div class="prose">
@@ -1057,7 +1057,7 @@ def thai_start() -> None:
 </ol>
 {INSTALL}
 <h3>ไม่มี Python?</h3>
-<p>ตั้งแต่เวอร์ชัน 0.7.0 ทุก <a href="{GH}/releases">release</a> จะมีไฟล์ <code>localllm</code> ไฟล์เดียวสำหรับ Windows,
+<p>ตั้งแต่เวอร์ชัน 0.7.1 ทุก <a href="{GH}/releases">release</a> จะมีไฟล์ <code>localllm</code> ไฟล์เดียวสำหรับ Windows,
 macOS และ Linux ดาวน์โหลดแล้วรันจาก terminal ได้เลย</p>
 </div>
 <div class="prose">
