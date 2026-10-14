@@ -273,6 +273,16 @@ under 2 points as a tie and picks the faster model.
 4. **Qwen3.8 GGUFs ship a multi-token-prediction head.** Drafting 2 tokens with it adds ~40% decode speed for free;
    drafting 3 is slower.
 5. **The first run of a new llama.cpp build is slow** while the GPU driver compiles its shaders once (~15 s).
+6. **Pruning experts (REAP) costs the most where the calibration data is thinnest.** GLM-4.7-Flash 30B-A3B vs Cerebras'
+   REAP-pruned 23B-A3B, same Q4 quant: English lost 6-12 points, Thai math fell from 70.4% to 15.6%, Thai and Hindi
+   translation lost about 25 chrF++ points
+   ([#83](https://github.com/phonology024/make-localllm-easier/issues/83), `tools/runner_lab_glm.json`).
+7. **A bigger model squeezed onto the card loses to a smaller one that fits.** Llama-3.3-70B at ~2 bit (IQ2_XXS, 54 of
+   80 layers on the GPU) vs gemma-4-26B-A4B on the same questions: Thai 50 vs 78, Hindi 58-63 vs 69-70, Arabic 56-58 vs
+   69-73, MGSM 75-80 vs 90-95 ([#86](https://github.com/phonology024/make-localllm-easier/issues/86)).
+8. **A 120B MoE runs on 16 GB VRAM + 32 GB RAM, slowly.** gpt-oss-120b (63 GB, MXFP4) loads memory-mapped; with the
+   experts of 31 of 36 layers in RAM it answers at 9.1 tok/s, with all of them in RAM 5.0 tok/s; at 28 the card spills
+   ([#82](https://github.com/phonology024/make-localllm-easier/issues/82)).
 
 ### How much each quant changes the model, per language
 
