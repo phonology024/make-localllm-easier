@@ -555,8 +555,7 @@ def cmd_connect(a) -> None:
 
 def cmd_launch(a) -> None:
     from . import chat, launch
-    extra = a.args[1:] if a.args[:1] == ["--"] else a.args
-    sys.exit(launch.run(a.tool, a.port, a.keep, extra, alive=chat.server_alive, say=_say,
+    sys.exit(launch.run(a.tool, a.port, a.keep, a.args, alive=chat.server_alive, say=_say,
                         start_server=lambda: _start(a.model, a.port, None, profile="max")))
 
 
@@ -649,8 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     la.add_argument("--keep", action="store_true", help="keep the tool pointed at localllm after it exits")
     la.add_argument("--port", type=int, default=8080)
     la.add_argument("--model", help="catalog model to start (default: the best for this PC)")
-    la.add_argument("args", nargs=argparse.REMAINDER, help="after --: arguments for the tool")
-    la.set_defaults(fn=cmd_launch)
+    la.set_defaults(fn=cmd_launch, args=[])     # arguments for the tool go after --, see parse_args
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)
     e.add_argument("--langs", help="comma-separated ISO codes, default: en + this PC's language")
@@ -663,8 +661,21 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """build_parser().parse_args, except that for `launch` everything after `--` goes to the tool untouched."""
+    argv = sys.argv[1:] if argv is None else list(argv)
+    tool_args = []
+    if "launch" in argv and "--" in argv:
+        i = argv.index("--")
+        argv, tool_args = argv[:i], argv[i + 1:]
+    a = build_parser().parse_args(argv)
+    if getattr(a, "fn", None) is cmd_launch:
+        a.args = tool_args
+    return a
+
+
 def main() -> None:
-    a = build_parser().parse_args()
+    a = parse_args()
     global ASSUME_YES
     ASSUME_YES = a.yes
     if a.fn is cmd_serve:

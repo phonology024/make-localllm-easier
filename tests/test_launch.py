@@ -95,5 +95,7 @@ def test_is_connected_reads_what_connect_remembers(tmp_path, monkeypatch):
 
 
 def test_cli_parses_launch_and_passes_tool_args():
-    a = cli.build_parser().parse_args(["launch", "aider", "--keep", "--", "--model", "x"])
-    assert a.fn is cli.cmd_launch and a.tool == "aider" and a.keep and a.args[-2:] == ["--model", "x"]
+    a = cli.parse_args(["launch", "aider", "--keep", "--", "--model", "x", "--keep"])
+    assert a.fn is cli.cmd_launch and a.tool == "aider" and a.keep and a.args == ["--model", "x", "--keep"]
+    b = cli.parse_args(["launch", "codex"])
+    assert b.args == [] and not b.keep and b.port == 8080
