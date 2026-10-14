@@ -72,11 +72,32 @@ def test_unknown_and_other_drive_rows(tmp_path, cat, monkeypatch):
     _ollama(tmp_path / "o2")
     rows = importer.plan(importer.match(importer.scan_ollama(tmp_path / "ollama") + importer.scan_ollama(tmp_path / "o2")),
                          tmp_path / "m")
-    assert [r["action"] for r in rows] == ["unmeasured", "link"]
+    assert sorted(r["action"] for r in rows) == ["link", "unmeasured"]
     monkeypatch.setattr(importer, "_same_volume", lambda a, b: False)
     rows = importer.plan(importer.match(importer.scan_ollama(tmp_path / "o2")), tmp_path / "m")
     text = importer.describe(rows, applied=False)
-    assert rows[0]["action"] == "other-drive" and "LOCALLLM_MODELS=" in text
+    assert rows[0]["action"] == "other-drive" and "can't be reused" in text and "LOCALLLM_MODELS" not in text
+
+
+def test_the_same_model_in_two_apps_is_linked_once_from_the_same_drive(tmp_path, cat, monkeypatch):
+    _ollama(tmp_path / "far")
+    _ollama(tmp_path / "near")
+    near = str(tmp_path / "near")
+    monkeypatch.setattr(importer, "_same_volume", lambda a, b: str(a).startswith(near))
+    found = importer.scan_ollama(tmp_path / "far") + importer.scan_ollama(tmp_path / "near")
+    rows = importer.apply(importer.plan(importer.match(found), tmp_path / "m"))
+    assert sorted(r["action"] for r in rows) == ["duplicate", "linked"]
+    assert next(r for r in rows if r["action"] == "linked")["path"].startswith(near)
+
+
+def test_hashing_says_what_it_is_doing(tmp_path, cat, monkeypatch):
+    monkeypatch.setattr(importer, "SIZE_SLACK_GB", 0)
+    d = tmp_path / "jan"
+    d.mkdir()
+    (d / "a.gguf").write_bytes(BODY)
+    said = []
+    importer.match(importer.scan_folders([("Jan", d)]), say=said.append)
+    assert said and said[0].startswith("  hashing a.gguf (")
 
 
 def test_nothing_found():

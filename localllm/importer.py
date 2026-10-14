@@ -4,8 +4,9 @@ downloading them again.
 A file is matched to a catalog model by SHA-256 (Ollama names its blobs by their SHA-256, so those cost nothing; other
 files are hashed only when their size is within 2% of a catalog model's). A match is hard-linked into
 ~/.localllm/models under the catalog's file name: no copy, no extra disk space, and the other app's files are never
-moved, renamed or changed. Across drives a hard link is impossible, so it says to point LOCALLLM_MODELS at the folder
-instead. GGUFs that match nothing are listed as unmeasured: we have no scores for them. Dry run unless --apply.
+moved, renamed or changed. Across drives a hard link is impossible and localllm never copies, so such a file is
+reported as not reusable. The same model in two apps is linked once (from the copy on the same drive). GGUFs that
+match nothing are listed as unmeasured: we have no scores for them. Dry run unless --apply.
 """
 from __future__ import annotations
 
@@ -86,13 +87,14 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def match(found: list[Found], hash_file=sha256_of) -> list[tuple[Found, str | None]]:
+def match(found: list[Found], hash_file=sha256_of, say=print) -> list[tuple[Found, str | None]]:
     """(file, catalog key or None). Files are hashed only if their size is near a catalog model's."""
     by_sha = {m["sha256"]: k for k, m in catalog.MODELS.items() if m.get("sha256")}
     out = []
     for f in found:
         if f.sha256 is None and any(abs(f.size / 2**30 - m["gb"]) <= 0.02 * m["gb"] + SIZE_SLACK_GB
                                     for m in catalog.MODELS.values()):
+            say(f"  hashing {f.name} ({f.size / 2**30:.1f} GB) to check it is the catalog's file ...")
             f.sha256 = hash_file(f.path)
         out.append((f, by_sha.get(f.sha256) if f.sha256 else None))
     return out
@@ -101,7 +103,9 @@ def match(found: list[Found], hash_file=sha256_of) -> list[tuple[Found, str | No
 def plan(matches: list[tuple[Found, str | None]], models_dir: Path | None = None) -> list[dict]:
     """What --apply would do, one row per file: link / have / other-drive / unmeasured."""
     models_dir = models_dir or runtime.HOME / "models"
-    rows = []
+    rows, linked = [], set()
+    # the same model in two apps: link it once, from a copy on the same drive if there is one
+    matches = sorted(matches, key=lambda fk: not (fk[1] and _same_volume(fk[0].path, models_dir)))
     for f, key in matches:
         row = {"app": f.app, "name": f.name, "path": str(f.path), "gb": round(f.size / 2**30, 1), "key": key}
         if not key:
@@ -111,8 +115,11 @@ def plan(matches: list[tuple[Found, str | None]], models_dir: Path | None = None
             row["dest"] = str(dest)
             if dest.exists():
                 row["action"] = "have"
+            elif key in linked:
+                row["action"] = "duplicate"
             elif _same_volume(f.path, models_dir):
                 row["action"] = "link"
+                linked.add(key)
             else:
                 row["action"] = "other-drive"
         rows.append(row)
@@ -148,14 +155,18 @@ def describe(rows: list[dict], applied: bool) -> str:
         return "No models from Ollama, LM Studio or Jan found on this PC."
     lines = []
     verbs = {"link": "would link" if not applied else "link", "linked": "linked", "have": "already have",
-             "other-drive": "on another drive", "unmeasured": "unmeasured", "failed": "could not link"}
+             "other-drive": "other drive", "unmeasured": "unmeasured", "failed": "could not link",
+             "duplicate": "duplicate"}
     for r in rows:
         what = f"{r['app']}: {r['name']} ({r['gb']} GB)"
         if r["key"]:
             what += f" = {r['key']}"
         line = f"  {verbs[r['action']]:15} {what}"
         if r["action"] == "other-drive":
-            line += f"\n                  set LOCALLLM_MODELS={Path(r['path']).parent} to use it where it is"
+            line += ("\n                  can't be reused: a hard link can't cross drives and localllm never copies "
+                     "models; it downloads its own copy when you run it")
+        if r["action"] == "duplicate":
+            line += "\n                  the same file as above; linked once"
         if r["action"] == "failed":
             line += f"\n                  {r['error']}"
         lines.append(line)

@@ -549,7 +549,7 @@ def cmd_import(a) -> None:
     if found:
         _say(f"found {len(found)} GGUF file(s) from other apps; checking them against the catalog "
              "(hashing only files the size of a catalog model) ...")
-    rows = importer.plan(importer.match(found))
+    rows = importer.plan(importer.match(found, say=lambda m: print(m, flush=True)))
     if a.apply:
         importer.apply(rows)
     print(importer.describe(rows, a.apply))
