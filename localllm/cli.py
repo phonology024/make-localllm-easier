@@ -497,6 +497,74 @@ def cmd_doctor(_a) -> None:
         print(f"Local answers {meter.line(used)}")
 
 
+def cmd_doctor_entry(a) -> None:
+    """`localllm doctor [--fix] [--reset]`."""
+    from . import fix
+    if getattr(a, "reset", False):
+        if fix.DEFAULTS.exists():
+            fix.DEFAULTS.unlink()
+            print(f"removed {fix.DEFAULTS}: localllm uses its own defaults again")
+        else:
+            print("no saved defaults to remove")
+        return
+    cmd_doctor(a)
+    if getattr(a, "fix", False):
+        print("\nChecking for first-run problems (--fix):")
+        _doctor_fix(a)
+
+
+def _doctor_fix(a) -> list:
+    from . import chat, fix, tune
+    from .bench import system_language
+    server, devs, dev, ram = _machine()
+    ram_free = runtime.ram_available_gb()
+    key = catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None
+    problems = [fix.check_gpu(devs, fix.vulkan_loader_present())]
+    if dev:
+        tuned = tune.load().get(tune.machine_key(dev["name"], catalog.MODELS[key]["file"], server)) if key else None
+        problems.append(fix.check_small_bar(dev, tune.detect_small_bar(dev["name"]), bool(tuned)))
+    port = getattr(a, "port", 8080)
+    running = chat._get(f"http://127.0.0.1:{port}/localllm/status", timeout=3) is not None
+    if not running:                                    # a running localllm already holds the VRAM it needs
+        problems.append(fix.check_vram(dev, key, fix.vram_users()))
+    if key:
+        m = catalog.MODELS[key]
+        cpu_moe = (catalog.cpu_moe_layers(key, dev["total_gb"], ram_free) or 0) if dev else 0
+        in_ram = cpu_moe * m["moe"]["expert_gb_per_layer"] if cpu_moe else 0.0
+        need = _ram_for(m, dev, catalog.MIN_CTX, cpu_moe, in_ram, ram, "lean")["total_gb"]
+        problems.append(fix.check_ram(key, ram_free, need if not running else 0))
+    free = fix.port_free(port)
+    problems.append(fix.check_port(port, free, None if free else fix.port_owner(port), running))
+    if running:
+        problems.append(fix.check_garbled(fix.ask_running(port), None))
+    problems = [p for p in problems if p]
+    print(fix.report(problems))
+    for p in problems:
+        if not (p.apply or p.run):
+            continue
+        what = (f"save {', '.join(f'{k}={v}' for k, v in p.apply.items())} as your default"
+                if p.apply else f"run `localllm {' '.join(p.run)}` now")
+        if not (ASSUME_YES or _ask_yes(f"fix [{p.id}]: {what}?")):
+            print(f"   not applied ([{p.id}])")
+            continue
+        if p.apply:
+            print(f"saved to {fix.DEFAULTS}: {fix.save_defaults(p.apply)}  (`localllm doctor --reset` undoes it)")
+        elif p.run == ["tune"]:
+            cmd_tune(argparse.Namespace(model=None, prefer_energy=False))
+    return problems
+
+
+def _ask_yes(question: str) -> bool:
+    """A fix runs only on an explicit yes typed by a person (unlike confirm(), no answer means no). Windows reports the
+    NUL device as a terminal, so `< NUL` / `< /dev/null` must not count as consent either."""
+    if not sys.stdin.isatty():
+        return False
+    try:
+        return input(f"[localllm] {question} [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
 def _ram_for(m: dict, dev, ctx: int, cpu_moe: int, in_ram: float, ram: float, profile: str) -> dict:
     """System-RAM estimate of one launch (doctor), experts kept in RAM included."""
     from . import sizing
@@ -594,7 +662,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--ui", action="store_true", help=UI_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
+    d = sub.add_parser("doctor", help="what this PC can run; --fix finds and fixes first-run problems")
+    d.add_argument("--fix", action="store_true",
+                   help="check for the usual first-run failures (no GPU, ReBAR off, VRAM taken by other apps, low RAM, "
+                        "port in use, garbled answers), explain each and apply the safe fixes you agree to")
+    d.add_argument("--reset", action="store_true", help="remove the defaults saved by --fix")
+    d.set_defaults(fn=cmd_doctor_entry)
     sub.add_parser("list").set_defaults(fn=cmd_list)
     rp = sub.add_parser("report", help="your GPU, tuned settings and eval scores in one JSON, ready to share")
     rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
@@ -650,6 +723,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     a = build_parser().parse_args()
+    from . import fix
+    given = {f.lstrip("-").split("=")[0] for f in sys.argv[1:] if f.startswith("--")}
+    fix.apply_defaults(a, given)              # defaults saved by `doctor --fix`; typed flags win
     global ASSUME_YES
     ASSUME_YES = a.yes
     if a.fn is cmd_serve:
