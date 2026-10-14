@@ -76,6 +76,11 @@ by name, or the local model scores below your floor in that language) and tells 
 **How much RAM does a local LLM need?** With the model fully on the GPU, about 2-2.5 GB of system RAM with `localllm`
 (vs ~9 GB growing with llama-server's defaults). `localllm doctor` prints the estimate for your PC.
 
+**Can I post my result?** `localllm report --share` also draws a card (SVG, 1200 x 630) with your GPU, the model
+localllm picked, the speed `tune` measured, your score in your language and the RAM it uses, linking to your GPU's
+leaderboard page. It comes from the same report as the issue (no names, paths or keys) and is saved next to it in
+`~/.localllm/`.
+
 **Does it work offline?** After the first download, yes. Nothing leaves your PC.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
