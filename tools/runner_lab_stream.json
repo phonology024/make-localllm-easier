@@ -1,10 +1,38 @@
 {
  "llama_cpp": "pr25294",
- "note": "#84: llama.cpp PR #25294 (stream MoE routed experts from disk), built with Vulkan on Windows (LOCALLLM_LLAMA_SERVER=<that build>/llama-server.exe). Same gpt-oss-120b MXFP4 file as runner_lab_gptoss.json, so the two compare: mmap + --n-cpu-moe there, a GPU expert cache fed from the SSD here.",
+ "note": "#84: llama.cpp PR #25294 (stream MoE routed experts from disk), built with Vulkan on Windows (LOCALLLM_LLAMA_SERVER=<that build>/llama-server.exe). Same gpt-oss-120b MXFP4 file as runner_lab_gptoss.json, so the two compare: mmap + --n-cpu-moe there, a GPU expert cache fed from the SSD here. Speed and memory only: the PR reports output bit-exact with a non-streamed run.",
  "jobs": [
-  {"id": "84-gptoss120b-stream10g-direct", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--moe-stream-cache", "10", "--moe-stream-direct", "--jinja"], "memory": true},
-  {"id": "84-gptoss120b-stream10g-buffered", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--moe-stream-cache", "10", "--jinja"], "memory": true},
-  {"id": "84-gptoss120b-stream6g-direct", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--moe-stream-cache", "6", "--moe-stream-direct", "--jinja"], "memory": true},
-  {"id": "84-gptoss120b-stream10g-quality", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--moe-stream-cache", "10", "--moe-stream-direct", "--jinja"], "memory": true, "suites": "global,math", "langs": "en,th,zh,ja", "limit": 50}
+  {
+   "id": "84-gptoss120b-stream10g-direct",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--moe-stream-cache",
+    "10",
+    "--moe-stream-direct",
+    "--jinja"
+   ],
+   "memory": true
+  },
+  {
+   "id": "84-gptoss120b-stream10g-buffered",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--moe-stream-cache",
+    "10",
+    "--jinja"
+   ],
+   "memory": true
+  },
+  {
+   "id": "84-gptoss120b-stream6g-direct",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--moe-stream-cache",
+    "6",
+    "--moe-stream-direct",
+    "--jinja"
+   ],
+   "memory": true
+  }
  ]
 }

@@ -1,10 +1,42 @@
 {
  "llama_cpp": "b11476",
- "note": "#82: gpt-oss-120b (ggml-org MXFP4, 63.4 GB) on 16 GB VRAM + 32 GB RAM. The file is larger than VRAM + RAM, so it is memory-mapped (--load-mode mmap) and the experts that fit nowhere are read from the SSD. --n-cpu-moe sweep (36 layers), then quality on the first 50 questions. b11476 has no --moe-cache-mib.",
+ "note": "#82: gpt-oss-120b (ggml-org MXFP4, 63.4 GB) on 16 GB VRAM + 32 GB RAM. The file is larger than VRAM + RAM, so it is memory-mapped (--load-mode mmap) and the experts that fit nowhere are read from the SSD. --n-cpu-moe sweep (36 layers). b11476 has no --moe-cache-mib. Quality is not scored here: gpt-oss answers after a reasoning channel, so eval's first-token multiple-choice scoring doesn't apply, and math at a few tok/s would take hours; this run answers whether it loads and how fast.",
  "jobs": [
-  {"id": "82-gptoss120b-cpumoe36", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--load-mode", "mmap", "--n-cpu-moe", "36", "--jinja"], "memory": true},
-  {"id": "82-gptoss120b-cpumoe31", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--load-mode", "mmap", "--n-cpu-moe", "31", "--jinja"], "memory": true},
-  {"id": "82-gptoss120b-cpumoe28", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--load-mode", "mmap", "--n-cpu-moe", "28", "--jinja"], "memory": true},
-  {"id": "82-gptoss120b-cpumoe31-quality", "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf", "args": ["--load-mode", "mmap", "--n-cpu-moe", "31", "--jinja"], "memory": true, "suites": "global,math", "langs": "en,th,zh,ja", "limit": 50}
+  {
+   "id": "82-gptoss120b-cpumoe36",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--load-mode",
+    "mmap",
+    "--n-cpu-moe",
+    "36",
+    "--jinja"
+   ],
+   "memory": true
+  },
+  {
+   "id": "82-gptoss120b-cpumoe31",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--load-mode",
+    "mmap",
+    "--n-cpu-moe",
+    "31",
+    "--jinja"
+   ],
+   "memory": true
+  },
+  {
+   "id": "82-gptoss120b-cpumoe28",
+   "file": "~/.localllm/lab/gpt-oss-120b-MXFP4.gguf",
+   "args": [
+    "--load-mode",
+    "mmap",
+    "--n-cpu-moe",
+    "28",
+    "--jinja"
+   ],
+   "memory": true
+  }
  ]
 }
