@@ -529,6 +529,11 @@ def cmd_report(a) -> None:
     if names:
         _say(f"your eval run names go in as typed: {', '.join(names)} - check none of them names you before posting")
     _say(f"share it (you review everything before submitting): {url}")
+    if getattr(a, "share", False):
+        from . import share
+        card, page = share.write(rep, out.parent)
+        _say(f"share card: {card} (post it anywhere; it links to {page})")
+        url = card.as_uri()
     if not a.no_browser:
         webbrowser.open(url)
 
@@ -605,6 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list").set_defaults(fn=cmd_list)
     rp = sub.add_parser("report", help="your GPU, tuned settings and eval scores in one JSON, ready to share")
     rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
+    rp.add_argument("--share", action="store_true", help="also draw a card of your result (SVG) to post anywhere")
     rp.set_defaults(fn=cmd_report)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
