@@ -647,8 +647,7 @@ and you read it before you submit it.</p>
 
 def leaderboard() -> None:
     data = json.loads((ROOT / "data" / "leaderboard.json").read_text(encoding="utf-8"))
-    langs = sorted({k.split("/")[0] for e in data["entries"] for k in e["scores"]},
-                   key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+    langs = sorted({c for e in data["entries"] for c in score_langs(e)}, key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
     opts = "".join(f'<option value="{c}">{LANG_NAMES.get(c, c)}</option>' for c in langs)
     payload = {"entries": data["entries"], "languages": {c: LANG_NAMES.get(c, c) for c in langs}}
     plat = data["platforms"]
@@ -731,6 +730,13 @@ def slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "unknown"
 
 
+LANG_CODE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})?")   # report data names pages and links: nothing else gets through
+
+
+def score_langs(e: dict) -> set[str]:
+    return {c for c in (k.split("/")[0] for k in e["scores"]) if LANG_CODE.fullmatch(c)}
+
+
 def gpus(data: dict) -> list[str]:
     return sorted({e["gpu"] for e in data["entries"]})
 
@@ -742,6 +748,8 @@ def mean_score(e: dict, lang: str) -> float:
 
 def language_page(data: dict, lang: str) -> None:
     """One static page per language (no JavaScript needed, so search engines see the table)."""
+    if not LANG_CODE.fullmatch(lang):
+        raise ValueError(f"not a language code: {lang!r}")
     name = esc(LANG_NAMES.get(lang, lang))
     rows = sorted((e for e in data["entries"] if any(k.split("/")[0] == lang for k in e["scores"])),
                   key=lambda e: -mean_score(e, lang))
@@ -780,7 +788,7 @@ def gpu_page(data: dict, gpu: str) -> None:
     rows = sorted((e for e in data["entries"] if e["gpu"] == gpu), key=lambda e: -(e.get("tok_s") or 0))
     trs = ""
     for e in rows:
-        langs = sorted({k.split("/")[0] for k in e["scores"]}, key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+        langs = sorted(score_langs(e), key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
         links = " ".join(f'<a href="/leaderboard/{c}/">{esc(LANG_NAMES.get(c, c))}</a>' for c in langs)
         trs += (f'<tr><td><code>{esc(e["model"])}</code></td><td class="num">{esc(str(e.get("tok_s") or "-"))}</td>'
                 f'<td>{esc(e.get("os", ""))}</td><td>{esc(e.get("llama_cpp", ""))}</td><td>{links}</td>'

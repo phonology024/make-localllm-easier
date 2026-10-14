@@ -67,3 +67,12 @@ def test_report_fields_are_escaped_on_static_pages(monkeypatch):
     assert "/leaderboard/gpu/img-src-x-onerror-alert-1/" in build.pages
     for html in build.pages.values():
         assert evil not in html and "&lt;img src=x onerror=alert(1)&gt;" in html
+    # language codes name output folders and links: anything but a plain code is dropped, never written
+    assert build.score_langs({"scores": {"TH/global": 1.0, "pt-br/global": 1.0}}) == {"pt-br"}
+    for bad in ("../../x", 'x"onclick=alert(1)', "th/../.."):
+        data["entries"][0]["scores"] = {f"{bad}/global": 50.0, "th/global": 50.0}
+        assert build.score_langs(data["entries"][0]) == {"th"}
+        with pytest.raises(ValueError):
+            build.language_page(data, bad)
+        build.gpu_page(data, evil)
+        assert bad not in build.pages[f"/leaderboard/gpu/{build.slug(evil)}/"]
