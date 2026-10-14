@@ -16,7 +16,7 @@ pip install make-localllm-easier
 localllm
 ```
 
-No Python? From 0.7.0 each [release](https://github.com/phonology024/make-localllm-easier/releases) has a single
+No Python? From 0.7.1 each [release](https://github.com/phonology024/make-localllm-easier/releases) has a single
 `localllm` file for Windows, macOS and Linux (and an AppImage); winget and Homebrew follow
 ([packaging/README.md](packaging/README.md)). The first run shows what your PC can run and asks before the model download.
 
