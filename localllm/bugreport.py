@@ -111,8 +111,13 @@ def collect(doctor) -> dict[str, str]:
     return {k: redact(v, secrets, bits) for k, v in files.items()}
 
 
+NOTES = {"llama-server.log": "can include text from your recent prompts",
+         "router-embed.log": "can include text from your recent prompts"}
+
+
 def summary(files: dict[str, str]) -> str:
-    return "\n".join(f"  {name:20} {len(text.splitlines()):5} lines" for name, text in files.items())
+    return "\n".join(f"  {name:20} {len(text.splitlines()):5} lines" + (f"  ({NOTES[name]})" if name in NOTES else "")
+                     for name, text in files.items())
 
 
 def write(files: dict[str, str], folder: Path | None = None) -> Path:
