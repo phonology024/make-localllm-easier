@@ -62,7 +62,7 @@ INSTALL = term('<span class="p">$ </span>pip install make-localllm-easier\n<span
 
 
 def doctor_sample() -> str:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")     # checked by tests/test_readme.py
     block = readme.split("## What `localllm doctor` tells you", 1)[1].split("```", 2)[1].strip("\n")
     out = []
     for line in esc(block).splitlines():
