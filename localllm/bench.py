@@ -246,7 +246,8 @@ def ask(url: str, item: dict) -> int | None:
                                  headers={"Content-Type": "application/json"})
     d = json.load(urllib.request.urlopen(req, timeout=600))
     best, best_lp = None, -1e9
-    for t in d["choices"][0]["logprobs"]["content"][0]["top_logprobs"]:
+    content = (d["choices"][0].get("logprobs") or {}).get("content") or []
+    for t in (content[0].get("top_logprobs") or []) if content else []:   # no token at all (an instant end): wrong
         tok = t["token"].strip().upper().strip(".()")
         if len(tok) == 1 and tok in letters and t["logprob"] > best_lp:
             best, best_lp = letters.index(tok), t["logprob"]
