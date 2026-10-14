@@ -1,10 +1,10 @@
-"""Merge `localllm report` files into the per-GPU table in README.md (#39).
+"""Merge `localllm report` files into the per-GPU table in docs/benchmarks.md (#39).
 
-  python tools/merge_reports.py REPORT.json [REPORT2.json ... | DIR]  [--readme README.md] [--check]
+  python tools/merge_reports.py REPORT.json [REPORT2.json ... | DIR]  [--readme docs/benchmarks.md] [--check]
 
 A report can be the saved JSON or a GitHub issue body that contains it in a ```json block. Rows are keyed by GPU,
 model and llama.cpp build; a newer report replaces an older one. The table lives between the markers
-<!-- gpu-table:start --> and <!-- gpu-table:end -->. --check exits 1 when the README would change (for CI).
+<!-- gpu-table:start --> and <!-- gpu-table:end -->. --check exits 1 when the page would change (for CI).
 """
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def table(rs: list[dict]) -> str:
 
 def update(readme: str, tbl: str) -> str:
     if START not in readme or END not in readme:
-        raise SystemExit(f"README has no {START} ... {END} section")
+        raise SystemExit(f"{START} ... {END} section not found")
     head, rest = readme.split(START, 1)
     return f"{head}{START}\n{tbl}\n{END}{rest.split(END, 1)[1]}"
 
@@ -83,7 +83,7 @@ def update(readme: str, tbl: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("reports", nargs="+", type=Path)
-    ap.add_argument("--readme", type=Path, default=Path(__file__).resolve().parents[1] / "README.md")
+    ap.add_argument("--readme", type=Path, default=Path(__file__).resolve().parents[1] / "docs" / "benchmarks.md")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
     files = [f for p in a.reports for f in (sorted(p.glob("*.json")) + sorted(p.glob("*.md")) if p.is_dir() else [p])]

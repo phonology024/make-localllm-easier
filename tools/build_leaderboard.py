@@ -7,7 +7,7 @@ issue body with the JSON in a ```json block; see reports/README.md). Outputs, al
 
   data/leaderboard.json     one entry per (GPU, model, llama.cpp build), newest report wins, with flags
   localllm/platforms.json   OS x GPU vendor -> tested by maintainers / community reports (n) / untested (for `doctor`)
-  README.md                 the platform table between <!-- platforms:start --> and <!-- platforms:end -->
+  docs/how-it-works.md      the platform table between <!-- platforms:start --> and <!-- platforms:end -->
 
 A report that fails validation is skipped with the reason. --check exits 1 if any output would change (for CI).
 """
@@ -124,7 +124,7 @@ def table(m: dict) -> str:
 
 def update_readme(readme: str, tbl: str) -> str:
     if START not in readme or END not in readme:
-        raise SystemExit(f"README has no {START} ... {END} section")
+        raise SystemExit(f"docs/how-it-works.md has no {START} ... {END} section")
     head, rest = readme.split(START, 1)
     return f"{head}{START}\n{tbl}\n{END}{rest.split(END, 1)[1]}"
 
@@ -152,10 +152,10 @@ def build(reports: list[dict]) -> dict[str, str]:
     """{relative path: new content} for every output."""
     m = platforms(reports)
     board = {"schema": SCHEMA, "reports": len(reports), "entries": entries(reports), "platforms": m}
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")
     dump = lambda o: json.dumps(o, ensure_ascii=False, indent=1) + "\n"  # noqa: E731
     return {"data/leaderboard.json": dump(board), "localllm/platforms.json": dump(m),
-            "README.md": update_readme(readme, table(m))}
+            "docs/how-it-works.md": update_readme(readme, table(m))}
 
 
 def main() -> None:
