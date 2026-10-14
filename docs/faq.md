@@ -103,5 +103,10 @@ SHA-256 stored in the code before it is used. A mismatch deletes the file and st
 `LOCALLLM_LLAMA_BUILD=latest` (or `=bNNNNN`) picks another llama.cpp build, checked against the digest GitHub lists for
 it.
 
+**Is the chat page in my language?** In English, Thai, Japanese, Chinese, Hindi, Spanish and Arabic (right to left):
+it follows your browser's language, then your PC's; `localllm --lang th` (or `LOCALLLM_LANG`) sets it. The first-run
+lines, the ready line and the download question in the terminal follow the same setting. The strings are in
+`localllm/i18n.py`; fixes from native speakers are very welcome.
+
 **Which languages are measured?** 23 languages on Global-MMLU-Lite, 44 countries' own exams on INCLUDE, plus Thai
 (ThaiExam). `localllm eval --langs ...` measures any of them on your hardware.

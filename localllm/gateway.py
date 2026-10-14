@@ -534,8 +534,14 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(400, {"error": str(e)})
 
         def do_GET(self):
-            if not self._authorized() and (self.path != "/" or getattr(self, "bad_host", False)):
-                return self._deny()                             # the chat page is static; its API calls need the key
+            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n")    # the page and its words need no key
+            if not self._authorized() and (not public or getattr(self, "bad_host", False)):
+                return self._deny()                             # ... but still the Host check (DNS rebinding)
+            if ui and self.path.split("?", 1)[0] == "/localllm/i18n":
+                from urllib.parse import parse_qs, urlsplit
+                from . import i18n
+                browser = (parse_qs(urlsplit(self.path).query).get("lang") or [None])[0]
+                return self._json(200, i18n.table(i18n.ui_lang(browser)))
             if ui and self.path == "/":
                 return self._page()
             if ui and self.path == "/localllm/catalog":
