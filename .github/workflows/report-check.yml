@@ -1,0 +1,47 @@
+name: report-check
+# A shared result is checked against the leaderboard and privacy rules, and the issue gets one comment that says
+# whether it is accepted or what to fix (#101). The issue body is only ever parsed as JSON, never run.
+on:
+  issues:
+    types: [opened, edited, labeled]
+  pull_request:
+    paths: [reports/**, data/leaderboard.json, tools/build_leaderboard.py, tools/add_report.py]
+
+permissions: {}
+
+jobs:
+  issue:
+    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'results')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the report
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$BODY" > "$RUNNER_TEMP/body.md"
+          { echo "**Report check** (\`tools/add_report.py --check\`)"; echo;
+            python tools/add_report.py "$RUNNER_TEMP/body.md" --check || true; } > "$RUNNER_TEMP/result.md"
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/result.md" --edit-last --create-if-none
+
+  reports:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/build_leaderboard.py --check
