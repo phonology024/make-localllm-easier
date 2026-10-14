@@ -116,7 +116,7 @@ def test_doctor_shows_ram_line(monkeypatch, capsys):
     key = catalog.pick(15.9, system_language())
     m = catalog.MODELS[key]
     ctx = sizing.context_tokens(15.9, m)
-    launch = runtime.server_args(cli.Path(m["file"]), dev["id"], 8080, ctx, m["mtp"])
+    launch = runtime.server_args(cli.Path(m["file"]), dev["id"], 8080, ctx, m["mtp"], ram_total_gb=32.0)
     est = sizing.ram_estimate_gb(m, launch)
     assert (f"uses ~{est['total_gb']:.1f} GB of system RAM: ~{est['embed_gb']:.1f} GB "
             f"embeddings/CPU-mapped + ~{est['prompt_cache_gb']:.1f} GB prompt cache + "
