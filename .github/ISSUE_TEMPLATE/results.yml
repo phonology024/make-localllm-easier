@@ -1,0 +1,36 @@
+name: Share a result (localllm report)
+description: Add your GPU to the leaderboard with the JSON that `localllm report` printed.
+title: "Results: "
+labels: [results]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for measuring. `localllm report` fills this in for you; you can also paste the file it saved
+        (`~/.localllm/report-<date>.json`). The report has no user names, paths or keys, and a check on this issue
+        refuses any that slips through. Read it before you submit.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: The short summary `localllm report` wrote (GPU, RAM, OS, tuned speed, scores). Optional.
+  - type: textarea
+    id: report
+    attributes:
+      label: Report
+      description: The JSON from `localllm report`, unchanged.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything unusual (laptop power mode, other apps running, a model you added yourself). Optional.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Publishing
+      options:
+        - label: I read the report, and it may be published in the public leaderboard (data/leaderboard.json, MIT).
+          required: true

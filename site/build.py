@@ -136,7 +136,7 @@ def layout(path: str, title: str, desc: str, body: str, lang: str = "en", schema
 <div><h4>Use it</h4><a href="/get-started/">Get started</a><a href="/how-it-works/">How it works</a><a href="/leaderboard/">Leaderboard</a><a href="{GH}/blob/main/docs/apis.md">API docs</a></div>
 <div><h4>Read</h4><a href="/features/">Features</a><a href="/use-cases/">Use cases</a><a href="/compare/">Compare</a><a href="/guides/">Guides</a></div>
 <div><h4>Project</h4><a href="{GH}">GitHub</a><a href="{PYPI}">PyPI</a><a href="{GH}/blob/main/ROADMAP.md">Roadmap</a><a href="{GH}/blob/main/CONTRIBUTING.md">Contributing</a><a href="{GH}/releases">Releases</a></div>
-<div><h4>Contact</h4><a href="{ISSUES}/new">Report a problem</a><a href="{ISSUES}/new?title=Report">Share a result</a><a href="{ISSUES}">Questions and ideas</a><a href="/th/">ภาษาไทย</a></div>
+<div><h4>Contact</h4><a href="{ISSUES}/new">Report a problem</a><a href="{ISSUES}/new?template=results.yml">Share a result</a><a href="{ISSUES}">Questions and ideas</a><a href="/th/">ภาษาไทย</a></div>
 </div>
 </div></footer>
 <script src="/assets/site.js" defer></script>

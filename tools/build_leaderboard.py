@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 from localllm import catalog  # noqa: E402
-from localllm.report import os_family, vendor  # noqa: E402
+from localllm.report import os_family, privacy_problems, vendor  # noqa: E402
 import merge_reports  # noqa: E402
 
 SCHEMA = 1                      # data/leaderboard.json format; bump on any breaking change
@@ -36,6 +37,7 @@ MAINTAINER = {"gpu": "AMD Radeon RX 9070 XT", "vram_gb": 15.9, "ram_gb": 32.0, "
               "llama_cpp": "b11476"}
 MAX_TOK_S = 400                 # decode faster than this on a 20B+ model is almost surely a typo or a wrong file
 LIMITS = {"vram_gb": (0, 1024), "ram_gb": (0, 4096)}
+TEST = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})?/[a-z0-9_-]{1,32}")   # "th/regional": the website makes pages from these
 
 
 def validate(rep: dict) -> list[str]:
@@ -52,9 +54,13 @@ def validate(rep: dict) -> list[str]:
     for name, res in (rep.get("results") or {}).items():
         for test, v in (res or {}).items():
             acc = v.get("acc") if isinstance(v, dict) else None
-            if not test.startswith("_") and not (isinstance(acc, (int, float)) and 0 <= acc <= 100):
+            if test.startswith("_"):
+                continue
+            if not TEST.fullmatch(test):
+                why.append(f"{name} {test!r}: not a language/suite name")
+            elif not (isinstance(acc, (int, float)) and 0 <= acc <= 100):
                 why.append(f"{name} {test}: score {acc!r} not 0-100")
-    return why
+    return why + [f"privacy: {p}" for p in privacy_problems(rep)]
 
 
 def _key(model: str) -> str:
