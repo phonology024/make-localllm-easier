@@ -111,11 +111,28 @@ def confirm(question: str) -> bool:
         return True
 
 
-def _model_path(key: str) -> Path:
+def _have_model(key: str) -> Path | None:
+    """The model's file if it is on disk (LOCALLLM_MODELS folders first, then ~/.localllm/models), else None."""
     m = catalog.MODELS[key]
-    for d in filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)):
+    for d in [*filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)), runtime.HOME / "models"]:
         if (Path(d) / m["file"]).exists():
             return Path(d) / m["file"]
+    return None
+
+
+def _fetch_model(key: str) -> Path:
+    """Download a catalog model to ~/.localllm/models, checked against its SHA-256 (no question asked)."""
+    m = catalog.MODELS[key]
+    dest = runtime.HOME / "models" / m["file"]
+    _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
+    return dest
+
+
+def _model_path(key: str) -> Path:
+    m = catalog.MODELS[key]
+    found = _have_model(key)
+    if found:
+        return found
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
         if not confirm(f"download {key} ({m['gb']} GB, once, to {dest.parent})?"):
@@ -232,7 +249,8 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
                                             trust_loopback=trust, status=lambda: _status(p.proc, p.current),
-                                            ui=_ui(keys, True) if ui else None, meter=_meter())),
+                                            ui=_ui(keys, True, dev, ram_free) if ui else None,
+                                            meter=_meter())),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
@@ -241,7 +259,7 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
                                   trust_loopback=trust, status=lambda: _status(proc, key),
-                                  ui=_ui([key], False) if ui else None, meter=_meter())
+                                  ui=_ui([key], False, dev, ram_free) if ui else None, meter=_meter())
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -250,12 +268,16 @@ def _meter():
     return meter.Meter()
 
 
-def _ui(keys: list[str], choosable: bool) -> dict:
+def _ui(keys: list[str], choosable: bool, dev: dict | None = None, ram_free: float = 0.0) -> dict:
     from . import workspace
     from .bench import system_language
     store = workspace.Sessions()
     _say(f"chat workspace: chats are saved in {store.dir}")
-    return {"sessions": store, "catalog": workspace.catalog_info(keys, system_language(), choosable)}
+    lang = system_language()
+    downloads = workspace.Downloads(_fetch_model, lambda k: runtime.HOME / "models" / (catalog.MODELS[k]["file"] + ".part"))
+    vram = dev["total_gb"] if dev else 0.0
+    return {"sessions": store, "catalog": workspace.catalog_info(keys, lang, choosable), "downloads": downloads,
+            "models": lambda: workspace.browser_info(vram, ram_free, lang, keys, _have_model, downloads)}
 
 
 def _status(proc, key: str | None) -> dict:

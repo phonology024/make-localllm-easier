@@ -6,7 +6,8 @@
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
   localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
-             with --ui: the chat workspace at / and /localllm/catalog, /localllm/sessions[/<id>] (see workspace.py)
+             with --ui: the chat workspace at / and /localllm/catalog, /localllm/models, /localllm/sessions[/<id>]
+             (see workspace.py)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
@@ -39,6 +40,8 @@ PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/emb
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
+UI_HEADER = "X-Localllm-UI"        # sent by ui.html on requests that change something (cross-site request guard)
+MODEL_DOWNLOAD = re.compile(r"^/localllm/models/([a-z0-9][a-z0-9.-]{0,63})/download$")   # Models tab (#107)
 KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
 
 
@@ -362,6 +365,20 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             want = api_key.encode()
             return any(hmac.compare_digest(k.encode(), want) for k in presented_keys(self.headers, query_key))
 
+        def _from_our_page(self) -> bool:
+            """Workspace requests that change something (save/delete a chat, start a download) must come from our own
+            page. On this PC no key is needed, so any website the user has open could otherwise send a simple
+            cross-origin POST. Our page sends X-Localllm-UI: 1, which another origin can't add without a CORS
+            preflight this server never answers; an Origin header from another site is refused outright."""
+            origin, host = self.headers.get("Origin"), self.headers.get("Host", "")
+            if origin is not None and origin not in (f"http://{host}", f"https://{host}"):
+                return False
+            return self.headers.get(UI_HEADER) == "1"
+
+        def _forbid(self):
+            self.close_connection = True
+            self._json(403, {"error": "this request must come from the localllm chat page"}, {"Connection": "close"})
+
         def _deny(self):
             self.close_connection = True                        # the unread request body must not become the next request
             self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key for this "
@@ -501,6 +518,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._page()
             if ui and self.path == "/localllm/catalog":
                 return self._json(200, ui["catalog"])
+            if ui and self.path == "/localllm/models" and "models" in ui:
+                return self._json(200, ui["models"]())
             if ui and self.path.startswith("/localllm/sessions"):
                 return self._sessions("GET")
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
@@ -523,19 +542,27 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             if not self._authorized():
                 return self._deny()
             if ui and self.path.startswith("/localllm/sessions/"):
-                return self._sessions("PUT")
+                return self._sessions("PUT") if self._from_our_page() else self._forbid()
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_DELETE(self):
             if not self._authorized():
                 return self._deny()
             if ui and self.path.startswith("/localllm/sessions/"):
-                return self._sessions("DELETE")
+                return self._sessions("DELETE") if self._from_our_page() else self._forbid()
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_POST(self):
             if not self._authorized():
                 return self._deny()
+            m = MODEL_DOWNLOAD.match(self.path)
+            if ui and m and "downloads" in ui:
+                if not self._from_our_page():
+                    return self._forbid()
+                try:
+                    return self._json(202, ui["downloads"].start(m.group(1)))
+                except ValueError as e:
+                    return self._json(404, {"error": str(e)})
             if self.path in ("/api/chat", "/api/generate"):
                 return self._ollama(self.path == "/api/chat")
             m = GEMINI.match(self.path)
