@@ -92,6 +92,8 @@ def status_lines(url: str, last: dict) -> list[str]:
         if isinstance(spill, (int, float)):
             bad = spill > st.get("spill_warn_gb", 1.5)
             lines.append(f"spilled into system RAM: {spill:.1f} GB" + (" - answers will be slower" if bad else " (ok)"))
+    if st and st.get("savings"):
+        lines.append(st["savings"])
     used = sum(last.get(k) or 0 for k in ("cache_n", "prompt_n", "predicted_n"))
     if used:
         lines.append(f"context: {used:,} tokens" + (f" of {n_ctx:,} ({100 * used / n_ctx:.0f}%)" if n_ctx else ""))

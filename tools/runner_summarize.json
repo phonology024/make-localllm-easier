@@ -1,0 +1,9 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#43: LR-Sum summarization (CC BY 4.0), first 100 test articles per language, chrF++ and ROUGE-L, for the catalog models. Ten languages including Thai.",
+ "jobs": [
+  {"id": "43-gemma-summarize", "model": "gemma4-26b-a4b-qat", "suites": "summarize", "langs": "en,th,zh,es,fr,ru,vi,id,ko,tr", "speed": false},
+  {"id": "43-qwen-summarize", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "summarize", "langs": "en,th,zh,es,fr,ru,vi,id,ko,tr", "speed": false},
+  {"id": "43-qwen-iq2-summarize", "model": "qwen3.8-27b-iq2", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "summarize", "langs": "en,th,zh,es,fr,ru,vi,id,ko,tr", "speed": false}
+ ]
+}

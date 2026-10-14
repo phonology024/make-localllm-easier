@@ -7,7 +7,7 @@ but we already treat it that way and `tests/test_stability.py` fails if any of i
 
 **Commands and flags.** `localllm` (no command), `doctor`, `list`, `tune`, `chat`, `serve`, `route`, `eval`,
 `report`, `connect`, and the flags each one documents in `--help` today: `--model`, `--port`, `--ctx`,
-`--no-browser`, `--models`, `--idle-unload`, `--host`, `--api-key`, `--require-key-local`, `--vision`,
+`--no-browser`, `--models`, `--idle-unload`, `--host`, `--api-key`, `--require-key-local`, `--vision`, `--profile lean|max`, `--ui`,
 `eval --url/--name/--limit/--langs/--suites`, `chat --url`, `report --no-browser`,
 `connect --undo/--dry-run/--url/--model-id/--path`.
 

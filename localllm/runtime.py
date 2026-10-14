@@ -32,10 +32,32 @@ def _asset() -> str:
 
 
 def find_server() -> Path:
+    """LOCALLLM_LLAMA_SERVER, else the wanted build under ~/.localllm/llama.cpp/<build>/ (downloaded once). With
+    LOCALLLM_LLAMA_BUILD=latest any build already there is used."""
     if os.environ.get("LOCALLLM_LLAMA_SERVER"):
         return Path(os.environ["LOCALLLM_LLAMA_SERVER"])
-    found = sorted((HOME / "llama.cpp").rglob(EXE)) if (HOME / "llama.cpp").exists() else []
+    build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
+    where = HOME / "llama.cpp" / ("" if build == "latest" else build)
+    found = sorted(where.rglob(EXE)) if where.exists() else []
     return found[-1] if found else fetch_server()
+
+
+def build_of(server: Path) -> str | None:
+    """bNNNNN of a llama-server: the folder we unpacked it into, else what `--version` prints."""
+    for part in reversed(server.parts):
+        if re.fullmatch(r"b\d+", part):
+            return part
+    try:
+        out = subprocess.run([str(server), "--version"], capture_output=True, text=True, timeout=20, errors="replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"version: (\d+)", out.stdout + out.stderr)
+    return f"b{m[1]}" if m else None
+
+
+def build_number(build: str | None) -> int | None:
+    m = re.fullmatch(r"b(\d+)", build or "")
+    return int(m[1]) if m else None
 
 
 # The llama.cpp build every catalog score and speed was measured on. Downloads are checked against these SHA-256s
@@ -158,8 +180,18 @@ def ram_available_gb() -> float:
 LOW_RAM_PROFILE = [(16, (512, 2)), (32, (1024, 4)), (64, (2048, 8))]
 
 
-def ram_profile(ram_total_gb: float) -> tuple[int, int] | None:
+# Two profiles (#90): `lean` (default) keeps RAM, VRAM and CPU to the least that holds measured quality; `max` spends
+# what the PC has on capability - the context fills the free VRAM and the prompt cache gets up to a quarter of the RAM,
+# so long agent sessions re-use their fixed prefix instead of re-reading it.
+PROFILES = ("lean", "max")
+MAX_PROFILE_CHECKPOINTS = 8
+MAX_PROFILE_CACHE_SHARE = 0.25
+
+
+def ram_profile(ram_total_gb: float, profile: str = "lean") -> tuple[int, int] | None:
     """(cache-ram MiB, ctx-checkpoints) for this PC, or None to keep llama.cpp's defaults on big-RAM machines."""
+    if profile == "max":
+        return min(8192, int(ram_total_gb * 1024 * MAX_PROFILE_CACHE_SHARE)), MAX_PROFILE_CHECKPOINTS
     for limit, prof in LOW_RAM_PROFILE:
         if ram_total_gb <= limit + 0.5:
             return prof
@@ -167,13 +199,13 @@ def ram_profile(ram_total_gb: float) -> tuple[int, int] | None:
 
 
 def server_args(model: Path, device: str | None, port: int, ctx: int, mtp: bool,
-                ram_total_gb: float | None = None, cpu_moe: int = 0) -> list[str]:
+                ram_total_gb: float | None = None, cpu_moe: int = 0, profile: str = "lean") -> list[str]:
     args = ["-m", str(model), "--host", "127.0.0.1", "--port", str(port), "-c", str(ctx), "-ngl", "999",
             "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "-kvu", "-fit", "off"]
     # read weights straight into place. Measured on gemma-4 with 13 layers' experts in RAM: same 36 tok/s as mmap but
     # 6.1 GB working set instead of 13.5 GB (mmap keeps the whole file resident)
     args += ["--load-mode", "none"] + (["--n-cpu-moe", str(cpu_moe)] if cpu_moe else [])
-    prof = ram_profile(ram_total_gb if ram_total_gb is not None else ram_gb())
+    prof = ram_profile(ram_total_gb if ram_total_gb is not None else ram_gb(), profile)
     if prof:
         args += ["--cache-ram", str(prof[0]), "--ctx-checkpoints", str(prof[1])]
     if device:

@@ -1,0 +1,10 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#93 and #49: needle retrieval at 8k/32k/64k per language, f16 vs q8_0 vs q4_0 KV cache. ctx 70000 so the 64k documents fit.",
+ "jobs": [
+  {"id": "93-gemma-kv-q8", "model": "gemma4-26b-a4b-qat", "ctx": 70000, "args": ["-ctk", "q8_0", "-ctv", "q8_0"], "suites": "longctx", "langs": "en,th,hi,ar", "speed": false},
+  {"id": "93-gemma-kv-f16", "model": "gemma4-26b-a4b-qat", "ctx": 70000, "args": ["-ctk", "f16", "-ctv", "f16"], "suites": "longctx", "langs": "en,th,hi,ar", "speed": false},
+  {"id": "93-gemma-kv-q4", "model": "gemma4-26b-a4b-qat", "ctx": 70000, "args": ["-ctk", "q4_0", "-ctv", "q4_0"], "suites": "longctx", "langs": "en,th,hi,ar", "speed": false},
+  {"id": "93-qwen-kv-q8", "model": "qwen3.8-27b-q3", "ctx": 32768, "args": ["-ctk", "q8_0", "-ctv", "q8_0"], "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "longctx", "langs": "en,th,hi,ar", "speed": false}
+ ]
+}

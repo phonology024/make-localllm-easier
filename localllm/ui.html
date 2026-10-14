@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>localllm</title>
+<link rel="icon" href="data:,">
+<style>
+:root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#6b6f68;--line:#dcdcd4;--accent:#1a8a5a;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
+@media (prefers-color-scheme:dark){:root{--bg:#141614;--panel:#1c1f1c;--text:#e6e8e3;--muted:#9aa096;--line:#2e332e;--accent:#3dbb84;--accent-ink:#0b130e;--me:#1d2b23;--code:#242824;--warn:#e0a060}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;display:flex}
+button,select,textarea,input{font:inherit;color:inherit}
+aside{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+aside header{padding:14px;display:flex;gap:8px;align-items:center}
+aside header b{flex:1}
+#sessions{flex:1;overflow:auto;padding:0 8px 8px}
+.sess{display:flex;align-items:center;gap:4px;border-radius:8px;padding:6px 8px;cursor:pointer}
+.sess:hover,.sess.on{background:var(--bg)}
+.sess span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sess button{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted)}
+.sess:hover button{opacity:1}
+#status{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:pre-line}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.top .grow{flex:1;min-width:0;display:flex;gap:6px;align-items:center}
+.top label{white-space:nowrap}
+.menu{display:none}
+#log{flex:1;overflow:auto;padding:20px 16px}
+.msg{max-width:780px;margin:0 auto 16px}
+.msg.user .body{background:var(--me);border-radius:12px;padding:10px 14px;white-space:pre-wrap}
+.msg.assistant .body{padding:2px 2px}
+.msg .meta{font-size:12px;color:var(--muted);margin-top:4px}
+.body pre{background:var(--code);padding:10px;border-radius:8px;overflow:auto}
+.body code{background:var(--code);padding:1px 4px;border-radius:4px}
+.body pre code{background:none;padding:0}
+details.think{color:var(--muted);font-size:13px;margin-bottom:6px}
+.empty{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
+.empty h1{color:var(--text);font-size:22px}
+form{border-top:1px solid var(--line);padding:12px 16px}
+.box{max-width:780px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;resize:none;min-height:46px;max-height:40vh;border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 12px;cursor:pointer}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--bg);max-width:260px;min-width:0;flex:1}
+.warn{color:var(--warn)}
+#login{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center}
+#login div{background:var(--bg);padding:22px;border-radius:12px;width:min(380px,90vw)}
+#login input{width:100%;margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
+@media (max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}aside.open{transform:none}.menu{display:inline-block}}
+</style>
+</head>
+<body>
+<aside id="side">
+<header><b>localllm</b><button class="btn" id="new" type="button">New chat</button></header>
+<div id="sessions"></div>
+<div id="status">status: loading...</div>
+</aside>
+<main>
+<div class="top">
+<button class="btn menu" id="menu" type="button" aria-label="Sessions">&#9776;</button>
+<label class="grow">Model <select id="model"><option value="">automatic</option></select></label>
+<label><input type="checkbox" id="think"> thinking</label>
+</div>
+<div id="log"></div>
+<form id="form"><div class="box">
+<textarea id="input" rows="1" placeholder="Message" title="Enter sends, Shift+Enter adds a line"></textarea>
+<button class="btn primary" id="send" type="submit">Send</button>
+</div></form>
+</main>
+<div id="login"><div><b>This localllm asks for its key</b>
+<p class="small">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
+<input id="key" type="password" autocomplete="current-password" aria-label="API key">
+<button class="btn primary" id="keyok" type="button">Unlock</button></div></div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = {id: null, title: "", messages: [], model: ""};
+let key = "", ctrl = null, catalog = {};
+try { key = sessionStorage.getItem("localllm-key") || ""; } catch (e) {}
+
+function headers(extra) {
+  const h = Object.assign({"Content-Type": "application/json"}, extra || {});
+  if (key) h.Authorization = "Bearer " + key;
+  return h;
+}
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({headers: headers()}, opts || {}));
+  if (r.status === 401) { askKey(); throw new Error("key needed"); }
+  return r;
+}
+function askKey() { $("login").style.display = "flex"; $("key").focus(); }
+$("keyok").onclick = () => {
+  key = $("key").value.trim();
+  try { sessionStorage.setItem("localllm-key", key); } catch (e) {}
+  $("login").style.display = "none"; boot();
+};
+
+function esc(s) { return s.replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]); }
+function render(md) {
+  // code blocks and inline code only; everything else stays plain text
+  const parts = md.split(/```/);
+  return parts.map((p, i) => {
+    if (i % 2) { const nl = p.indexOf("\n"); return "<pre><code>" + esc(nl >= 0 ? p.slice(nl + 1) : p) + "</code></pre>"; }
+    return esc(p).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
+  }).join("");
+}
+function bubble(m) {
+  const d = document.createElement("div");
+  d.className = "msg " + m.role;
+  d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>thinking</summary>${esc(m.thinking)}</details>` : "")
+    + `<div class="body">${m.role === "user" ? esc(m.content) : render(m.content)}</div>`
+    + (m.meta ? `<div class="meta">${esc(m.meta)}</div>` : "");
+  return d;
+}
+function draw() {
+  const log = $("log");
+  log.innerHTML = "";
+  if (!S.messages.length) {
+    log.innerHTML = `<div class="empty"><h1>Chat with the model on this PC</h1><p>Nothing leaves this computer. Chats are
+      saved as plain files in <code>~/.localllm/sessions/</code>.</p></div>`;
+    return;
+  }
+  S.messages.forEach((m) => log.appendChild(bubble(m)));
+  log.scrollTop = log.scrollHeight;
+}
+
+async function listSessions() {
+  const r = await api("/localllm/sessions");
+  const items = await r.json();
+  const box = $("sessions");
+  box.innerHTML = "";
+  items.forEach((s) => {
+    const d = document.createElement("div");
+    d.className = "sess" + (s.id === S.id ? " on" : "");
+    d.innerHTML = `<span title="${esc(s.title)}">${esc(s.title || "untitled")}</span><button type="button" aria-label="Delete">&times;</button>`;
+    d.querySelector("span").onclick = () => open(s.id);
+    d.querySelector("button").onclick = async () => {
+      if (!confirm("Delete this chat?")) return;
+      await api("/localllm/sessions/" + s.id, {method: "DELETE"});
+      if (s.id === S.id) fresh();
+      listSessions();
+    };
+    box.appendChild(d);
+  });
+}
+async function open(id) {
+  const r = await api("/localllm/sessions/" + id);
+  Object.assign(S, await r.json());
+  $("model").value = S.model || "";
+  $("side").classList.remove("open");
+  draw(); listSessions();
+}
+function fresh() { Object.assign(S, {id: null, title: "", messages: [], model: $("model").value}); draw(); listSessions(); }
+async function save() {
+  if (!S.id) S.id = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
+  if (!S.title) S.title = (S.messages.find((m) => m.role === "user") || {content: ""}).content.slice(0, 60);
+  await api("/localllm/sessions/" + S.id, {method: "PUT", body: JSON.stringify(S)});
+  listSessions();
+}
+
+async function send(text) {
+  S.messages.push({role: "user", content: text});
+  const reply = {role: "assistant", content: "", thinking: "", meta: ""};
+  S.messages.push(reply);
+  draw();
+  const node = $("log").lastChild;
+  const body = {messages: S.messages.slice(0, -1).map((m) => ({role: m.role, content: m.content})), stream: true};
+  if ($("model").value) body.model = $("model").value;
+  ctrl = new AbortController();
+  $("send").textContent = "Stop";
+  const t0 = performance.now();
+  try {
+    const r = await fetch("/v1/chat/completions", {method: "POST", headers: headers(), body: JSON.stringify(body), signal: ctrl.signal});
+    if (r.status === 401) { askKey(); throw new Error("key needed"); }
+    if (!r.ok) throw new Error((await r.text()).slice(0, 300));
+    const who = r.headers.get("X-Localllm-Model") || "";
+    const route = r.headers.get("X-Localllm-Route") || "local";
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "", timings = null;
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:") || line.includes("[DONE]")) continue;
+        const d = JSON.parse(line.slice(5));
+        if (d.timings) timings = d.timings;
+        const delta = ((d.choices || [])[0] || {}).delta || {};
+        reply.content += delta.content || "";
+        reply.thinking += delta.reasoning_content || "";
+      }
+      node.replaceWith(bubble(reply));
+      $("log").lastChild.scrollIntoView({block: "end"});
+    }
+    const speed = timings && timings.predicted_per_second ? `${timings.predicted_per_second.toFixed(1)} tok/s` : "";
+    reply.meta = [who || (catalog.single || ""), route !== "local" ? route : "", speed, `${((performance.now() - t0) / 1000).toFixed(1)} s`].filter(Boolean).join(" · ");
+  } catch (e) {
+    if (e.name === "AbortError") reply.meta = "stopped";
+    else reply.meta = "error: " + e.message;
+  } finally {
+    ctrl = null; $("send").textContent = "Send";
+    draw(); save();
+  }
+}
+
+$("form").onsubmit = (ev) => {
+  ev.preventDefault();
+  if (ctrl) { ctrl.abort(); return; }
+  const t = $("input").value.trim();
+  if (!t) return;
+  $("input").value = ""; $("input").style.height = "";
+  send(t);
+};
+$("input").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("form").requestSubmit(); }
+});
+$("input").addEventListener("input", (ev) => { ev.target.style.height = ""; ev.target.style.height = ev.target.scrollHeight + "px"; });
+$("new").onclick = fresh;
+$("menu").onclick = () => $("side").classList.toggle("open");
+$("model").onchange = () => { S.model = $("model").value; };
+$("think").onchange = draw;
+
+async function status() {
+  if (document.hidden) return;
+  try {
+    const d = await (await api("/localllm/status")).json();
+    if (!d.loaded) { $("status").textContent = "model unloaded (idle); it loads on the next message"; return; }
+    const gb = (v) => v == null ? "?" : v.toFixed(1) + " GB";
+    const spill = d.spill_gb != null && d.spill_gb > d.spill_warn_gb;
+    $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
+      + (spill ? `<br><span class="warn">${esc(gb(d.spill_gb))} spilled to system RAM: slower answers</span>` : "")
+      + (d.savings ? `<br>${esc(d.savings)}` : "");
+  } catch (e) { $("status").textContent = "status unavailable"; }
+}
+
+async function boot() {
+  try {
+    catalog = await (await api("/localllm/catalog")).json();
+    const sel = $("model");
+    sel.length = 1;
+    (catalog.models || []).forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m.key;
+      o.textContent = `${m.key} · ${m.gb} GB · ~${m.tok_s} tok/s` + (m.score != null ? ` · ${m.score}% ${m.lang}` : "");
+      sel.appendChild(o);
+    });
+    if (!catalog.choosable && catalog.single) { sel.options[0].textContent = catalog.single; sel.length = 1; }
+    sel.disabled = !catalog.choosable;
+    if (!catalog.choosable) sel.title = "one model is loaded; start with --models A,B to choose";
+    draw(); await listSessions(); status();
+  } catch (e) { /* askKey() was shown */ }
+}
+setInterval(status, 15000);
+boot();
+</script>
+</body>
+</html>

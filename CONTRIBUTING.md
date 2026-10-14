@@ -18,6 +18,9 @@ The report has no user names, paths or keys. It shows up in the README's "Where 
 website's leaderboard. Interesting results we haven't seen before: NVIDIA on Windows or Linux, Apple Silicon, Intel
 Arc, 6-12 GB cards, CPU-only PCs.
 
+Renting a cloud GPU for an hour? `tools/cloud_lab.sh` does all of the above unattended and marks the report as
+`cloud:<provider>`.
+
 Have a local exam set for your language that can be used commercially (Apache-2.0, MIT, CC-BY)? Open an issue with
 the link; that's how ThaiExam got in.
 

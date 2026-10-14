@@ -73,3 +73,32 @@ def test_llama_cpp_asset_digest():
         runtime.check_sha256(b"abc", "a", "0" * 64)
     with pytest.raises(RuntimeError, match="no SHA-256"):
         runtime.check_sha256(b"abc", "a", None)
+
+
+def test_dropped_connection_resumes_instead_of_failing_the_checksum(tmp_path, monkeypatch):
+    """The link closing early used to be hashed as if complete: wrong SHA-256, .part deleted, 13 GB lost."""
+    calls = []
+
+    class Flaky(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            rng = self.headers.get("Range")
+            start = int(rng.split("=")[1].rstrip("-")) if rng else 0
+            calls.append(start)
+            self.send_response(206 if rng else 200)
+            self.send_header("Content-Length", str(len(BODY) - start))
+            self.end_headers()
+            self.wfile.write(BODY[start:start + 5000] if not rng else BODY[start:])   # 1st reply stops short
+
+    s = ThreadingHTTPServer(("127.0.0.1", 0), Flaky)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{s.server_port}/m.gguf"
+    with pytest.raises(cli.IncompleteDownload):
+        cli._download(url, tmp_path / "m.gguf", "m", sha256=hashlib.sha256(BODY).hexdigest())
+    assert (tmp_path / "m.gguf.part").stat().st_size == 5000
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    cli._fetch(url, tmp_path / "m.gguf", "m", hashlib.sha256(BODY).hexdigest())
+    assert (tmp_path / "m.gguf").read_bytes() == BODY and calls[-1] == 5000
+    s.shutdown(); s.server_close()

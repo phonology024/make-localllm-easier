@@ -1,6 +1,7 @@
 """`localllm connect <tool>`: point a coding agent at the local endpoint (#75).
 
   localllm connect hermes|opencode|claude-code|codex|aider|cline   write that tool's config (the old file is backed up)
+  localllm connect obsidian --path VAULT                           Copilot for Obsidian in that vault (#89)
   localllm connect TOOL --undo                                     put the old file back (or remove the one we made)
   localllm connect TOOL --dry-run                                  print what would be written, change nothing
 
@@ -112,12 +113,58 @@ def _aider(old: str | None, base: str, model: str) -> str:
                                       "model": f"openai/{model}"})
 
 
+# Copilot for Obsidian (logancyang/obsidian-copilot) keeps its settings in <vault>/.obsidian/plugins/copilot/data.json.
+# Custom OpenAI-style endpoints are its "3rd party (openai-format)" provider; a model is chosen by "name|provider".
+COPILOT_PROVIDER = "3rd party (openai-format)"
+CLOUD_PROVIDERS = ("openai", "anthropic", "google", "azure openai", "groq", "openrouterai", "cohereai", "mistral",
+                   "deepseek", "xai", "copilot-plus", "siliconflow")
+
+
+def _obsidian(old: str | None, base: str, model: str) -> str:
+    cfg = json.loads(old) if old and old.strip() else {}
+    entry = {"name": model, "provider": COPILOT_PROVIDER, "baseUrl": f"{base}/v1", "apiKey": "local", "enabled": True,
+             "isBuiltIn": False, "core": False, "capabilities": [], "displayName": f"{model} (localllm)"}
+    models = [m for m in cfg.get("activeModels") or [] if not (m.get("name") == model and m.get("provider") ==
+                                                              COPILOT_PROVIDER)]
+    cfg["activeModels"] = [entry] + models
+    cfg["defaultModelKey"] = f"{model}|{COPILOT_PROVIDER}"
+    return json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+
+
+def obsidian_cloud_left(text: str) -> list[str]:
+    """What in a Copilot data.json would still send notes to a cloud service: the vault-QA embedding model, and any
+    enabled chat model with a cloud provider (selectable in the model menu)."""
+    cfg = json.loads(text)
+    out = []
+    emb = cfg.get("embeddingModelKey") or ""
+    if "|" in emb and emb.split("|", 1)[1].lower() in CLOUD_PROVIDERS:
+        out.append(f"vault search (embeddings) uses {emb}: indexing sends note chunks there")
+    for m in cfg.get("activeModels") or []:
+        if m.get("enabled") and (m.get("provider") or "").lower() in CLOUD_PROVIDERS:
+            out.append(f"chat model {m.get('name')} ({m['provider']}) is still enabled in the model menu")
+    return out
+
+
+def _obsidian_file(path: Path) -> Path:
+    """--path is the vault folder (or its data.json); the plugin must be installed there already."""
+    if path.name == "data.json":
+        return path
+    plugin = path / ".obsidian" / "plugins" / "copilot"
+    if not (path / ".obsidian").is_dir():
+        raise SystemExit(f"[localllm] {path} is not an Obsidian vault (no .obsidian folder)")
+    if not plugin.is_dir():
+        raise SystemExit("[localllm] install and enable the Copilot community plugin in this vault first "
+                         "(Settings > Community plugins > Browse > Copilot), then run this again")
+    return plugin / "data.json"
+
+
 TOOLS = {
     "hermes": (lambda h: h / ".hermes" / "config.yaml", _hermes, "hermes"),
     "opencode": (lambda h: h / ".config" / "opencode" / "opencode.json", _opencode, "opencode"),
     "claude-code": (lambda h: h / ".claude" / "settings.json", _claude_code, "claude"),
     "codex": (lambda h: h / ".codex" / "config.toml", _codex, "codex --profile localllm"),
     "aider": (lambda h: h / ".aider.conf.yml", _aider, "aider"),
+    "obsidian": (None, _obsidian, "reload Obsidian (or turn Copilot off and on), then pick the model in Copilot's chat"),
 }
 CLINE = """Cline keeps its settings inside VS Code, so there is no file to write. In Cline's settings:
   API Provider: OpenAI Compatible
@@ -148,11 +195,16 @@ def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run:
     if tool == "cline":
         return CLINE.format(base=base, model=model, ctx=AGENT_CTX)
     where, edit, run = TOOLS[tool]
+    if tool == "obsidian":
+        if not path:
+            raise SystemExit("[localllm] give the vault: localllm connect obsidian --path PATH/TO/VAULT")
+        path = _obsidian_file(path)
     path = path or where(_home())
     old = path.read_text(encoding="utf-8") if path.exists() else None
     new = edit(old, base, model)
+    warn = "".join(f"\nstill cloud: {w}" for w in obsidian_cloud_left(new)) if tool == "obsidian" else ""
     if dry_run:
-        return f"would write {path}:\n{new}"
+        return f"would write {path}:\n{new}{warn}"
     backup = path.with_name(path.name + ".localllm-backup")
     state = _state()
     if str(path) not in state:                         # first connect: remember the original, keep it forever
@@ -164,14 +216,18 @@ def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run:
     path.write_text(new, encoding="utf-8", newline="")
     saved = f" (old file: {backup.name})" if state[str(path)]["backup"] else ""
     return (f"wrote {path}{saved}\n"
-            f"start the model with room for agent sessions:  localllm serve --ctx {AGENT_CTX}\n"
+            f"start the model with room for agent sessions:  localllm serve --profile max\n"
             f"then run:  {run}\n"
-            f"undo:  localllm connect {tool} --undo")
+            f"undo:  localllm connect {tool} --undo" + (" --path VAULT" if tool == "obsidian" else "") + warn)
 
 
 def undo(tool: str, path: Path | None = None) -> str:
     if tool == "cline":
         return "nothing to undo: Cline's settings are in VS Code"
+    if tool == "obsidian":
+        if not path:
+            return "give the vault: localllm connect obsidian --undo --path PATH/TO/VAULT"
+        path = path if path.name == "data.json" else path / ".obsidian" / "plugins" / "copilot" / "data.json"
     path = path or TOOLS[tool][0](_home())
     state = _state()
     entry = state.pop(str(path), None)

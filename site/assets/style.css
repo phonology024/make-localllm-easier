@@ -186,3 +186,11 @@ footer h4 { margin: 0 0 6px; color: var(--fg); font-size: .9rem; }
 #board table { min-width: 860px; }
 .tbl table { min-width: 520px; }
 #board td:nth-child(-n+3) { white-space: nowrap; }
+
+/* trust bar under the hero, header button */
+.trust { border-bottom: 1px solid var(--line); background: var(--soft, transparent); }
+.trust .wrap { display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: center; padding-top: 12px;
+  padding-bottom: 12px; font: .82rem var(--mono); color: var(--muted); }
+.trust span::before { content: "\2713"; color: var(--accent); margin-right: 6px; }
+.nav .nav-cta { color: var(--accent-fg); padding: 6px 14px; font-size: .9rem; }
+.nav .nav-cta:hover { color: var(--accent-fg); }

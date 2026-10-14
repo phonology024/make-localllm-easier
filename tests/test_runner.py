@@ -53,3 +53,40 @@ def test_done_ids_skip_finished_and_retry_failed(tmp_path):
 def test_example_manifest_is_valid():
     m = json.loads((Path(runner.__file__).with_name("runner_example.json")).read_text(encoding="utf-8"))
     assert runner.validate(m) == []
+
+
+def test_vision_and_memory_options(tmp_path, monkeypatch):
+    import localllm.cli
+    monkeypatch.setattr(runner, "state", lambda server: STATE)
+    monkeypatch.setattr(runner, "wait_up", lambda proc, url: None)
+    monkeypatch.setattr(runner, "decode_speed", lambda url: 50.0)
+    monkeypatch.setattr(localllm.cli, "_mmproj_path", lambda key: tmp_path / "mmproj.gguf")
+    monkeypatch.setattr(runner.runtime, "process_memory", lambda pid: {"ram_gb": 2.0, "vram_gb": 14.0, "spill_gb": 0.5})
+    Proc.pid = 123
+    try:
+        job = {"id": "v", "model": "gemma4-26b-a4b-qat", "vision": True, "memory": True}
+        rec = runner.run_job(job, "b11476", Path("llama-server"), lambda k: tmp_path / "g.gguf", popen=Proc)
+    finally:
+        del Proc.pid
+    assert rec["job"]["args_full"][-2] == "--mmproj"
+    assert rec["job"]["memory"]["loaded"]["vram_gb"] == 14.0 and rec["job"]["memory"]["after"]["spill_gb"] == 0.5
+
+
+def test_speed_is_dropped_when_the_model_spilled(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner, "state", lambda server: STATE)
+    monkeypatch.setattr(runner, "wait_up", lambda proc, url: None)
+    monkeypatch.setattr(runner, "decode_speed", lambda url: 29.2)
+    monkeypatch.setattr(runner.runtime, "process_memory", lambda pid: {"ram_gb": 5.3, "vram_gb": 6.8, "spill_gb": 7.4})
+    Proc.pid = 7
+    try:
+        rec = runner.run_job({"id": "s", "model": "gemma4-26b-a4b-qat"}, "b11476", Path("llama-server"),
+                             lambda k: tmp_path / "g.gguf", popen=Proc)
+    finally:
+        del Proc.pid
+    assert rec["tune"] == {} and "spilled 7.4 GB" in rec["job"]["notes"][0]
+
+
+def test_drop_args_removes_a_flag_and_its_value(tmp_path):
+    args = runner.launch_args({"model": "gemma4-26b-a4b-qat", "drop_args": ["--load-mode"], "args": ["--x", "1"]},
+                              tmp_path / "g.gguf", "Vulkan0")
+    assert "--load-mode" not in args and "none" not in args and args[-2:] == ["--x", "1"]

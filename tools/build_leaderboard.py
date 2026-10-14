@@ -79,6 +79,7 @@ def entries(reports: list[dict]) -> list[dict]:
         out.append({"source": "community", "gpu": row["gpu"], "vram_gb": row["vram"], "ram_gb": row["ram"],
                     "os": row["os"], "llama_cpp": row["build"], "vendor": vendor(row["gpu"]),
                     "os_family": os_family(row["os"]), "model": _key(row["model"]), "tok_s": row["tok_s"],
+                    **({"host": row["host"]} if row.get("host") else {}),
                     "scores": dict(sorted(row["scores"].items())), "flags": flags})
     return out
 

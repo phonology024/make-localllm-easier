@@ -141,6 +141,9 @@ def collect(server: Path | None = None, devs: list[dict] | None = None, ram_gb: 
         "devices": [{"name": d["name"], "vram_gb": round(d["total_gb"], 1)} for d in devs],
         "pick": pick, "tune": tune, "results": _read(runtime.HOME / "results.json"),
     }
+    host = os.environ.get("LOCALLLM_REPORT_HOST", "")
+    if re.fullmatch(r"cloud(:[a-z0-9-]{1,30})?", host):          # e.g. cloud:runpod (tools/cloud_lab.sh sets it)
+        report["host"] = host
     return scrub(report)
 
 

@@ -59,7 +59,8 @@ measurement and whatever it supports; harness, chat workspace and Obsidian plugi
 ## Test lab
 Hardware we don't own is the bottleneck for measurements. Cheapest first: a crowdsourced lab via `localllm report`, then a
 small cloud-rental matrix for NVIDIA and Apple Silicon (about $200-300, #101). Cloud has little consumer Radeon or Intel,
-so those come from community reports.
+so those come from community reports. The rented-machine run is one script, `tools/cloud_lab.sh` (install, doctor, tune,
+eval, report); its rows are marked `cloud:<provider>` on the leaderboard. Renting is the maintainer's call.
 
 ## 0.1 - one command (released)
 - `localllm`: detect GPU/RAM, pick the most accurate measured model for your language, download, start a tuned
@@ -192,17 +193,17 @@ whatever models it is given. Ours should be that, but fully local: your GPU, you
 llama-server's chat page has none of the session, model-switching or LAN-login pieces, and coding agents (OpenCode,
 Claude Code, Codex, Aider, Cline) are the heaviest users of a local endpoint, so they are also the best RAM/context test.
 
-- [ ] (#76) `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
+- [x] (#76) `localllm serve --ui`: browser chat workspace on the same port as the API - saved sessions (stored locally, plain
       files), a model picker fed by the catalog and the router (`X-Localllm-Model` shown per answer), per-model speed and
       RAM readout from `doctor`, no cloud assets or telemetry
-- [ ] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
+- [x] LAN login for the UI: one-time password printed in the terminal (like `opencode serve`), reuse the existing LAN-mode
       API key, still refuses to listen on the network without it
 - [x] (#75) `localllm connect <tool>` (opencode, claude-code, codex, aider, cline, hermes): write the tool's config to point at the
       local endpoint with the chosen model, back up the old config, `--undo` to restore; recipes in `docs/apis.md`
 - [ ] (#77) Measure agent workloads, not just chat: RAM and tok/s over a 30-turn tool-calling session with a 20k+ token
       context, defaults vs our tuned profile (same method as the 0.2 chat test)
 - [x] README: the RAM-over-30-turns bar chart at the top (`docs/img/ram-30-turns.png`)
-- [ ] (#81) README: a short terminal GIF at the top
+- [ ] (#81) README: a short terminal GIF at the top (`tools/record_demo.py` records it from a real run; needs the model downloaded once)
 
 ## 0.8 - reach and trust: be the local-LLM chooser that tells the truth
 Positioning: Ollama, LM Studio and plain llama.cpp users complain about silent defaults - small context, many slots eating
@@ -216,13 +217,14 @@ Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not fe
 - [x] (#79) Live footprint/spill status: `/status` in chat (UI part waits for #76)
 - [x] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)
 - [ ] (#29) Local voice -> text -> LLM pipeline with babelscribe, Thai first (speech slot of the specialist pool): one VRAM budget for both
-- [ ] (#90) Two profiles: `lean` (default) and `max`
+- [x] (#90) Two profiles: `lean` (default) and `max` (`--profile`, both shown by `doctor`)
 - [x] (#91) Measurement runner: a queue of benchmark jobs that runs overnight (`tools/runner.py`; first batch #49 to run)
 - [x] (#92) Verify downloads: checksum llama.cpp builds and model files
-- [ ] (#93) Long-context quality suite per language (needle / RULER-style)
+- [ ] (#93) Long-context quality suite per language (needle / RULER-style): `--suites longctx` done (en, th, hi, ar, zh, ja, es;
+      8k/32k/64k, one and three needles); catalog numbers wait for the run in `tools/runner_longctx.json`
 - [x] (#94) Success metrics for this section: stars, PyPI downloads, reports received
-- [ ] (#95) llama.cpp upgrade process: smoke test before bumping, flag stale scores
-- [ ] (#46) One-click install for people without Python (winget, Homebrew, AppImage)
+- [x] (#95) llama.cpp upgrade process: `tools/smoke_build.py` before bumping, `doctor` flags scores from another build ([docs/upgrading-llama-cpp.md](docs/upgrading-llama-cpp.md)); re-run of the 10-07 knowledge scores queued in `tools/runner_rebaseline.json`
+- [x] (#46) One-click install for people without Python: executables + AppImage built on every tag, winget manifest and Homebrew formula generated ([packaging/README.md](packaging/README.md)); submitting to winget-pkgs and the tap is the maintainer's step
 - Not doing: a full desktop GUI against LM Studio; widening the core focus (AMD/Intel Vulkan on Windows, Thai/SEA) - other hardware comes from community reports via #73; chasing 2-bit/QTIP/NNC formats before the measurements (#49, #26, #25, #71) say
   they help; widening to every backend and language - the niche is the point
 
@@ -239,10 +241,10 @@ compression (#49) stacks with all of them because long context is where the KV c
 - [ ] (#85) Small model + best-of-N / vote / verifier on checkable tasks vs the big model, accuracy against wall time
 - [ ] (#86) Reality check: dense 70B at 1.58-2 bit, per language (expected negative, publish it)
 - [ ] (#87) Mixture-of-agents / debate with small models (a 2026 study found no win at equal compute; measure, expect null)
-- [ ] (#97) **Cost saver for agents**: local-first routing under Hermes/OpenCode/Aider with a savings meter, own API key only (Anthropic's stance on subscription logins in third-party tools kept changing in 2026 - billed as extra usage, unclear terms, account risk - so users have a reason to want a cheaper, safer route) - the faster route to reach
+- [ ] (#97) **Cost saver for agents**: local-first routing under Hermes/OpenCode/Aider with a savings meter, own API key only; done so far: savings meter (`localllm savings`, `/status`, `--ui`, `doctor`) with prompt-cache reuse and the Hermes recipe (Anthropic's stance on subscription logins in third-party tools kept changing in 2026 - billed as extra usage, unclear terms, account risk - so users have a reason to want a cheaper, safer route) - the faster route to reach
 - [ ] (#96) **Goal: beat Hermes Agent on local models** - public head-to-head (Hermes vs OpenCode vs Aider vs ours, same model, pass/fail fixed in advance); we win on performance per GB, not breadth
 - [ ] (#88) Harness: measure Hermes Agent / OpenCode / Aider on our local models, and an Anthropic-style planner/generator/evaluator loop with ablations (which part pays off on a small model); own loop only for what they lack
-- [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins), own plugin only if needed
+- [ ] (#89) Obsidian (confirmed plan): `localllm connect obsidian` first (existing plugins) - done for Copilot for Obsidian; own plugin only if needed
 - Optional add-ons never change the base install; what each costs you is in [docs/addons.md](docs/addons.md)
 
 ## Later

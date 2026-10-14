@@ -1,7 +1,7 @@
 # Optional add-ons (planned)
 
 Nothing here is installed by default. `pip install make-localllm-easier` and `localllm` stay exactly as small as they
-are today. Each add-on is opt-in and can be removed without touching the core. **None of them exists yet**; this page
+are today. Each add-on is opt-in and can be removed without touching the core. **None of them exists yet** (only Obsidian's config-only part A, which is not an add-on); this page
 says what they will be and what you give up by installing them, so you can decide before we build them. Status lives in
 the linked issues.
 
@@ -55,7 +55,7 @@ for us (details from the project's own site and secondary write-ups; check its d
 
 Two layers, cheapest first.
 
-**A. `localllm connect obsidian` (config only).** Writes the settings for an existing, mature plugin (for example
+**A. `localllm connect obsidian` (config only) - done:** see [apis.md](apis.md#obsidian). Writes the settings for an existing, mature plugin (for example
 Copilot for Obsidian or Smart Connections) so it talks to `http://127.0.0.1:8080/v1`. No new plugin to maintain.
 
 **B. Our own Obsidian plugin (only if A is not enough).** A TypeScript plugin that adds: chat over your vault using the

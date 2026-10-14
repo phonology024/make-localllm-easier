@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "make-localllm-easier"
-version = "0.6.1"
+version = "0.7.0"
 description = "One command runs the best local AI your PC can handle: measured model picks + a tuned llama.cpp (AMD, NVIDIA, Intel, Apple)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,4 +24,7 @@ make-localllm-easier = "localllm.cli:main"
 packages = ["localllm"]
 
 [tool.setuptools.package-data]
-localllm = ["platforms.json"]
+localllm = ["platforms.json", "ui.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]          # tools/agent_bench/fixture/tests belongs to the benchmark's fixture project

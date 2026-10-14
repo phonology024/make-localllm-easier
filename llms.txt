@@ -7,11 +7,16 @@
 - `localllm doctor`: which model sizes (4B-120B MoE) fit this GPU, at which quantization, estimated speed, context capacity
 - `localllm chat`: chat in the terminal with streaming and history
 - `localllm eval --langs en,ja`: multiple-choice accuracy of any OpenAI-compatible server (Global-MMLU-Lite 23 languages, INCLUDE 44 countries, ThaiExam); `--suites math` adds MGSM math word problems in 11 languages; `--suites translate` adds FLORES-101 translation (chrF++) in 101 languages
+- `localllm --ui`: local chat page with saved chats, model picker, live VRAM/RAM; nothing loaded from the internet
+- `--profile lean|max`: lean (default) = 8k context, ~2 GB RAM; max = context that fills the GPU (~78k on 16 GB) for agents
+- `localllm connect hermes|opencode|claude-code|codex|aider|cline|obsidian`: point a tool at the local endpoint, `--undo` restores
+- `localllm savings`: tokens answered locally this month, prompt-cache reuse, $ at user-set prices
+- `localllm eval --suites longctx`: needle retrieval at 8k/32k/64k tokens in en, th, hi, ar, zh, ja, es
 - `localllm serve --models auto`: per-message routing between local models by measured language/task scores (opt-in; lazy-load on 16 GB, all resident on 24 GB+), answering model shown in the X-Localllm-Model header
 
 ## Key measured facts (RX 9070 XT 16 GB, Windows, llama.cpp Vulkan)
-- Qwen3.8-27B UD-Q3_K_XL (12.2 GB): English 81.8%, ~50 tok/s with MTP drafting
-- gemma-4-26B-A4B QAT Q4 (13.3 GB): English 82.2%, ~85 tok/s
+- Qwen3.8-27B UD-Q3_K_XL (12.2 GB): English 81.5% (Global-MMLU-Lite), ~50 tok/s with MTP drafting
+- gemma-4-26B-A4B QAT Q4 (13.3 GB): English 82.2%, ~90 tok/s
 - 2-bit quantization costs 8-13 points; Hindi, Arabic, Thai lose most (13)
 - Language-specific imatrix calibration gives no gain at ~3.5 bits
 - 2-bit per-language KL divergence vs Q8: 4-6x the 3-bit damage in every language; build 2-bit files from BF16, not Q8 (Thai -9 points)
@@ -19,5 +24,6 @@
 - AMD/Intel without Resizable BAR: set GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1 for up to 1.7x decode (llama.cpp#27097)
 
 ## Links
+- [Website](https://make-localllm-easier.pages.dev/)
 - [README](https://github.com/phonology024/make-localllm-easier#readme)
 - [Roadmap](https://github.com/phonology024/make-localllm-easier/blob/main/ROADMAP.md)
