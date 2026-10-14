@@ -212,7 +212,7 @@ the **measured data**: per language, per GPU, with footprint numbers. Niche we a
 Windows, and Thai/SEA languages. The bottleneck today is reach (3 stars), not features.
 
 - [x] (#73) Leaderboard data: turn `localllm report` JSONs (already exist) into one validated public dataset
-- [x] (#74) Website on Cloudflare Pages (default `*.pages.dev` address, `site/`): per-language / per-GPU leaderboard + landing pages for the README FAQ questions,
+- [x] (#74) Website on GitHub Pages (<https://phonology024.github.io/make-localllm-easier/>, built from `site/` by `.github/workflows/pages.yml`): per-language / per-GPU leaderboard + landing pages for the README FAQ questions,
       `sitemap.xml`, Search Console (same recipe as babelscribe)
 - [x] (#79) Live footprint/spill status: `/status` in chat (UI part waits for #76)
 - [x] (#80) CI check so README samples and headline numbers can't drift from real output (the doctor sample was stale)

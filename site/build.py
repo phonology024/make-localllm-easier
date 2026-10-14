@@ -1,20 +1,22 @@
 """Build the static website into site/public/ (#74). Standard library only.
 
   python site/build.py                       # then open site/public/index.html, or serve the folder
-  SITE_URL=https://example.pages.dev python site/build.py
+  SITE_URL=https://example.org python site/build.py   # another address (a path such as /repo is kept in links)
 
 Numbers come from the same places the README uses: localllm/catalog.py (scores, speeds), data/leaderboard.json
 (tools/build_leaderboard.py) and tools/footprint_results.jsonl (tools/headline.py). Nothing is typed in twice.
-Deployed to Cloudflare Pages (the default *.pages.dev address): see site/README.md.
+Deployed to GitHub Pages by .github/workflows/pages.yml on every push to main: see site/README.md.
 """
 from __future__ import annotations
 
 import html
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -24,7 +26,8 @@ import headline  # noqa: E402
 
 SITE = Path(__file__).resolve().parent
 OUT = SITE / "public"
-URL = os.environ.get("SITE_URL", "https://make-localllm-easier.pages.dev").rstrip("/")
+URL = os.environ.get("SITE_URL", "https://phonology024.github.io/make-localllm-easier").rstrip("/")
+BASE = urlparse(URL).path.rstrip("/")   # "/make-localllm-easier": GitHub Pages serves a project site under the repo name
 GH = "https://github.com/phonology024/make-localllm-easier"
 PYPI = "https://pypi.org/project/make-localllm-easier/"
 ISSUES = GH + "/issues"
@@ -34,7 +37,7 @@ LANG_NAMES = {"en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese", 
 
 NAV = [("Features", "/features/"), ("How it works", "/how-it-works/"), ("Use cases", "/use-cases/"),
        ("Compare", "/compare/"), ("Leaderboard", "/leaderboard/"), ("Guides", "/guides/")]
-NAV_TH = [("วิธีเริ่มต้น", "/th/get-started/"), ("ตารางคะแนน", "/leaderboard/#th"), ("คู่มือ (อังกฤษ)", "/guides/")]
+NAV_TH = [("วิธีเริ่มต้น", "/th/get-started/"), ("ตารางคะแนน", "/leaderboard/th/"), ("คู่มือ (อังกฤษ)", "/guides/")]
 LOGO = ('<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="4" fill="none" '
         'stroke="currentColor" stroke-width="2"/><path d="M7 9l3 3-3 3M12 15h5" fill="none" stroke="currentColor" '
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -644,8 +647,7 @@ and you read it before you submit it.</p>
 
 def leaderboard() -> None:
     data = json.loads((ROOT / "data" / "leaderboard.json").read_text(encoding="utf-8"))
-    langs = sorted({k.split("/")[0] for e in data["entries"] for k in e["scores"]},
-                   key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+    langs = sorted({c for e in data["entries"] for c in score_langs(e)}, key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
     opts = "".join(f'<option value="{c}">{LANG_NAMES.get(c, c)}</option>' for c in langs)
     payload = {"entries": data["entries"], "languages": {c: LANG_NAMES.get(c, c) for c in langs}}
     plat = data["platforms"]
@@ -680,6 +682,13 @@ Thai). <b>Math</b>: MGSM. <b>Translation</b>: FLORES-101, chrF++ (0-100). Zero-s
 <a href="{GH}/blob/main/data/leaderboard.json">data/leaderboard.json</a>.</p>
 </div></section>
 
+<section id="by"><div class="wrap">
+<h2>By language and by GPU</h2>
+<p class="muted narrow">The same numbers as plain pages, one per language and one per graphics card.</p>
+<p>{" ".join(f'<a class="tag" href="/leaderboard/{c}/">{esc(LANG_NAMES.get(c, c))}</a>' for c in langs)}</p>
+<p>{" ".join(f'<a class="tag" href="/leaderboard/gpu/{slug(g)}/">{esc(g)}</a>' for g in gpus(data))}</p>
+</div></section>
+
 <section id="platforms"><div class="wrap">
 <h2>Where it is tested</h2>
 <p class="muted narrow">One test PC is ours: Windows 11 with an RX 9070 XT. The rest of this table fills in from shared
@@ -707,6 +716,95 @@ tuned settings and scores. No names, paths or keys; you read it before you submi
                    "distribution": {"@type": "DataDownload", "encodingFormat": "application/json",
                                     "contentUrl": GH.replace("github.com", "raw.githubusercontent.com")
                                     + "/main/data/leaderboard.json"}})
+    for c in langs:
+        language_page(data, c)
+    for g in gpus(data):
+        gpu_page(data, g)
+
+
+SUITES = [("global", "Knowledge (translated)", "%"), ("regional", "Local exams", "%"), ("math", "Math", "%"),
+          ("translate", "Translation", "chrF++")]   # same columns as the board in assets/site.js
+
+
+def slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "unknown"
+
+
+LANG_CODE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})?")   # report data names pages and links: nothing else gets through
+
+
+def score_langs(e: dict) -> set[str]:
+    return {c for c in (k.split("/")[0] for k in e["scores"]) if LANG_CODE.fullmatch(c)}
+
+
+def gpus(data: dict) -> list[str]:
+    return sorted({e["gpu"] for e in data["entries"]})
+
+
+def mean_score(e: dict, lang: str) -> float:
+    vals = [v for k, v in e["scores"].items() if k.split("/")[0] == lang and isinstance(v, (int, float))]
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def language_page(data: dict, lang: str) -> None:
+    """One static page per language (no JavaScript needed, so search engines see the table)."""
+    if not LANG_CODE.fullmatch(lang):
+        raise ValueError(f"not a language code: {lang!r}")
+    name = esc(LANG_NAMES.get(lang, lang))
+    rows = sorted((e for e in data["entries"] if any(k.split("/")[0] == lang for k in e["scores"])),
+                  key=lambda e: -mean_score(e, lang))
+    keys = [f"{lang}/{s}" for s, _, _ in SUITES]
+    best = {k: max((e["scores"][k] for e in rows if isinstance(e["scores"].get(k), (int, float))), default=None)
+            for k in keys}
+    head = ('<tr><th>Model</th><th>GPU</th><th class="num">Decode tok/s</th>'
+            + "".join(f'<th class="num">{n}<br><span class="muted small">{u}</span></th>' for _, n, u in SUITES)
+            + "<th>Source</th></tr>")
+    body_rows = ""
+    for e in rows:
+        cells = "".join(
+            f'<td class="num{" best" if e["scores"][k] == best[k] and len(rows) > 1 else ""}">{e["scores"][k]:.1f}</td>'
+            if isinstance(e["scores"].get(k), (int, float)) else '<td class="num muted">-</td>' for k in keys)
+        body_rows += (f'<tr><td><code>{esc(e["model"])}</code></td>'
+                      f'<td><a href="/leaderboard/gpu/{slug(e["gpu"])}/">{esc(e["gpu"])}</a></td>'
+                      f'<td class="num">{esc(str(e.get("tok_s") or "-"))}</td>{cells}<td>{esc(e["source"])}</td></tr>')
+    top = f"<code>{esc(rows[0]['model'])}</code> on {esc(rows[0]['gpu'])}" if rows else "nothing yet"
+    body = page_head("Leaderboard", f"Best local LLM for {name}",
+                     f"Measured {name} scores of quantized local models, per GPU. Highest average so far: {top}.",
+                     '<a href="/leaderboard/">Leaderboard</a>') + f"""
+<section><div class="wrap">
+<div class="tbl"><table><thead>{head}</thead><tbody>{body_rows}</tbody></table></div>
+<p class="small muted" style="margin-top:12px">Zero-shot, thinking off; margins about &plusmn;4-5 points. How each
+column is measured: <a href="/leaderboard/">leaderboard</a>. Missing your GPU? Run
+<code>localllm eval --langs en,{esc(lang)}</code> and share it with <code>localllm report</code>.</p>
+</div></section>
+"""
+    layout(f"/leaderboard/{lang}/", f"Best local LLM for {LANG_NAMES.get(lang, lang)}: measured scores per GPU",
+           f"Which local LLM answers best in {LANG_NAMES.get(lang, lang)}: measured accuracy and decode speed per GPU.",
+           body)
+
+
+def gpu_page(data: dict, gpu: str) -> None:
+    """One static page per GPU: every model measured on it, its speed and the languages it was scored in."""
+    rows = sorted((e for e in data["entries"] if e["gpu"] == gpu), key=lambda e: -(e.get("tok_s") or 0))
+    trs = ""
+    for e in rows:
+        langs = sorted(score_langs(e), key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+        links = " ".join(f'<a href="/leaderboard/{c}/">{esc(LANG_NAMES.get(c, c))}</a>' for c in langs)
+        trs += (f'<tr><td><code>{esc(e["model"])}</code></td><td class="num">{esc(str(e.get("tok_s") or "-"))}</td>'
+                f'<td>{esc(e.get("os", ""))}</td><td>{esc(e.get("llama_cpp", ""))}</td><td>{links}</td>'
+                f'<td>{esc(e["source"])}</td></tr>')
+    vram = rows[0].get("vram_gb") if rows else None
+    lead = (f"Local models measured on the {esc(gpu)}" + (f" ({vram:g} GB VRAM)" if isinstance(vram, (int, float)) else "")
+            + ": decode speed and the languages each one was scored in.")
+    body = page_head("Leaderboard", f"Local LLMs on the {esc(gpu)}", lead,
+                     '<a href="/leaderboard/">Leaderboard</a>') + f"""
+<section><div class="wrap">
+<div class="tbl"><table><thead><tr><th>Model</th><th class="num">Decode tok/s</th><th>OS</th><th>llama.cpp</th>
+<th>Scored in</th><th>Source</th></tr></thead><tbody>{trs}</tbody></table></div>
+</div></section>
+"""
+    layout(f"/leaderboard/gpu/{slug(gpu)}/", f"Local LLM speed and scores on the {gpu}",
+           f"Which local LLMs run on the {gpu}, how fast they decode, and how they score per language.", body)
 
 
 # ---- Guides (the README FAQ questions, as pages) ---------------------------------------------------------------------
@@ -1036,7 +1134,7 @@ localllm จึงเก็บคะแนนแยกตามภาษา แ�
 <p>เรามีเครื่องทดสอบเครื่องเดียว (Windows + RX 9070 XT) ถ้าคุณใช้ NVIDIA, Mac หรือการ์ดรุ่นอื่น ใช้เวลา 10-30 นาที:</p>
 {term('<span class="p">$ </span>localllm tune' + chr(10) + '<span class="p">$ </span>localllm eval --langs en,th' + chr(10) + '<span class="p">$ </span>localllm report', "แชร์ผลวัด", "report-th")}
 <p class="small muted"><code>report</code> จะเปิด issue บน GitHub ที่กรอกข้อมูลไว้ให้ ไม่มีชื่อผู้ใช้ path หรือ key อ่านทวนได้ก่อนส่ง
-ผลจะขึ้นใน <a href="/leaderboard/#th">ตารางคะแนน</a></p>
+ผลจะขึ้นใน <a href="/leaderboard/th/">ตารางคะแนน</a></p>
 </div></section>
 """
     layout("/th/", "localllm: รัน AI ในเครื่องตัวเอง เลือกโมเดลจากคะแนนภาษาไทยที่วัดจริง",
@@ -1097,6 +1195,11 @@ def not_found() -> None:
     layout("/404/", "Page not found", "This page does not exist.", body)
 
 
+def rebase(text: str) -> str:
+    """Root-relative links get the base path, so the site works under /make-localllm-easier/ and at a root domain."""
+    return re.sub(r'((?:href|src)=")/(?!/)', lambda m: m.group(1) + BASE + "/", text) if BASE else text
+
+
 def write() -> None:
     OUT.mkdir(exist_ok=True)
     for old in OUT.iterdir():                          # empty it, keep the folder (a local server may have it open)
@@ -1107,7 +1210,7 @@ def write() -> None:
     for path, text in pages.items():
         dest = OUT / "404.html" if path == "/404/" else OUT / path.strip("/") / "index.html"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8", newline="\n")
+        dest.write_text(rebase(text), encoding="utf-8", newline="\n")
     urls = "".join(f"<url><loc>{URL}{p}</loc></url>\n" for p in pages if p != "/404/")
     (OUT / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/'
                                      f'schemas/sitemap/0.9">\n{urls}</urlset>\n', encoding="utf-8", newline="\n")
