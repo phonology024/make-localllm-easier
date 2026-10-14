@@ -468,7 +468,7 @@ def cmd_doctor(_a) -> None:
     if others:
         print(f"  also measured in {', '.join(others)} (`localllm list`)")
     print(f"  holds ~{ctx // 1000}k tokens at once (~{ctx // sizing.TOKENS_PER_PAGE} pages of text) next to the model")
-    ram_est = _ram_for(m, dev, ctx, cpu_moe, in_ram, "lean")
+    ram_est = _ram_for(m, dev, ctx, cpu_moe, in_ram, ram, "lean")
     ram_free = max(0.0, ram_avail - ram_est["total_gb"])
     print(f"  uses ~{ram_est['total_gb']:.1f} GB of system RAM: ~{ram_est['embed_gb']:.1f} GB embeddings/CPU-mapped"
           f" + ~{ram_est['prompt_cache_gb']:.1f} GB prompt cache + ~{ram_est['checkpoints_gb']:.1f} GB ctx checkpoints"
@@ -486,7 +486,7 @@ def cmd_doctor(_a) -> None:
             print(f"  answers at ~{est} tok/s" + ("" if same else " (estimated from memory bandwidth)"))
         print("  speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)")
     max_ctx = catalog.context_for(key, vram, ram_avail, "max")
-    max_ram = _ram_for(m, dev, max_ctx, cpu_moe, in_ram, "max")["total_gb"]
+    max_ram = _ram_for(m, dev, max_ctx, cpu_moe, in_ram, ram, "max")["total_gb"]
     print("\nProfiles (--profile):")
     print(f"  lean (default)  {catalog.MIN_CTX // 1000:>3}k context  ~{ram_est['total_gb']:4.1f} GB RAM  least memory")
     print(f"  max             {round(max_ctx / 1000):>3}k context  ~{max_ram:4.1f} GB RAM  long documents, agent sessions")
@@ -497,11 +497,11 @@ def cmd_doctor(_a) -> None:
         print(f"Local answers {meter.line(used)}")
 
 
-def _ram_for(m: dict, dev, ctx: int, cpu_moe: int, in_ram: float, profile: str) -> dict:
+def _ram_for(m: dict, dev, ctx: int, cpu_moe: int, in_ram: float, ram: float, profile: str) -> dict:
     """System-RAM estimate of one launch (doctor), experts kept in RAM included."""
     from . import sizing
-    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"], cpu_moe=cpu_moe,
-                                 profile=profile)
+    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"],
+                                 ram_total_gb=ram, cpu_moe=cpu_moe, profile=profile)
     est = sizing.ram_estimate_gb(m, launch)
     est["total_gb"] = round(est["total_gb"] + in_ram, 1)
     return est
