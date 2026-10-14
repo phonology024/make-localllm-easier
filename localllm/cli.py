@@ -391,7 +391,8 @@ def cmd_doctor(_a) -> None:
     if others:
         print(f"  also measured in {', '.join(others)} (`localllm list`)")
     print(f"  holds ~{ctx // 1000}k tokens at once (~{ctx // sizing.TOKENS_PER_PAGE} pages of text) next to the model")
-    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"], cpu_moe=cpu_moe)
+    launch = runtime.server_args(Path(m["file"]), dev["id"] if dev else None, 8080, ctx, m["mtp"],
+                                ram_total_gb=ram, cpu_moe=cpu_moe)
     ram_est = sizing.ram_estimate_gb(m, launch)
     ram_est["total_gb"] = round(ram_est["total_gb"] + in_ram, 1)
     ram_free = max(0.0, ram_avail - ram_est["total_gb"])
