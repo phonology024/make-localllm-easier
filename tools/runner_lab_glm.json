@@ -1,0 +1,8 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#83: REAP expert pruning, per language. GLM-4.7-Flash (30B-A3B) vs Cerebras' REAP-pruned 23B-A3B, same Unsloth UD-Q4_K_XL quant. Files: unsloth/GLM-4.7-Flash-GGUF and unsloth/GLM-4.7-Flash-REAP-23B-A3B-GGUF in ~/.localllm/lab. The unpruned one is 17.5 GB, so the experts of its first 12 layers stay in RAM (--n-cpu-moe 12).",
+ "jobs": [
+  {"id": "83-glm47flash-reap23b-q4", "file": "~/.localllm/lab/GLM-4.7-Flash-REAP-23B-A3B-UD-Q4_K_XL.gguf", "args": ["--jinja"], "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"},
+  {"id": "83-glm47flash-30b-q4", "file": "~/.localllm/lab/GLM-4.7-Flash-UD-Q4_K_XL.gguf", "args": ["--jinja", "--n-cpu-moe", "12"], "suites": "global,regional,math,translate", "langs": "en,th,hi,ar,zh,ja,es"}
+ ]
+}

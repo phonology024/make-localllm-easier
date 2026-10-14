@@ -5,7 +5,7 @@ app or SDK you already use at it - no code change beyond the base URL. Any API k
 
 | API your app speaks | Base URL | Endpoints |
 |---|---|---|
-| OpenAI | `http://127.0.0.1:8080/v1` | `/chat/completions`, `/completions`, `/models`, `/embeddings` |
+| OpenAI | `http://127.0.0.1:8080/v1` | `/chat/completions`, `/completions`, `/models`, `/embeddings`, `/responses` |
 | Anthropic Messages | `http://127.0.0.1:8080` | `/v1/messages`, `/v1/messages/count_tokens` (tools, vision, thinking) |
 | Ollama | `http://127.0.0.1:8080` | `/api/chat`, `/api/generate`, `/api/tags`, `/api/version` |
 | Gemini | `http://127.0.0.1:8080/v1beta` | `models/{m}:generateContent`, `models/{m}:streamGenerateContent` |
@@ -33,6 +33,80 @@ Gemini REST:
 curl http://127.0.0.1:8080/v1beta/models/local:generateContent -H "Content-Type: application/json" \
   -d "{\"contents\":[{\"parts\":[{\"text\":\"Hello\"}]}]}"
 ```
+
+## Coding agents: `localllm connect`
+
+```
+localllm serve --profile max        # agents send long prompts: a context that fills the GPU (Hermes asks for 64k)
+localllm connect hermes             # or opencode, claude-code, codex, aider, cline
+localllm connect hermes --undo      # put the old config back
+```
+
+`connect` changes only the base URL and the model name in the tool's own config. The first time, the original file is
+copied next to it as `<file>.localllm-backup`; `--undo` puts it back (or deletes the file if `connect` created it).
+`--dry-run` prints the new file without writing it, `--path` writes another file (a project config, say).
+
+| tool | file | what is set | then run |
+|---|---|---|---|
+| Hermes Agent | `~/.hermes/config.yaml` | the `model:` block: `provider: custom`, `base_url`, `default`, `context_length` | `hermes` |
+| OpenCode | `~/.config/opencode/opencode.json` | a `localllm` provider (`@ai-sdk/openai-compatible`) and `model` | `opencode` |
+| Claude Code | `~/.claude/settings.json` | `env`: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, the model names | `claude` |
+| Codex CLI | `~/.codex/config.toml` | a `localllm` provider (`wire_api = "responses"`) and a `localllm` profile; your default stays | `codex --profile localllm` |
+| Aider | `~/.aider.conf.yml` | `openai-api-base`, `openai-api-key`, `model: openai/<id>` | `aider` |
+| Cline | (inside VS Code) | nothing is written; `connect cline` prints the four fields to fill in | |
+| Obsidian (Copilot plugin) | `<vault>/.obsidian/plugins/copilot/data.json` (`--path VAULT`) | a `3rd party (openai-format)` chat model, made the default | reload Obsidian |
+
+The model name is the one the running server reports at `/v1/models` (pass `--model-id` to choose another).
+Claude Code with `connect` sends everything to the local model, including the small background requests; run
+`localllm connect claude-code --undo` to go back to your Anthropic account.
+
+### Hermes with localllm, and what it saves
+
+```
+localllm serve --profile max          # long context + a bigger prompt cache, so Hermes' fixed prefix is re-used
+localllm connect hermes
+localllm savings --price 3 15 --label "my cloud model"     # $ per million tokens in / out, once
+localllm savings                      # this month: answers, tokens, % of the prompt from the cache, $ estimate
+```
+
+Every local answer is counted from the token numbers llama-server reports (`~/.localllm/savings.json`); `/status` in
+`localllm chat`, the `--ui` page and `doctor` show the same line. The dollar figure is only an estimate at the prices
+you entered: localllm ships none, because they change. "% from the cache" is the share of prompt tokens the server
+re-used instead of reading again; for an agent that resends the same instructions every call it should be high, and
+if it is low, the agent's prefix changes between calls.
+
+Use your own API key for anything that goes to the cloud (`localllm route`, keys in the OS keychain). localllm does
+not and will not pass a Claude or ChatGPT *subscription* login on to another tool: the providers' terms don't allow it
+and it puts your account at risk. Which agent calls a local model can take without losing quality is being measured in
+#96/#97.
+
+### Obsidian
+
+```
+localllm serve
+localllm connect obsidian --path "D:/Notes"     # the vault folder; Copilot for Obsidian must be installed there
+localllm connect obsidian --undo --path "D:/Notes"
+```
+
+`connect obsidian` adds the local model to [Copilot for Obsidian](https://github.com/logancyang/obsidian-copilot) and
+makes it the default chat model. Your other models stay in the list. It then tells you what would still reach a cloud
+service: a cloud embedding model for vault search (indexing sends note chunks to it) and any cloud chat model still
+enabled in the menu. Turn those off in Copilot's settings if nothing should leave the PC.
+
+Vault search needs an embedding model. A small local one: the multilingual e5 model `localllm` already downloads for
+its task router (`~/.localllm/models/multilingual-e5-small-Q8_0.gguf`, 126 MB, ~100 languages):
+
+```
+llama-server -m ~/.localllm/models/multilingual-e5-small-Q8_0.gguf --embedding --pooling mean --port 8081
+```
+
+In Copilot: Settings > QA > Embedding model > add a custom model, provider "3rd party (openai-format)", base URL
+`http://127.0.0.1:8081/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
+way through its "custom local (OpenAI format)" option. An Obsidian plugin of our own (#89, part B) comes only if this
+isn't enough.
+
+Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
+uses at 20k+ tokens. Both are open issues (#77, #96); please report what you see.
 
 ## Tool / function calling
 

@@ -1,0 +1,9 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#95: re-run the knowledge scores of 2026-10-07 (measured on an earlier, unrecorded build) and the headline decode speeds on the pinned build. Run again after any bump that touches Vulkan or MoE code.",
+ "jobs": [
+  {"id": "95-qwen-q3-knowledge", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "global,regional", "langs": "en,zh,es,hi,ar,ja,th"},
+  {"id": "95-gemma-knowledge", "model": "gemma4-26b-a4b-qat", "suites": "global,regional", "langs": "en,zh,es,hi,ar,ja,th"},
+  {"id": "95-qwen-iq2-knowledge", "model": "qwen3.8-27b-iq2", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "global,regional", "langs": "en,zh,es,hi,ar,ja,th"}
+ ]
+}

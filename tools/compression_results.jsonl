@@ -1,0 +1,1 @@
+{"date": "2026-10-13", "file": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf", "gb": 14.25, "level": 12, "types": {"F32": {"gb": 0.046, "sampled_mb": 4, "zstd": 0.2664, "grouped": null}, "Q4_0": {"gb": 14.187, "sampled_mb": 119, "zstd": 0.9152, "grouped": null}}, "estimated_ratio": 0.9132, "seconds": 1}

@@ -144,8 +144,11 @@ class Pool:
             self.last_used = time.time()
             idle = not self._is_loaded()
             loaded_key = None if (self.resident or idle) else self.current
-            key, why = router.pick_local(router._last_user(body), self.keys, loaded_key, self.vram_gb,
-                                         self.ram_free_gb, self.classifier)
+            if body.get("model") in self.keys:      # an app (or the --ui picker) named one of our models
+                key, why = body["model"], "asked for by name"
+            else:
+                key, why = router.pick_local(router._last_user(body), self.keys, loaded_key, self.vram_gb,
+                                             self.ram_free_gb, self.classifier)
             if stay and self.current and key != self.current:
                 key, why = self.current, f"stayed as asked; {key} would be picked ({why})"
             label = f"{key} ({why})"

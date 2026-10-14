@@ -32,20 +32,87 @@ def _asset() -> str:
 
 
 def find_server() -> Path:
+    """LOCALLLM_LLAMA_SERVER, else the wanted build under ~/.localllm/llama.cpp/<build>/ (downloaded once). With
+    LOCALLLM_LLAMA_BUILD=latest any build already there is used."""
     if os.environ.get("LOCALLLM_LLAMA_SERVER"):
         return Path(os.environ["LOCALLLM_LLAMA_SERVER"])
-    found = sorted((HOME / "llama.cpp").rglob(EXE)) if (HOME / "llama.cpp").exists() else []
+    build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
+    where = HOME / "llama.cpp" / ("" if build == "latest" else build)
+    found = sorted(where.rglob(EXE)) if where.exists() else []
     return found[-1] if found else fetch_server()
 
 
+def build_of(server: Path) -> str | None:
+    """bNNNNN of a llama-server: the folder we unpacked it into, else what `--version` prints."""
+    for part in reversed(server.parts):
+        if re.fullmatch(r"b\d+", part):
+            return part
+    try:
+        out = subprocess.run([str(server), "--version"], capture_output=True, text=True, timeout=20, errors="replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"version: (\d+)", out.stdout + out.stderr)
+    return f"b{m[1]}" if m else None
+
+
+def build_number(build: str | None) -> int | None:
+    m = re.fullmatch(r"b(\d+)", build or "")
+    return int(m[1]) if m else None
+
+
+# The llama.cpp build every catalog score and speed was measured on. Downloads are checked against these SHA-256s
+# (from the release's own asset digests); LOCALLLM_LLAMA_BUILD=bNNNNN or =latest picks another build, which is
+# checked against the digest GitHub lists for it.
+LLAMA_BUILD = "b11476"
+LLAMA_SHA256 = {
+    "llama-b11476-bin-win-vulkan-x64.zip": "5c71e7b749697da4a8d46e9ee55486845cbba27c9dfbecb4007f31ba6610d523",
+    "llama-b11476-bin-win-vulkan-arm64.zip": "53659ca6e67dc624c62f6df48f204cd89d9d1ff12a642173ba67235be9ff4bf7",
+    "llama-b11476-bin-ubuntu-vulkan-x64.tar.gz": "5bb4306d7917f33e81efda02e6f791ae6a82e86bee121227a3ab2b4e8e40427f",
+    "llama-b11476-bin-ubuntu-vulkan-arm64.tar.gz": "8dae2f39afee01d3032a101d7c398a6734d6fd9697690d8f93bdce4e3a9efea2",
+    "llama-b11476-bin-macos-arm64.tar.gz": "577634a1b8a59e8dabe02ba10de1e610be0574dfaf1cf3020e6dd42853ed877e",
+    "llama-b11476-bin-macos-x64.tar.gz": "c2a0dfe7622a99fc3279454814045923e99f1cfdddb8f121c5969c5c675fc073",
+}
+
+
+def _releases(build: str) -> list[dict]:
+    api = "https://api.github.com/repos/ggml-org/llama.cpp/releases"
+    if build == "latest":
+        # "latest" can be a source-only tag (v0.6.0 had no binaries); the binaries ride on the per-build bNNNNN releases
+        return json.load(urllib.request.urlopen(api + "?per_page=10"))
+    return [json.load(urllib.request.urlopen(f"{api}/tags/{build}"))]
+
+
+def expected_sha256(asset: dict) -> str | None:
+    """Pinned digest for the measured build, else the one GitHub lists for the asset ("sha256:..."), else None."""
+    if asset["name"] in LLAMA_SHA256:
+        return LLAMA_SHA256[asset["name"]]
+    digest = asset.get("digest") or ""
+    return digest.split(":", 1)[1] if digest.startswith("sha256:") else None
+
+
+def check_sha256(data: bytes, name: str, want: str | None) -> None:
+    import hashlib
+    if want is None:
+        raise RuntimeError(f"{name}: no SHA-256 to check it against, refusing to run it. Use the pinned build "
+                           f"({LLAMA_BUILD}) or set LOCALLLM_LLAMA_SERVER to a llama-server you built or trust.")
+    got = hashlib.sha256(data).hexdigest()
+    if got != want.lower():
+        raise RuntimeError(f"{name}: SHA-256 is {got}, expected {want}. Nothing was unpacked; try again, and open "
+                           "an issue if it keeps failing.")
+
+
 def fetch_server() -> Path:
-    # "latest" can be a source-only tag (v0.6.0 had no binaries); the binaries ride on the per-build bNNNNN releases
-    rels = json.load(urllib.request.urlopen("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"))
+    build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
     want = _asset()
-    rel, asset = next((r, a) for r in rels for a in r["assets"] if want in a["name"] and a["name"].startswith("llama-"))
+    rel, asset = next((r, a) for r in _releases(build) for a in r["assets"]
+                      if want in a["name"] and a["name"].startswith("llama-"))
     dest = HOME / "llama.cpp" / rel["tag_name"]
     print(f"downloading {asset['name']} ({asset['size'] / 2**20:.0f} MB) ...")
     data = urllib.request.urlopen(asset["browser_download_url"]).read()
+    try:
+        check_sha256(data, asset["name"], expected_sha256(asset))
+    except RuntimeError as e:
+        raise SystemExit(f"[localllm] {e}") from None
     if asset["name"].endswith(".zip"):
         zipfile.ZipFile(io.BytesIO(data)).extractall(dest)
     else:
@@ -113,8 +180,18 @@ def ram_available_gb() -> float:
 LOW_RAM_PROFILE = [(16, (512, 2)), (32, (1024, 4)), (64, (2048, 8))]
 
 
-def ram_profile(ram_total_gb: float) -> tuple[int, int] | None:
+# Two profiles (#90): `lean` (default) keeps RAM, VRAM and CPU to the least that holds measured quality; `max` spends
+# what the PC has on capability - the context fills the free VRAM and the prompt cache gets up to a quarter of the RAM,
+# so long agent sessions re-use their fixed prefix instead of re-reading it.
+PROFILES = ("lean", "max")
+MAX_PROFILE_CHECKPOINTS = 8
+MAX_PROFILE_CACHE_SHARE = 0.25
+
+
+def ram_profile(ram_total_gb: float, profile: str = "lean") -> tuple[int, int] | None:
     """(cache-ram MiB, ctx-checkpoints) for this PC, or None to keep llama.cpp's defaults on big-RAM machines."""
+    if profile == "max":
+        return min(8192, int(ram_total_gb * 1024 * MAX_PROFILE_CACHE_SHARE)), MAX_PROFILE_CHECKPOINTS
     for limit, prof in LOW_RAM_PROFILE:
         if ram_total_gb <= limit + 0.5:
             return prof
@@ -122,13 +199,13 @@ def ram_profile(ram_total_gb: float) -> tuple[int, int] | None:
 
 
 def server_args(model: Path, device: str | None, port: int, ctx: int, mtp: bool,
-                ram_total_gb: float | None = None, cpu_moe: int = 0) -> list[str]:
+                ram_total_gb: float | None = None, cpu_moe: int = 0, profile: str = "lean") -> list[str]:
     args = ["-m", str(model), "--host", "127.0.0.1", "--port", str(port), "-c", str(ctx), "-ngl", "999",
             "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "-kvu", "-fit", "off"]
     # read weights straight into place. Measured on gemma-4 with 13 layers' experts in RAM: same 36 tok/s as mmap but
     # 6.1 GB working set instead of 13.5 GB (mmap keeps the whole file resident)
     args += ["--load-mode", "none"] + (["--n-cpu-moe", str(cpu_moe)] if cpu_moe else [])
-    prof = ram_profile(ram_total_gb if ram_total_gb is not None else ram_gb())
+    prof = ram_profile(ram_total_gb if ram_total_gb is not None else ram_gb(), profile)
     if prof:
         args += ["--cache-ram", str(prof[0]), "--ctx-checkpoints", str(prof[1])]
     if device:
@@ -153,6 +230,36 @@ def gpu_spill_gb(pid: int) -> float | None:
         return float(out.stdout.strip() or 0) / 2**30
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
+
+
+def process_memory(pid: int) -> dict:
+    """Best effort: {"ram_gb", "vram_gb", "spill_gb"} of one process, None for what this OS doesn't tell us.
+    Windows: working set + the GPU Process Memory counters (dedicated = VRAM, shared = spilled into system RAM).
+    Linux: VmRSS only."""
+    out = {"ram_gb": None, "vram_gb": None, "spill_gb": None}
+    if os.name == "nt":
+        ps = (f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; "
+              f"$c = (Get-Counter '\\GPU Process Memory(pid_{pid}_*)\\Dedicated Usage',"
+              f"'\\GPU Process Memory(pid_{pid}_*)\\Shared Usage' -ErrorAction SilentlyContinue).CounterSamples; "
+              "$d = ($c | Where-Object Path -like '*dedicated*' | Measure-Object CookedValue -Sum).Sum; "
+              "$s = ($c | Where-Object Path -like '*shared*' | Measure-Object CookedValue -Sum).Sum; "
+              "\"$($p.WorkingSet64) $d $s\"")
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                               timeout=20)
+            vals = (r.stdout.split() + ["", "", ""])[:3]
+            for k, v in zip(("ram_gb", "vram_gb", "spill_gb"), vals):
+                out[k] = float(v) / 2**30 if v else None
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        return out
+    status = Path(f"/proc/{pid}/status")
+    try:
+        m = re.search(r"VmRSS:\s+(\d+)", status.read_text())
+        out["ram_gb"] = int(m[1]) / 2**20 if m else None
+    except OSError:
+        pass
+    return out
 
 
 SPILL_WARN_GB = 1.5   # Vulkan keeps ~0.5-0.9 GB of host-visible buffers here even when the model fits (measured)

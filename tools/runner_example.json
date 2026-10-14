@@ -1,0 +1,10 @@
+{
+ "llama_cpp": "b11476",
+ "note": "#49: KV-cache quantization per language, short context. Add long-context jobs with ctx 32768+ and the long-context suite once #93 lands.",
+ "jobs": [
+  {"id": "49-gemma-kv-f16", "model": "gemma4-26b-a4b-qat", "args": ["-ctk", "f16", "-ctv", "f16"], "suites": "global,regional", "langs": "en,th,hi,ar"},
+  {"id": "49-gemma-kv-q8", "model": "gemma4-26b-a4b-qat", "args": ["-ctk", "q8_0", "-ctv", "q8_0"], "suites": "global,regional", "langs": "en,th,hi,ar"},
+  {"id": "49-gemma-kv-q4", "model": "gemma4-26b-a4b-qat", "args": ["-ctk", "q4_0", "-ctv", "q4_0"], "suites": "global,regional", "langs": "en,th,hi,ar"},
+  {"id": "49-qwen-kv-q4", "model": "qwen3.8-27b-q3", "args": ["-ctk", "q4_0", "-ctv", "q4_0"], "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "global,regional", "langs": "en,th,hi,ar"}
+ ]
+}

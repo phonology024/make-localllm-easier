@@ -3,3 +3,7 @@ __pycache__/
 dist/
 build/
 tools/router/data/
+site/public/
+
+# measurement server logs
+tools/*_server.log

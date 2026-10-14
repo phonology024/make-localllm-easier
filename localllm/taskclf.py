@@ -27,9 +27,11 @@ from . import runtime
 GGUF_FILE = "multilingual-e5-small-Q8_0.gguf"
 HEAD_FILE = "router_head.json"
 # A matched pair (the head was trained on this exact GGUF): https://huggingface.co/phonology024/localllm-task-router
-_HF = "https://huggingface.co/phonology024/localllm-task-router/resolve/main/"
+_HF = "https://huggingface.co/phonology024/localllm-task-router/resolve/9a3bf4353f07ca0851c11d69d94e16b75538678a/"
 GGUF_URL = _HF + GGUF_FILE
 HEAD_URL = _HF + HEAD_FILE
+SHA256 = {GGUF_URL: "45a09b60eacd4628e7b8e5a78f04dc90ccad044ed088b60790dd205e91b85a62",   # checked after download
+          HEAD_URL: "fecd9ae82728c946c4d875ba485447a7160946cbf9425481fc5b0d1bf854d53b"}
 PREFIX, MAX_CHARS = "query: ", 450   # e5 inputs need the prefix; the head was trained on the first 450 characters
 START_TIMEOUT_S = 60
 FIRST_WAIT_S = 5.0          # the message that starts the router waits this long for it, then falls back to keywords
@@ -160,7 +162,7 @@ class Classifier:
                 print(f"[localllm] downloading the task router's {name} (one time) ...", flush=True)
                 try:
                     from .cli import _download
-                    _download(url, path, name, timeout=DOWNLOAD_TIMEOUT_S)
+                    _download(url, path, name, timeout=DOWNLOAD_TIMEOUT_S, sha256=SHA256.get(url))
                 except Exception as e:
                     raise Retry(f"download of {name} failed: {type(e).__name__}: {e}") from None
             out.append(path)

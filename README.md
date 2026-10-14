@@ -1,5 +1,9 @@
 # make-localllm-easier — run the best local LLM your GPU can handle, in one command
 
+[![PyPI](https://img.shields.io/pypi/v/make-localllm-easier)](https://pypi.org/project/make-localllm-easier/)
+[![tests](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml/badge.svg)](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Read this in: English | [தமிழ்](docs/README.ta.md)
 
 **The leanest way to run local AI: least CPU, RAM and GPU memory, smallest files, measured quality.**
@@ -12,6 +16,10 @@ pip install make-localllm-easier
 localllm
 ```
 
+No Python? From 0.7.0 each [release](https://github.com/phonology024/make-localllm-easier/releases) has a single
+`localllm` file for Windows, macOS and Linux (and an AppImage); winget and Homebrew follow
+([packaging/README.md](packaging/README.md)). The first run shows what your PC can run and asks before the model download.
+
 That's it. `localllm` checks your GPU and RAM, picks the most accurate model we have *measured* for your language that
 fits your card, downloads llama.cpp and the model, starts it with settings profiled op by op, and opens the chat page.
 You also get an OpenAI-compatible API at `http://127.0.0.1:8080/v1` for any app that speaks it. Offline, private, free.
@@ -23,8 +31,11 @@ localllm chat       # chat right here in the terminal (Thai, Japanese, any langu
 localllm doctor     # what this GPU is good for: model sizes, speed, how much text it can hold
 localllm list       # every model we have measured, with scores per language
 localllm serve      # API only (OpenAI, Anthropic, Ollama and Gemini formats), no browser
+localllm --ui       # our chat page: saved chats, model picker, live VRAM/RAM
+localllm savings    # tokens answered locally this month (and $ at the prices you set)
 localllm route      # optional: mix in your own cloud key, compare local vs cloud
 localllm eval       # score any running server in English + your language
+localllm connect hermes   # point an agent (hermes, opencode, claude-code, codex, aider) or Obsidian at it
 ```
 
 ## FAQ
@@ -52,6 +63,11 @@ Measure any server yourself with `localllm eval --suites math --langs en,de,ja`.
 Qwen3.8-27B Q3 in Hindi (+4.7), Arabic (+2.9), Japanese (+1.6) and Thai (+1.5); Qwen leads Chinese by 1.4. Try
 `localllm eval --suites translate --langs th,ja,sw` (101 languages).
 
+**Does the model still find things deep in a long document?** `localllm serve --profile max`, then
+`localllm eval --suites longctx --langs en,th,hi,ar`: secret numbers hidden at 10-90% depth of 8k, 32k and 64k-token
+documents written in the language itself (FLORES sentences), one and three at a time. It checks the context `doctor`
+promises, not just whether it fits. Catalog numbers are not measured yet (queued in `tools/runner_longctx.json`).
+
 **Why is llama.cpp slow on my AMD (or Intel) GPU on Windows?** If Resizable BAR is off, llama.cpp's Vulkan backend puts
 buffers in a 256 MB host-visible heap backed by system RAM and decode drops up to 1.7x. `localllm` sets
 `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` for you ([llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097)).
@@ -61,15 +77,31 @@ only at 1.58 bit, and our own 2-bit results already cost 8-13 points. The realis
 in system RAM, expert pruning, SSD expert streaming and test-time compute. We are measuring them, none is shipped yet:
 [docs/research-big-models.md](docs/research-big-models.md) and ROADMAP 0.9.
 
-**Is there a harness or an Obsidian plugin?** Not yet. Both are planned as optional add-ons that never touch the base
-install, with what each costs you spelled out in [docs/addons.md](docs/addons.md).
+**Can I use it in Obsidian?** Yes, through the Copilot for Obsidian plugin: `localllm connect obsidian --path
+YOUR_VAULT` makes the local model its default and tells you anything that would still go to a cloud service
+([docs/apis.md](docs/apis.md#obsidian)). A harness and our own Obsidian plugin are planned as optional add-ons that never
+touch the base install ([docs/addons.md](docs/addons.md)).
+
+**Is there a chat window with saved chats?** `localllm --ui` (or `localllm serve --ui`) opens our own chat page
+instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`, a model picker when you run several
+models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
+internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
+
+**How much does running an agent locally save?** `localllm savings` counts what this PC answered this month and,
+at the cloud prices you enter once, what it would have cost ([docs/apis.md](docs/apis.md#hermes-with-localllm-and-what-it-saves)).
 
 **Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
-conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, Ctrl+C stops an answer.
+conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,
+context used and the last answer's speed, Ctrl+C stops an answer.
 
 **Can I use it as an Ollama, OpenAI, Anthropic or Gemini replacement?** Yes. One local endpoint at
 `http://127.0.0.1:8080` speaks all four APIs, tool / function calling and images (`--vision`) included, so existing apps
 and SDKs only need a new base URL. See [docs/apis.md](docs/apis.md).
+
+**Can I use it with Hermes Agent, OpenCode, Claude Code, Codex or Aider?** Yes: `localllm connect hermes` (or
+`opencode`, `claude-code`, `codex`, `aider`, `cline`) writes that tool's config to use the local endpoint and backs up
+the old one; `--undo` restores it. Start the server with `localllm serve --profile max` so long agent prompts fit. See
+[docs/apis.md](docs/apis.md#coding-agents-localllm-connect).
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
 and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
@@ -84,6 +116,12 @@ by name, or the local model scores below your floor in that language) and tells 
 
 **Does it work offline?** After the first download, yes. Nothing leaves your PC.
 
+**Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
+file (llama.cpp, models, vision projectors, the task router) is downloaded from a pinned commit and checked against a
+SHA-256 stored in the code before it is used. A mismatch deletes the file and stops with the reason.
+`LOCALLLM_LLAMA_BUILD=latest` (or `=bNNNNN`) picks another llama.cpp build, checked against the digest GitHub lists for
+it.
+
 **Which languages are measured?** 23 languages on Global-MMLU-Lite, 44 countries' own exams on INCLUDE, plus Thai
 (ThaiExam). `localllm eval --langs ...` measures any of them on your hardware.
 
@@ -91,6 +129,7 @@ by name, or the local model scores below your floor in that language) and tells 
 
 ```
 GPU AMD Radeon RX 9070 XT  15.9 GB  (640 GB/s)    RAM 32 GB    language: th
+Tested: Windows/AMD: tested by maintainers
 
 Model sizes for this PC (whole model on the GPU = fast):
   [OK  ] 4B                       Q8 4.2 GB  ~90 tok/s (est.)
@@ -114,9 +153,23 @@ What it can do here:
   leaves ~15 GB of RAM free for other apps (est.)
   answers at ~90 tok/s
   speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
+
+Profiles (--profile):
+  lean (default)    8k context  ~ 2.2 GB RAM  least memory
+  max              78k context  ~ 9.6 GB RAM  long documents, agent sessions
 ```
 
 Speeds marked *est.* come from your card's memory bandwidth, calibrated on measured runs. Everything else is measured.
+
+**lean or max?** `lean` is the default: an 8k context and caches sized so RAM stays around 2 GB - right for chat and
+short questions. `--profile max` spends what the PC has: a context that fills the free VRAM (78k on a 16 GB card) and
+a prompt cache of up to a quarter of the RAM, so coding agents and long documents don't re-read their prompt every
+turn. Same model, same answers; only memory changes.
+
+**Energy.** `localllm tune` also reads the GPU's board power while it measures (AMD through the driver on Windows or
+hwmon on Linux, NVIDIA through `nvidia-smi`), and `doctor` then shows joules per token next to the speed. Only the GPU
+board is counted, not the CPU or the power supply. `localllm tune --prefer-energy` keeps a setting that saves more than
+15% energy per token while costing less than 5% speed.
 
 ## Less RAM than running llama.cpp yourself (0.2)
 
@@ -168,6 +221,20 @@ swap costs 4-9 s. Keeping both
 models on the card by letting Windows page VRAM made **both** 4-5x slower, so that's not an option. Faster switching
 is tracked in [#32](https://github.com/phonology024/make-localllm-easier/issues/32): LoRA adapters on one shared base, or
 specialists small enough to sit next to the main model.
+
+## Where it is tested
+
+We measure on one PC: Windows 11, AMD RX 9070 XT, Vulkan. Everything else depends on reports from people who ran
+`localllm report` on their own hardware. `localllm doctor` prints the line for your PC. Generated by
+`tools/build_leaderboard.py` from [reports/](reports/):
+
+<!-- platforms:start -->
+| | AMD | NVIDIA | Intel | Apple |
+|---|---|---|---|---|
+| Windows | tested by maintainers | untested | untested | - |
+| Linux | untested | untested | untested | - |
+| macOS | - | - | - | untested |
+<!-- platforms:end -->
 
 ## Measured results (RX 9070 XT 16 GB, Windows 11, llama.cpp Vulkan)
 
@@ -302,7 +369,7 @@ reasoning in multiple choice, not writing quality.
 The catalog only grows with measurements. Run `localllm tune` and `localllm eval --langs en,<yours>` on your GPU, then
 `localllm report`: it collects your GPU, RAM, OS, llama.cpp build, tuned settings and scores into one JSON (no user
 names, paths or keys) and opens a prefilled GitHub issue you can review before submitting. Other languages' local exams
-are very welcome.
+are very welcome. More in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Measured on contributors' PCs
 
@@ -314,6 +381,11 @@ Generated from shared reports by `tools/merge_reports.py`:
 <!-- gpu-table:end -->
  See [ROADMAP.md](ROADMAP.md)
 for what's next: using less system RAM (0.2), working alongside cloud provider APIs (0.3), a speed-only release (0.4), and per-language compression research (0.5).
+
+## Stability
+
+Commands, flags, API endpoints, `X-Localllm-*` headers, file locations and the report format that stay working, and
+how anything gets removed: [docs/stability.md](docs/stability.md).
 
 ## License
 

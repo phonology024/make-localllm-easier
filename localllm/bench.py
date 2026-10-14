@@ -24,6 +24,11 @@ Task suites (opt-in with --suites, they generate text so they are slower):
             language's own region, in 7 languages incl. Thai; a short answer counts when it matches a reference after
             normalising case, punctuation and spaces (or contains it, for answers phrased as a short sentence).
             Needs a server started with the vision projector (`localllm serve --vision`)
+  longctx   Needle retrieval in a long document (RULER-style, #93): FLORES-101 sentences in the language as the haystack,
+            five-digit "secret numbers" hidden at 10/50/90% depth (one needle) and at 20/50/80% (three needles), at
+            8k, 32k and 64k tokens. Correct = every hidden number is in the reply. Lengths the server's context can't
+            hold are skipped, so `localllm serve --profile max` (or --ctx 70000) runs them all. Shows whether the
+            context `doctor` promises keeps its quality, not only whether it fits
 """
 from __future__ import annotations
 
@@ -82,7 +87,36 @@ CODEGEN_FIXES = {
                      r"rel_tol=1e-07, abs_tol=\1)"),
     "Mbpp/255": (r"\[\['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'\], 77\], ", ""),
 }
-SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision")
+SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx", "summarize")
+LONGCTX_LENGTHS = (8192, 32768, 65536)
+NEEDLE_NAMES = ("Orchid", "Falcon", "Copper", "Lantern", "Willow", "Harbor")
+# (needle, question for one, question for three) per language. Words that also mean "digit" (th ตัวเลข, zh/ja 数字,
+# ar أرقام, hi अंक) are avoided in the questions: "three digits" got 3-digit answers (gemma-4 in Thai). Thai has no
+# sentence punctuation, so its needle ends with a space like the sentences around it.
+NEEDLES = {
+    "en": ("The secret number of {name} is {num}.", "What is the secret number of {name}? Reply with the number only.",
+           "What are the secret numbers of {name}? Reply with the three numbers only, in that order."),
+    "th": ("เลขลับของ {name} คือ {num} ", "เลขลับของ {name} คืออะไร ตอบเฉพาะเลขลับเท่านั้น",
+           "เลขลับของ {name} คืออะไรบ้าง ตอบเฉพาะเลขลับทั้งสามจำนวนตามลำดับเท่านั้น"),
+    "hi": ("{name} की गुप्त संख्या {num} है।", "{name} की गुप्त संख्या क्या है? केवल वह संख्या लिखें।",
+           "{name} की गुप्त संख्याएँ क्या हैं? केवल तीनों पूरी संख्याएँ क्रम से लिखें।"),
+    "ar": ("الرقم السري لـ {name} هو {num}.", "ما هو الرقم السري لـ {name}؟ أجب بالرقم السري فقط.",
+           "ما هي الأرقام السرية لـ {name}؟ أجب بالأرقام السرية الثلاثة كاملة فقط بالترتيب."),
+    "zh": ("{name}的秘密号码是{num}。", "{name}的秘密号码是多少？只回答号码。", "{name}的秘密号码分别是多少？只按顺序回答这三个完整的号码。"),
+    "ja": ("{name}の秘密の番号は{num}です。", "{name}の秘密の番号は何ですか？番号だけで答えてください。",
+           "{name}の秘密の番号はそれぞれ何ですか？三つの番号だけを順番に答えてください。"),
+    "es": ("El número secreto de {name} es {num}.", "¿Cuál es el número secreto de {name}? Responde solo con el número.",
+           "¿Cuáles son los números secretos de {name}? Responde solo con los tres números, en ese orden."),
+}
+# Summarization (#43): LR-Sum (Palen-Michel & Lignos 2023, VOA news, CC BY 4.0 - commercial use allowed, unlike
+# XL-Sum's CC BY-NC-SA). ISO -> LR-Sum config. First SUMMARIZE_N test articles, cut to SUMMARIZE_CHARS characters.
+LRSUM = {"en": "eng", "th": "tha", "zh": "cmn_s", "es": "spa", "fr": "fra", "pt": "por", "ru": "rus", "vi": "vie",
+         "id": "ind", "ko": "kor", "tr": "tur", "uk": "ukr", "ur": "urd", "fa": "fas", "bn": "ben", "km": "khm",
+         "lo": "lao", "my": "mya", "sw": "swh", "am": "amh", "el": "ell", "hy": "hye", "ka": "kat", "uz": "uzb"}
+SUMMARIZE_N, SUMMARIZE_CHARS = 100, 6000
+SUMMARIZE_SYSTEM = "Summarize the news article in one or two sentences, in {lang}. Reply with the summary only."
+NO_SPACES = ("th", "zh", "ja", "lo", "km", "my")      # ROUGE-L over characters for scripts without word spaces
+LONGCTX_SYSTEM = "Read the document and answer the question at the end from it."
 MAXM = {"en": "en", "fr": "fr", "hi": "hi", "he": "iw", "ro": "ro", "th": "th", "zh": "zh"}   # ISO -> dataset split
 VISION_SYSTEM = "Look at the image and answer the question in {lang} with one word or a short phrase. Reply with the answer only."
 
@@ -101,7 +135,7 @@ def system_language() -> str:
 def available(lang: str, suites: tuple[str, ...] = ("global", "regional")) -> list[str]:
     have = {"global": lang in GLOBAL_LANGS, "regional": lang in INCLUDE or lang == "th", "math": lang in MGSM_LANGS,
             "translate": lang in FLORES and lang != "en", "code": lang == "en", "codegen": lang == "en",
-            "vision": lang in MAXM}
+            "vision": lang in MAXM, "longctx": lang in NEEDLES, "summarize": lang in LRSUM}
     return [s for s in suites if have[s]]
 
 
@@ -184,6 +218,12 @@ def load(suite: str, lang: str, limit: int = 0) -> list[dict]:
                 path.write_bytes(data)
             refs = sorted({a for a in (r.get("answers") or []) + (r.get("processed_answers") or []) if a})
             items.append({"q": r["question"], "img": path.name, "refs": refs, "lang": lang})
+    elif suite == "summarize" and lang in LRSUM:
+        for r in _rows("bltlab/lr-sum", LRSUM[lang], "test", limit=SUMMARIZE_N)[:SUMMARIZE_N]:
+            items.append({"text": r["text"][:SUMMARIZE_CHARS], "ref": r["summary"], "lang": lang})
+    elif suite == "longctx" and lang in NEEDLES:
+        items = longctx_items(lang, [r["sentence"] for r in _rows("gsarti/flores_101", FLORES.get(lang, "eng"),
+                                                                    "devtest")])
     elif suite == "regional":
         for r in _rows("CohereLabs/include-lite-44", INCLUDE[lang]):
             opts = r["choices"] if isinstance(r["choices"], list) else ast.literal_eval(r["choices"])
@@ -206,7 +246,8 @@ def ask(url: str, item: dict) -> int | None:
                                  headers={"Content-Type": "application/json"})
     d = json.load(urllib.request.urlopen(req, timeout=600))
     best, best_lp = None, -1e9
-    for t in d["choices"][0]["logprobs"]["content"][0]["top_logprobs"]:
+    content = (d["choices"][0].get("logprobs") or {}).get("content") or []
+    for t in (content[0].get("top_logprobs") or []) if content else []:   # no token at all (an instant end): wrong
         tok = t["token"].strip().upper().strip(".()")
         if len(tok) == 1 and tok in letters and t["logprob"] > best_lp:
             best, best_lp = letters.index(tok), t["logprob"]
@@ -293,6 +334,37 @@ def ask_translate(url: str, item: dict) -> float:
     return chrf(text.strip(), item["ref"])
 
 
+def rouge_l(hyp: str, ref: str, chars: bool = False) -> float:
+    """ROUGE-L F1 (0-100) over lowercased words, or characters for scripts written without spaces."""
+    a = [c for c in hyp.lower() if not c.isspace()] if chars else hyp.lower().split()
+    b = [c for c in ref.lower() if not c.isspace()] if chars else ref.lower().split()
+    if not a or not b:
+        return 0.0
+    prev = [0] * (len(b) + 1)
+    for x in a:                                   # longest common subsequence, one row at a time
+        cur = [0]
+        for j, y in enumerate(b):
+            cur.append(prev[j] + 1 if x == y else max(prev[j + 1], cur[j]))
+        prev = cur
+    lcs = prev[-1]
+    if not lcs:
+        return 0.0
+    p, r = lcs / len(a), lcs / len(b)
+    return 100 * 2 * p * r / (p + r)
+
+
+def ask_summarize(url: str, item: dict) -> tuple[float, float]:
+    """(chrF++, ROUGE-L) of the model's summary against LR-Sum's reference summary."""
+    lang = LANG_NAMES.get(item["lang"]) or INCLUDE.get(item["lang"]) or {"th": "Thai"}.get(item["lang"], item["lang"])
+    body = {"messages": [{"role": "system", "content": SUMMARIZE_SYSTEM.format(lang=lang)},
+                         {"role": "user", "content": item["text"]}],
+            "max_tokens": 200, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    text = (json.load(urllib.request.urlopen(req, timeout=600))["choices"][0]["message"].get("content") or "").strip()
+    return chrf(text, item["ref"]), rouge_l(text, item["ref"], item["lang"] in NO_SPACES)
+
+
 def same_value(pred: str, gold: str) -> bool:
     """Compare two Python literals by value (never executes anything), falling back to normalised text."""
     import ast
@@ -377,6 +449,74 @@ def ask_vision(url: str, item: dict) -> bool:
     return vqa_match(text.strip(), item["refs"])
 
 
+def longctx_items(lang: str, sentences: list[str], seed: int = 93) -> list[dict]:
+    """Per length: one needle at 10/50/90% depth and three needles at 20/50/80%. Deterministic (fixed seed)."""
+    import random
+    rnd = random.Random(seed)
+    items = []
+    for length in LONGCTX_LENGTHS:
+        for depths in ((0.1,), (0.5,), (0.9,), (0.2, 0.5, 0.8)):
+            names = rnd.sample(NEEDLE_NAMES, len(depths))
+            items.append({"lang": lang, "tokens": length, "depths": list(depths), "names": names,
+                          "nums": [rnd.randint(10000, 99999) for _ in depths], "filler": sentences})
+    return items
+
+
+def needle_prompt(item: dict, n_sentences: int) -> str:
+    """The document (n_sentences of filler, cycled, with the needles at their depths) and the question."""
+    needle, one, many = NEEDLES[item["lang"]]
+    pool = item["filler"]
+    sents = [pool[i % len(pool)] for i in range(n_sentences)]
+    for depth, name, num in sorted(zip(item["depths"], item["names"], item["nums"]), reverse=True):
+        sents.insert(int(depth * len(sents)), needle.format(name=name, num=num))
+    sep = "" if item["lang"] in ("th", "zh", "ja") else " "
+    q = (one if len(item["nums"]) == 1 else many).format(name=", ".join(item["names"]))
+    return sep.join(sents) + "\n\n" + q
+
+
+def needles_found(reply: str, nums: list[int]) -> bool:
+    import re
+    found = {int(n) for n in re.findall(r"\d{5}", reply.replace(",", "").replace(" ", ""))}
+    return set(nums) <= found
+
+
+def _tokens(url: str, text: str) -> int:
+    """llama-server's /tokenize; other servers: ~3 characters per token (an estimate, labelled in the output)."""
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/tokenize", data=json.dumps({"content": text}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        return len(json.load(urllib.request.urlopen(req, timeout=120))["tokens"])
+    except (OSError, ValueError, KeyError):
+        return len(text) // 3
+
+
+def server_ctx(url: str) -> int | None:
+    try:
+        props = json.load(urllib.request.urlopen(url.rstrip("/") + "/props", timeout=10))
+    except (OSError, ValueError):
+        return None
+    return (props.get("default_generation_settings") or {}).get("n_ctx") or props.get("n_ctx")
+
+
+def ask_longctx(url: str, item: dict, ctx: int | None) -> bool | None:
+    """None = skipped: the server's context can't hold this length."""
+    if ctx and item["tokens"] + 512 > ctx:
+        return None
+    probe = needle_prompt(item, 200)
+    per = max(1.0, _tokens(url, probe) / 200)                  # tokens per filler sentence in this language
+    n = max(10, int(item["tokens"] * 0.97 / per))
+    prompt = needle_prompt(item, n)
+    while n > 10 and _tokens(url, prompt) > item["tokens"]:   # trim to the target length
+        n = int(n * 0.97)
+        prompt = needle_prompt(item, n)
+    body = {"messages": [{"role": "system", "content": LONGCTX_SYSTEM}, {"role": "user", "content": prompt}],
+            "max_tokens": 64, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    text = json.load(urllib.request.urlopen(req, timeout=1800))["choices"][0]["message"].get("content") or ""
+    return needles_found(text, item["nums"])
+
+
 def _save(name: str, res: dict) -> None:
     out = HOME / "results.json"
     allres = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
@@ -400,6 +540,33 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                 acc = round(sum(scores) / len(scores), 1)
                 res[f"{lang}/{suite}"] = {"acc": acc, "chrf": acc, "n": len(items)}
                 print(f"  {lang:3} {suite:9} chrF++ {acc:5.1f}  (en<->{lang}, {len(items)} sentences)", flush=True)
+                _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
+                continue
+            if suite == "summarize":          # chrF++ (the headline, like translate) and ROUGE-L
+                got = [ask_summarize(url, it) for it in items]
+                cf = round(sum(c for c, _ in got) / len(got), 1)
+                rl = round(sum(r for _, r in got) / len(got), 1)
+                res[f"{lang}/{suite}"] = {"acc": cf, "chrf": cf, "rougeL": rl, "n": len(items)}
+                print(f"  {lang:3} {suite:9} chrF++ {cf:5.1f}  ROUGE-L {rl:5.1f}  ({len(items)} LR-Sum articles)", flush=True)
+                _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
+                continue
+            if suite == "longctx":            # per length; lengths the server can't hold are skipped
+                ctx = server_ctx(url)
+                got = [(it["tokens"], ask_longctx(url, it, ctx)) for it in items]
+                by = {}
+                for length, ok in got:
+                    if ok is not None:
+                        by.setdefault(length, []).append(ok)
+                if not by:
+                    print(f"  {lang:3} {suite:9} skipped: the server holds {ctx} tokens; start it with "
+                          "`--profile max` or --ctx 70000", flush=True)
+                    continue
+                ran = [ok for v in by.values() for ok in v]
+                acc = round(100 * sum(ran) / len(ran), 1)
+                res[f"{lang}/{suite}"] = {"acc": acc, "correct": sum(ran), "n": len(ran),
+                                          "by_tokens": {str(k): round(100 * sum(v) / len(v), 1) for k, v in by.items()}}
+                per = "  ".join(f"{k // 1024}k {100 * sum(v) / len(v):.0f}%" for k, v in sorted(by.items()))
+                print(f"  {lang:3} {suite:9} {acc:5.1f}%  ({per})", flush=True)
                 _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
                 continue
             if suite == "codegen":            # write everything first, then run the tests in the Docker sandbox

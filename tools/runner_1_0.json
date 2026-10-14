@@ -1,0 +1,20 @@
+{
+ "llama_cpp": "b11476",
+ "note": "Measurements for 1.0: #64 projector cost on the GPU (memory + MaXM), #65 CRUXEval, #62 HumanEval+ in the Docker sandbox, #20 MTP draft length. Run after runner_longctx.json; codegen needs Docker running.",
+ "jobs": [
+  {"id": "64-gemma-text", "model": "gemma4-26b-a4b-qat", "memory": true},
+  {"id": "64-gemma-vision", "model": "gemma4-26b-a4b-qat", "vision": true, "memory": true, "suites": "vision", "langs": "en,th,hi,zh"},
+  {"id": "64-qwen-text", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "memory": true},
+  {"id": "64-qwen-vision", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "vision": true, "memory": true, "suites": "vision", "langs": "en,th,hi,zh"},
+  {"id": "65-gemma-code", "model": "gemma4-26b-a4b-qat", "suites": "code", "langs": "en", "speed": false},
+  {"id": "65-qwen-code", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "code", "langs": "en", "speed": false},
+  {"id": "65-qwen-iq2-code", "model": "qwen3.8-27b-iq2", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "code", "langs": "en", "speed": false},
+  {"id": "20-qwen-mtp-off", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "mtp": 0},
+  {"id": "20-qwen-mtp-2", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "mtp": 2},
+  {"id": "20-qwen-mtp-3", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "mtp": 3},
+  {"id": "20-qwen-mtp-5", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "mtp": 5},
+  {"id": "62-gemma-codegen", "model": "gemma4-26b-a4b-qat", "suites": "codegen", "langs": "en", "speed": false},
+  {"id": "62-qwen-codegen", "model": "qwen3.8-27b-q3", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "codegen", "langs": "en", "speed": false},
+  {"id": "62-qwen-iq2-codegen", "model": "qwen3.8-27b-iq2", "env": {"GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM": "1"}, "suites": "codegen", "langs": "en", "speed": false}
+ ]
+}

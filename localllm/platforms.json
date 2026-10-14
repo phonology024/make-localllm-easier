@@ -1,0 +1,30 @@
+{
+ "Windows/AMD": {
+  "maintainers": true,
+  "community_reports": 0
+ },
+ "Windows/NVIDIA": {
+  "maintainers": false,
+  "community_reports": 0
+ },
+ "Windows/Intel": {
+  "maintainers": false,
+  "community_reports": 0
+ },
+ "Linux/AMD": {
+  "maintainers": false,
+  "community_reports": 0
+ },
+ "Linux/NVIDIA": {
+  "maintainers": false,
+  "community_reports": 0
+ },
+ "Linux/Intel": {
+  "maintainers": false,
+  "community_reports": 0
+ },
+ "macOS/Apple": {
+  "maintainers": false,
+  "community_reports": 0
+ }
+}

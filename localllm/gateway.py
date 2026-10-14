@@ -1,9 +1,12 @@
 """One local endpoint that speaks the APIs apps already use, in front of llama-server.
 
   OpenAI     /v1/chat/completions /v1/completions /v1/models /v1/embeddings   -> passed through
+             /v1/responses (Codex)                                         -> passed through (llama-server native)
   Anthropic  /v1/messages /v1/messages/count_tokens                          -> passed through (llama-server native)
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
+  localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
+             with --ui: the chat workspace at / and /localllm/catalog, /localllm/sessions[/<id>] (see workspace.py)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
@@ -31,8 +34,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from . import router
 
-PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/messages",
-               "/v1/messages/count_tokens", "/health", "/props", "/slots")
+PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/embeddings", "/v1/responses", "/v1/messages",
+               "/v1/messages/count_tokens", "/health", "/props", "/slots", "/tokenize")
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
@@ -315,9 +318,22 @@ def error_body(api: str, msg: str, code: int = 400) -> dict:
     return {"error": {"message": msg, "type": "invalid_request_error", "code": code}}
 
 
-def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True):
+METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/responses")
+
+
+def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
+                 ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
-    With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback)."""
+    With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
+    ui: a dict {"sessions": workspace.Sessions, "catalog": dict} to serve the chat workspace instead of llama-server's page.
+    meter: a meter.Meter that counts the tokens of every local answer (#97)."""
+
+    def count(usage):
+        if meter and usage:
+            try:
+                meter.add(usage)
+            except OSError:
+                pass                                    # a full disk must not break an answer
     def local(body: dict, stay: bool = False):
         return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body, stay=stay)
 
@@ -437,16 +453,63 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 self.send_header("X-Localllm-Model", model_hdr)
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
+            metered = meter and not hdrs and method == "POST" and self.path in METERED and \
+                getattr(r, "status", 0) == 200
+            tail = b""
             while chunk := r.read(8192) if not hasattr(r, "read1") else r.read1(8192):
                 self._chunk(chunk)
+                if metered:
+                    tail = (tail + chunk)[-16384:]      # usage/timings come in the last chunk
             self._stream_end()
+            if metered:
+                from .meter import parse_usage
+                count(parse_usage(tail))
+
+        def _page(self):
+            from .workspace import PAGE
+            html = PAGE.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html)))
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; "
+                             "style-src 'unsafe-inline'; img-src 'self' data:")     # nothing loads from elsewhere
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(html)
+
+        def _sessions(self, method: str):
+            """/localllm/sessions[/<id>] for the workspace page."""
+            store = ui["sessions"]
+            sid = self.path[len("/localllm/sessions"):].strip("/")
+            try:
+                if not sid:
+                    return self._json(200, store.list()) if method == "GET" else self._json(405, {"error": "no"})
+                if method == "GET":
+                    d = store.get(sid)
+                    return self._json(200, d) if d is not None else self._json(404, {"error": "no such session"})
+                if method == "PUT":
+                    return self._json(200, store.put(sid, self.rfile.read(int(self.headers.get("Content-Length") or 0))))
+                return self._json(200 if store.delete(sid) else 404, {"deleted": sid})
+            except ValueError as e:
+                self.close_connection = True
+                return self._json(400, {"error": str(e)})
 
         def do_GET(self):
             if not self._authorized() and self.path != "/":      # the chat page is static; its API calls need the key
                 return self._deny()
+            if ui and self.path == "/":
+                return self._page()
+            if ui and self.path == "/localllm/catalog":
+                return self._json(200, ui["catalog"])
+            if ui and self.path.startswith("/localllm/sessions"):
+                return self._sessions("GET")
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
                 return self._json(200, {"object": "list", "data": [
                     {"id": k, "object": "model", "owned_by": "localllm"} for k in upstream.keys]})
+            if self.path == "/localllm/status":
+                if status is None:
+                    return self._json(404, {"error": "no status here"})
+                return self._json(200, {"model": model_name, **status()})
             if self.path == "/api/tags":
                 return self._json(200, {"models": [{"name": model_name, "model": model_name, "size": 0,
                                                     "details": {"format": "gguf"}}]})
@@ -454,6 +517,20 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(200, {"version": "0.14.0-localllm"})
             if self.path.startswith(PASSTHROUGH) or self.path == "/":
                 return self._proxy("GET")
+            self._json(404, {"error": f"not supported: {self.path}"})
+
+        def do_PUT(self):
+            if not self._authorized():
+                return self._deny()
+            if ui and self.path.startswith("/localllm/sessions/"):
+                return self._sessions("PUT")
+            self._json(404, {"error": f"not supported: {self.path}"})
+
+        def do_DELETE(self):
+            if not self._authorized():
+                return self._deny()
+            if ui and self.path.startswith("/localllm/sessions/"):
+                return self._sessions("DELETE")
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_POST(self):
@@ -492,6 +569,9 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                                  + "\n").encode())
                 text.append(piece)
             calls = tools.calls()
+            if timings:
+                from .meter import parse_usage
+                count(parse_usage(json.dumps({"timings": timings}).encode()))
             if stream:                                  # tool calls go out whole, in the final chunk, as Ollama does
                 self._chunk((json.dumps(openai_to_ollama("", model_name, chat, True, timings, calls),
                                         ensure_ascii=False) + "\n").encode())
@@ -509,8 +589,10 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 self._gemini_reply(url, req, stream, {"X-Localllm-Model": model_hdr} if model_hdr else None)
 
         def _gemini_reply(self, url: str, req: dict, stream: bool, extra: dict | None):
+            from .meter import parse_usage
             if not stream:
                 r = json.load(_post(url + "/v1/chat/completions", {**req, "stream": False}))
+                count(parse_usage(json.dumps(r).encode()))
                 ch = r["choices"][0]
                 return self._json(200, openai_to_gemini(ch["message"].get("content") or "", ch.get("finish_reason"),
                                                         r.get("usage"), ch["message"].get("tool_calls")), extra)
@@ -518,6 +600,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self._stream_start("text/event-stream", extra)
             tools = ToolCalls()
             for c in _sse_chunks(r):
+                if c.get("timings"):
+                    count(parse_usage(json.dumps(c).encode()))
                 ch = (c.get("choices") or [{}])[0]
                 tools.add(ch.get("delta", {}))
                 text = ch.get("delta", {}).get("content") or ""
@@ -548,10 +632,11 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True) -> ThreadingHTTPServer:
+          trust_loopback: bool = True, status=None, ui=None, meter=None) -> ThreadingHTTPServer:
+    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
-    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback))
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, ui, meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

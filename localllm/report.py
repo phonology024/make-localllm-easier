@@ -79,6 +79,37 @@ def driver() -> str | None:
     return f"amdgpu {amd.read_text().strip()}" if amd.exists() else None
 
 
+def vendor(gpu: str | None) -> str | None:
+    """AMD / NVIDIA / Intel / Apple from a GPU name, None when unknown."""
+    if not gpu:
+        return None
+    g = gpu.lower()
+    for name, pat in (("NVIDIA", r"nvidia|geforce|rtx|gtx|quadro|tesla"), ("AMD", r"amd|radeon|instinct|rx"),
+                      ("Intel", r"intel|arc|iris|uhd"), ("Apple", r"apple|m[1-9]")):
+        if re.search(pat, g):
+            return name
+    return None
+
+
+def os_family(os_name: str | None) -> str | None:
+    o = (os_name or "").lower()
+    return "Windows" if o.startswith("windows") else "macOS" if o.startswith(("darwin", "macos")) else         "Linux" if o.startswith("linux") else None
+
+
+PLATFORMS = Path(__file__).with_name("platforms.json")    # written by tools/build_leaderboard.py
+
+
+def platform_label(gpu: str | None, os_name: str | None = None) -> str:
+    """How well this OS + GPU vendor is tested: by us, by community reports, or not at all."""
+    os_name = os_name or platform.system()
+    cell = f"{os_family(os_name) or os_name}/{vendor(gpu) or 'unknown GPU'}"
+    m = _read(PLATFORMS).get(cell)
+    if not m:
+        return f"{cell}: untested - please run `localllm report` and share it"
+    bits = (["tested by maintainers"] if m.get("maintainers") else []) +         ([f"{m['community_reports']} community report(s)"] if m.get("community_reports") else [])
+    return f"{cell}: " + (", ".join(bits) if bits else "untested - please run `localllm report` and share it")
+
+
 def installed_server() -> Path | None:
     """The llama-server localllm already downloaded; a report never downloads one."""
     if os.environ.get("LOCALLLM_LLAMA_SERVER"):
@@ -110,6 +141,9 @@ def collect(server: Path | None = None, devs: list[dict] | None = None, ram_gb: 
         "devices": [{"name": d["name"], "vram_gb": round(d["total_gb"], 1)} for d in devs],
         "pick": pick, "tune": tune, "results": _read(runtime.HOME / "results.json"),
     }
+    host = os.environ.get("LOCALLLM_REPORT_HOST", "")
+    if re.fullmatch(r"cloud(:[a-z0-9-]{1,30})?", host):          # e.g. cloud:runpod (tools/cloud_lab.sh sets it)
+        report["host"] = host
     return scrub(report)
 
 
