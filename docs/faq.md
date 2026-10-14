@@ -82,6 +82,12 @@ localllm picked, the speed `tune` measured, your score in your language and the 
 leaderboard page. It comes from the same report as the issue (no names, paths or keys) and is saved next to it in
 `~/.localllm/`.
 
+**Something broke. What should I send?** `localllm bugreport` writes one zip with the `doctor` output, versions, the
+last lines of the llama-server log and localllm's settings, with API keys, tokens (the LAN key too), your user name
+and your home folder taken out. The log can hold text from your recent prompts, so it lists what is inside and asks
+first; `--show` prints all of it. Nothing is sent:
+attach the zip to a [bug report](https://github.com/phonology024/make-localllm-easier/issues/new?template=bug.yml).
+
 **Does it work offline?** After the first download, yes. Nothing leaves your PC.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every

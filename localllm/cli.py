@@ -10,6 +10,7 @@
   localllm eval             score a running server in English + your language (global and local exams)
   localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
   localllm savings          tokens answered locally this month (and $ at the prices you set)
+  localllm bugreport        a zip to attach to a bug report (no keys, no user name)
   localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline / obsidian at the local endpoint
   localllm launch TOOL      start localllm (profile max) + connect + the agent, undo the config when it exits
 """
@@ -518,6 +519,25 @@ def cmd_list(_a) -> None:
     print(f"  measured on llama.cpp {', '.join(builds)} (`localllm doctor` says if yours differs)")
 
 
+BUG_FORM = "https://github.com/phonology024/make-localllm-easier/issues/new?template=bug.yml"
+
+
+def cmd_bugreport(a) -> None:
+    from . import bugreport
+    files = bugreport.collect(lambda: cmd_doctor(a))
+    _say("the bug report holds these files (API keys, tokens, your user name and home folder are taken out):")
+    print(bugreport.summary(files))
+    if a.show:
+        for name, text in files.items():
+            print(f"\n===== {name} =====\n{text}", end="")
+    elif not a.yes:
+        _say("see everything first: localllm bugreport --show")
+    if not confirm("write the zip?"):
+        sys.exit("[localllm] nothing written")
+    out = bugreport.write(files)
+    _say(f"wrote {out} - attach it to a bug report (nothing was sent): {BUG_FORM}")
+
+
 def cmd_report(a) -> None:
     from . import report
     rep = report.collect()
@@ -612,6 +632,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
     rp.add_argument("--share", action="store_true", help="also draw a card of your result (SVG) to post anywhere")
     rp.set_defaults(fn=cmd_report)
+    bg = sub.add_parser("bugreport", help="doctor, versions, recent logs and settings in one zip, secrets taken out")
+    bg.add_argument("--show", action="store_true", help="print every file before asking")
+    bg.set_defaults(fn=cmd_bugreport)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     t.add_argument("--prefer-energy", action="store_true",

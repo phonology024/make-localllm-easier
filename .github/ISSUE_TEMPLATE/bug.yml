@@ -1,0 +1,21 @@
+name: Bug report
+description: Something doesn't work. A `localllm bugreport` zip tells us most of what we need.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: bugreport
+    attributes:
+      label: Diagnostics
+      description: |
+        Run `localllm bugreport` and drag the zip it writes (`~/.localllm/bugreport-<date>.zip`) here. It has the
+        doctor output, versions, the last log lines and localllm's settings, with API keys, tokens, your user name and
+        home folder taken out; `localllm bugreport --show` prints all of it first. No zip? Paste `localllm doctor`.
+    validations:
+      required: true
