@@ -63,7 +63,8 @@ def fetch(opener=urllib.request.urlopen, now: float | None = None, force: bool =
     (offline, timeouts, junk) are quiet."""
     now = time.time() if now is None else now
     d = _load()
-    if not enabled() or (not force and now - d.get("checked", 0) < EVERY_S):
+    last = d.get("checked")                      # None: never asked
+    if not enabled() or (not force and isinstance(last, (int, float)) and now - last < EVERY_S):
         return False
     d["checked"] = now
     try:
