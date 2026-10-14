@@ -10,8 +10,10 @@ from test_gateway import _up
 from test_pool import FakeProc, G, Q, ZH
 
 
-def _req(url, method="GET", body=None, key=None):
-    h = {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {})}
+def _req(url, method="GET", body=None, key=None, page=True, origin=None):
+    """page: send the header our chat page sends; origin: what a browser would put in Origin."""
+    h = {"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {}),
+         **({"X-Localllm-UI": "1"} if page else {}), **({"Origin": origin} if origin else {})}
     data = json.dumps(body).encode() if body is not None else None
     return urllib.request.urlopen(urllib.request.Request(url, data=data, method=method, headers=h), timeout=30)
 
@@ -153,6 +155,31 @@ def test_models_endpoints_and_lan_key(ui, tmp_path):
     with pytest.raises(urllib.error.HTTPError) as e:
         _req(f"{base}/nope/download", "POST", {}, key="k")
     assert e.value.code == 404
+    g.shutdown(); s.shutdown()
+
+
+def test_other_websites_cannot_change_anything(ui, tmp_path):
+    """No key on this PC, so a page on another site could send simple POST/PUT/DELETE requests: refused (#132)."""
+    started = []
+    ui["downloads"] = workspace.Downloads(lambda k: started.append(k), lambda k: tmp_path / "none.part")
+    s, up = _up()
+    g = gateway.serve(up, port=0, model_name="m", ui=ui)
+    port = g.server_address[1]
+    base = f"http://127.0.0.1:{port}"
+    chat = {"messages": [{"role": "user", "content": "hi"}]}
+    attempts = [(f"{base}/localllm/models/{G}/download", "POST", {}), (f"{base}/localllm/sessions/x1", "PUT", chat),
+                (f"{base}/localllm/sessions/x1", "DELETE", None)]
+    for url, method, body in attempts:
+        for kw in ({"page": False}, {"origin": "https://evil.example"}, {"page": False, "origin": "null"}):
+            with pytest.raises(urllib.error.HTTPError) as e:
+                _req(url, method, body, **kw)
+            assert e.value.code == 403, (url, method, kw)
+    assert started == [] and not (ui["sessions"].dir / "x1.json").exists()
+    assert _req(f"{base}/localllm/sessions/x1", "PUT", chat, origin=f"http://127.0.0.1:{port}").status == 200
+    assert _req(f"{base}/localllm/models/{G}/download", "POST", {}).status == 202
+    assert json.load(_req(f"{base}/localllm/sessions", page=False))[0]["id"] == "x1"      # reading needs no header
+    page = _req(base + "/").read().decode()
+    assert '"X-Localllm-UI": "1"' in page                                                 # our page sends it
     g.shutdown(); s.shutdown()
 
 

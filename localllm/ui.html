@@ -108,7 +108,7 @@ let key = "", ctrl = null, catalog = {};
 try { key = sessionStorage.getItem("localllm-key") || ""; } catch (e) {}
 
 function headers(extra) {
-  const h = Object.assign({"Content-Type": "application/json"}, extra || {});
+  const h = Object.assign({"Content-Type": "application/json", "X-Localllm-UI": "1"}, extra || {});
   if (key) h.Authorization = "Bearer " + key;
   return h;
 }
