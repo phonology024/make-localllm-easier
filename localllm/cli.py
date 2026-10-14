@@ -491,6 +491,10 @@ def cmd_doctor(_a) -> None:
     print(f"  lean (default)  {catalog.MIN_CTX // 1000:>3}k context  ~{ram_est['total_gb']:4.1f} GB RAM  least memory")
     print(f"  max             {round(max_ctx / 1000):>3}k context  ~{max_ram:4.1f} GB RAM  long documents, agent sessions")
     print(f"\nRun it: localllm        (llama.cpp: {server})")
+    from .fix import defaults_line
+    saved = defaults_line()
+    if saved:
+        print(saved)
     from . import meter
     used = meter.Meter().month()
     if used["requests"]:
@@ -555,8 +559,9 @@ def _doctor_fix(a) -> list:
 
 
 def _ask_yes(question: str) -> bool:
-    """A fix runs only on an explicit yes typed by a person (unlike confirm(), no answer means no). Windows reports the
-    NUL device as a terminal, so `< NUL` / `< /dev/null` must not count as consent either."""
+    """A fix runs only on an explicit yes typed by a person; unlike confirm(), no answer means no. Windows reports the NUL
+    device as a terminal (isatty() is True for `< NUL` / `< /dev/null`), so what keeps those from consenting is that
+    input() hits EOF there, and EOF or an empty answer is a no."""
     if not sys.stdin.isatty():
         return False
     try:

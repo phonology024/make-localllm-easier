@@ -8,7 +8,9 @@ and apply the safe fixes when you agree.
   port-busy      something already listens on the port -> name it; or another port
   garbled        a running localllm answers with chat-template tokens or loops -> llama.cpp build / template
 A fix that is applied writes ~/.localllm/defaults.json (model, port, profile), which `localllm` reads when the flag is
-not given on the command line; `localllm doctor --fix --reset` removes it. Nothing else on the PC is changed.
+not given on the command line; `localllm doctor --reset` removes it, and plain `doctor` says when it is in use. Only
+lasting conditions are saved: VRAM taken by a game or a browser is temporary, so vram-busy only suggests a model for
+this run instead of making a worse model the default. Nothing else on the PC is changed.
 """
 from __future__ import annotations
 
@@ -114,10 +116,11 @@ def check_vram(dev: dict | None, key: str | None, others: list[tuple[str, float]
                                                                            if catalog.MODELS[k]["gb"] < m["gb"]])
     fix = (f"Close what holds VRAM - {names} - and the model fits again. ")
     if fit:
-        fix += f"Or use a smaller model that fits the {free:.1f} GB free now: {fit} ({catalog.MODELS[fit]['gb']} GB)."
+        fix += (f"Or, for this run only, use a smaller model that fits the {free:.1f} GB free now: "
+                f"localllm --model {fit} ({catalog.MODELS[fit]['gb']} GB).")
     return Problem("vram-busy", f"{key} needs about {need:.1f} GB of VRAM but only {free:.1f} GB of "
                    f"{dev['total_gb']:.1f} GB is free, so part of it would spill into system RAM and answer slowly.",
-                   fix, apply={"model": fit} if fit else {})
+                   fix)
 
 
 def check_ram(key: str | None, ram_free: float, need_gb: float) -> Problem | None:
@@ -211,6 +214,15 @@ def vram_users(exclude_pid: int | None = None) -> list[tuple[str, float]]:
         if len(parts) == 3 and parts[0].isdigit() and int(parts[0]) != exclude_pid:
             rows[parts[1] or parts[0]] = rows.get(parts[1] or parts[0], 0) + float(parts[2]) / 2**30
     return sorted(rows.items(), key=lambda kv: -kv[1])
+
+
+def defaults_line() -> str | None:
+    """For plain `doctor`: saved defaults are in force (so a fix from weeks ago isn't a mystery)."""
+    d = load_defaults()
+    if not d:
+        return None
+    return (f"Saved defaults in use ({DEFAULTS}): {', '.join(f'{k}={v}' for k, v in d.items())}"
+            " - typed flags win; `localllm doctor --reset` removes them")
 
 
 def report(problems: list[Problem]) -> str:

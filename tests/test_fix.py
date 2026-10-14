@@ -44,7 +44,8 @@ def test_vram_taken_by_other_apps_names_them_and_offers_a_model_that_fits(monkey
     busy = {**DEV, "free_gb": 10.5}
     p = fix.check_vram(busy, "gemma4-26b-a4b-qat", [("QuantFleet", 2.2), ("dwm", 2.5)])
     assert p.id == "vram-busy" and "only 10.5 GB of 15.9 GB is free" in p.what
-    assert "QuantFleet (2.2 GB)" in p.fix and p.apply["model"] == "qwen3.8-27b-iq2"
+    assert "QuantFleet (2.2 GB)" in p.fix and "this run only, use a smaller model" in p.fix
+    assert "localllm --model qwen3.8-27b-iq2" in p.fix and p.apply == {}    # a busy GPU is temporary: nothing saved
     assert fix.check_vram(DEV, "gemma4-26b-a4b-qat", []) is None
 
 
@@ -120,4 +121,20 @@ def test_doctor_fix_applies_nothing_without_consent(monkeypatch, capsys):
 def test_vram_taken_with_nothing_smaller_that_fits(monkeypatch):
     monkeypatch.setattr(fix.runtime, "ram_available_gb", lambda: 20.0)
     p = fix.check_vram({**DEV, "free_gb": 6.0}, "gemma4-26b-a4b-qat", [])
-    assert p.apply == {} and "Close what holds VRAM - other apps" in p.fix
+    assert p.apply == {} and "Close what holds VRAM - other apps" in p.fix and "--model" not in p.fix
+
+
+def test_eof_from_nul_is_a_no_even_when_it_looks_like_a_terminal(monkeypatch):
+    """What `< NUL` gives on Windows: isatty() is True, input() raises EOFError."""
+    import io
+    fake = io.StringIO("")
+    fake.isatty = lambda: True
+    monkeypatch.setattr(cli.sys, "stdin", fake)
+    assert cli._ask_yes("fix?") is False
+
+
+def test_plain_doctor_says_when_saved_defaults_are_active():
+    assert fix.defaults_line() is None
+    fix.save_defaults({"port": 8085})
+    line = fix.defaults_line()
+    assert "port=8085" in line and "doctor --reset" in line
