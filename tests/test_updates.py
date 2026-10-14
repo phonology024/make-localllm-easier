@@ -28,7 +28,7 @@ class Opener:
 
 
 @pytest.fixture(autouse=True)
-def home(tmp_path, monkeypatch):
+def home(tmp_path, monkeypatch, _no_update_check):     # after conftest turned checks off: on again here
     monkeypatch.setattr(runtime, "HOME", tmp_path)
     monkeypatch.delenv("LOCALLLM_NO_UPDATE_CHECK", raising=False)
     return tmp_path
