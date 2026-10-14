@@ -86,8 +86,79 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
     tmp.replace(dest)
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":                     # os.kill(pid, 0) would send Ctrl+C on Windows
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, pid)          # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return code.value == 259                         # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _take_lock(dest: Path) -> Path | None:
+    """One writer per model file across processes: <file>.part.lock holds the writer's pid. Returns the lock path if
+    this process got it, None if a live process holds it (a lock left by a dead one is taken over)."""
+    lock = dest.with_suffix(dest.suffix + ".part.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return lock
+        except FileExistsError:
+            try:
+                pid = int(lock.read_text().strip() or 0)
+            except (OSError, ValueError):
+                pid = 0
+            if _pid_alive(pid) and pid != os.getpid():
+                return None
+            try:
+                lock.unlink()                            # stale: its process is gone
+            except OSError:
+                return None
+    return None
+
+
+LOCK_POLL_S = 5.0
+
+
 def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5, progress=None) -> None:
-    """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits."""
+    """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits. If another
+    localllm is already downloading this file, wait for it instead of writing the same .part."""
+    lock = _take_lock(dest)
+    if lock is None and not progress:
+        _say(f"another localllm is already downloading {label}; waiting for it to finish ...")
+    while lock is None:
+        if dest.exists():
+            return
+        time.sleep(LOCK_POLL_S)
+        lock = _take_lock(dest)
+    try:
+        if dest.exists():                                # finished by the other process while we waited
+            return
+        _fetch_locked(url, dest, label, sha256, tries, progress)
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _fetch_locked(url: str, dest: Path, label: str, sha256: str | None, tries: int, progress) -> None:
     for attempt in range(1, tries + 1):
         try:
             _download(url, dest, label, sha256=sha256, progress=progress)

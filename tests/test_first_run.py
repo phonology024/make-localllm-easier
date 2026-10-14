@@ -115,3 +115,27 @@ def test_a_starter_fits_a_6_gb_card():
     key = catalog.starter(6.0, 8.0)
     assert key and catalog.MODELS[key]["starter"] and catalog.MODELS[key]["gb"] <= 3.0      # ~1 min at 50 MB/s
     assert catalog.starter(2.0, 8.0) is None
+
+def test_one_writer_per_model_file_across_processes(tmp_path, monkeypatch):
+    """A second localllm waits for the first one's download instead of writing the same .part."""
+    import os
+    import subprocess
+    import sys
+    dest = tmp_path / "m.gguf"
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        (tmp_path / "m.gguf.part.lock").write_text(str(other.pid))
+        assert cli._take_lock(dest) is None                        # a live process holds it
+        calls = []
+        monkeypatch.setattr(cli, "LOCK_POLL_S", 0)
+        monkeypatch.setattr(cli.time, "sleep", lambda s: dest.write_bytes(b"done") if not calls.append(s) else None)
+        monkeypatch.setattr(cli, "_fetch_locked", lambda *a: (_ for _ in ()).throw(AssertionError("downloaded twice")))
+        cli._fetch("http://x", dest, "m", None)                   # returns once the other one has finished
+        assert dest.read_bytes() == b"done" and calls
+    finally:
+        other.kill()
+        other.wait()
+    dest.unlink()
+    (tmp_path / "m.gguf.part.lock").write_text(str(other.pid))    # its process is gone now: a stale lock
+    lock = cli._take_lock(dest)
+    assert lock and lock.read_text() == str(os.getpid())
