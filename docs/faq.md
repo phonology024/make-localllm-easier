@@ -62,7 +62,8 @@ and SDKs only need a new base URL. See [docs/apis.md](apis.md).
 
 **Can I use it with Hermes Agent, OpenCode, Claude Code, Codex or Aider?** Yes: `localllm connect hermes` (or
 `opencode`, `claude-code`, `codex`, `aider`, `cline`) writes that tool's config to use the local endpoint and backs up
-the old one; `--undo` restores it. Start the server with `localllm serve --profile max` so long agent prompts fit. See
+the old one; `--undo` restores it. Or start everything at once: `localllm launch opencode` (server, config, the tool; the old
+config comes back when you quit). Start the server with `localllm serve --profile max` so long agent prompts fit. See
 [docs/apis.md](apis.md#coding-agents-localllm-connect).
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network

@@ -46,6 +46,12 @@ localllm connect hermes --undo      # put the old config back
 copied next to it as `<file>.localllm-backup`; `--undo` puts it back (or deletes the file if `connect` created it).
 `--dry-run` prints the new file without writing it, `--path` writes another file (a project config, say).
 
+One command for all of it: `localllm launch <tool>` (opencode, aider, hermes, claude-code, codex) uses the localllm
+already running on the port or starts one with `--profile max`, runs `connect`, starts the tool in your terminal, and
+when the tool exits puts the old config back and stops the server it started. `--keep` leaves the tool pointed at
+localllm; arguments after `--` go to the tool (`localllm launch aider -- --no-auto-commits`). A tool you had already
+connected with `localllm connect` stays connected.
+
 | tool | file | what is set | then run |
 |---|---|---|---|
 | Hermes Agent | `~/.hermes/config.yaml` | the `model:` block: `provider: custom`, `base_url`, `default`, `context_length` | `hermes` |
