@@ -99,16 +99,18 @@ makes it the default chat model. Your other models stay in the list. It then tel
 service: a cloud embedding model for vault search (indexing sends note chunks to it) and any cloud chat model still
 enabled in the menu. Turn those off in Copilot's settings if nothing should leave the PC.
 
-Vault search needs an embedding model. A small local one: the multilingual e5 model `localllm` already downloads for
-its task router (`~/.localllm/models/multilingual-e5-small-Q8_0.gguf`, 126 MB, ~100 languages):
+Vault search needs an embedding model. `localllm serve --embeddings` answers `POST /v1/embeddings` on the same port
+with multilingual-e5-small (MIT, 126 MB, ~100 languages), the model `localllm` already uses for its task router: it
+runs on the CPU (no VRAM, about 0.2 GB RAM), is downloaded once and SHA-256 checked, and starts on the first request.
 
 ```
-llama-server -m ~/.localllm/models/multilingual-e5-small-Q8_0.gguf --embedding --pooling mean --port 8081
+localllm serve --embeddings
 ```
 
 In Copilot: Settings > QA > Embedding model > add a custom model, provider "3rd party (openai-format)", base URL
-`http://127.0.0.1:8081/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
-way through its "custom local (OpenAI format)" option. An Obsidian plugin of our own (#89, part B) comes only if this
+`http://127.0.0.1:8080/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
+way through its "custom local (OpenAI format)" option. e5 models were trained with `query: ` / `passage: ` in front of
+the text; tools that don't add them still work, with somewhat lower search quality. An Obsidian plugin of our own (#89, part B) comes only if this
 isn't enough.
 
 Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
