@@ -1,0 +1,231 @@
+"""The chat page and the most visible CLI lines in the user's language (#108).
+
+Languages: English, Thai, Japanese, Chinese, Hindi, Spanish, Arabic (right to left). Pick: `--lang` (or LOCALLLM_LANG)
+first, then the browser's language for the chat page, then this PC's language; anything else is English. A missing
+translation falls back to English, never to a key. Translations are ours; native speakers' fixes are very welcome
+(edit STRINGS, keep the {placeholders}). tests/test_i18n.py fails on a missing or unused key.
+
+The chat page gets its strings from GET /localllm/i18n?lang=<browser language>.
+"""
+from __future__ import annotations
+
+import os
+
+LANGS = ("en", "th", "ja", "zh", "hi", "es", "ar")
+RTL = {"ar"}
+
+# key -> {lang: text}; "en" is required for every key
+STRINGS: dict[str, dict[str, str]] = {
+    # ---- chat page -------------------------------------------------------------------------------------------------
+    "new_chat": {"en": "New chat", "th": "แชทใหม่", "ja": "新しいチャット", "zh": "新对话", "hi": "नई चैट",
+                 "es": "Nuevo chat", "ar": "محادثة جديدة"},
+    "status_loading": {"en": "status: loading...", "th": "สถานะ: กำลังโหลด...", "ja": "状態: 読み込み中...",
+                       "zh": "状态：加载中...", "hi": "स्थिति: लोड हो रहा है...", "es": "estado: cargando...",
+                       "ar": "الحالة: جارٍ التحميل..."},
+    "chats": {"en": "Chats", "th": "แชท", "ja": "チャット", "zh": "对话", "hi": "चैट", "es": "Chats", "ar": "المحادثات"},
+    "view": {"en": "View", "th": "มุมมอง", "ja": "表示", "zh": "视图", "hi": "दृश्य", "es": "Vista", "ar": "العرض"},
+    "tab_chat": {"en": "Chat", "th": "แชท", "ja": "チャット", "zh": "对话", "hi": "चैट", "es": "Chat", "ar": "محادثة"},
+    "tab_models": {"en": "Models", "th": "โมเดล", "ja": "モデル", "zh": "模型", "hi": "मॉडल", "es": "Modelos",
+                   "ar": "النماذج"},
+    "model": {"en": "Model", "th": "โมเดล", "ja": "モデル", "zh": "模型", "hi": "मॉडल", "es": "Modelo", "ar": "النموذج"},
+    "automatic": {"en": "automatic", "th": "อัตโนมัติ", "ja": "自動", "zh": "自动", "hi": "स्वचालित",
+                  "es": "automático", "ar": "تلقائي"},
+    "thinking": {"en": "thinking", "th": "แสดงการคิด", "ja": "思考を表示", "zh": "显示思考", "hi": "सोच दिखाएँ",
+                 "es": "razonamiento", "ar": "إظهار التفكير"},
+    "message": {"en": "Message", "th": "พิมพ์ข้อความ", "ja": "メッセージ", "zh": "输入消息", "hi": "संदेश",
+                "es": "Mensaje", "ar": "رسالة"},
+    "enter_hint": {"en": "Enter sends, Shift+Enter adds a line", "th": "Enter เพื่อส่ง, Shift+Enter เพื่อขึ้นบรรทัดใหม่",
+                   "ja": "Enter で送信、Shift+Enter で改行", "zh": "Enter 发送，Shift+Enter 换行",
+                   "hi": "Enter से भेजें, Shift+Enter से नई पंक्ति", "es": "Enter envía, Shift+Enter añade una línea",
+                   "ar": "Enter للإرسال، Shift+Enter لسطر جديد"},
+    "send": {"en": "Send", "th": "ส่ง", "ja": "送信", "zh": "发送", "hi": "भेजें", "es": "Enviar", "ar": "إرسال"},
+    "stop": {"en": "Stop", "th": "หยุด", "ja": "停止", "zh": "停止", "hi": "रोकें", "es": "Detener", "ar": "إيقاف"},
+    "key_title": {"en": "This localllm asks for its key", "th": "localllm เครื่องนี้ต้องใช้คีย์",
+                  "ja": "この localllm にはキーが必要です", "zh": "此 localllm 需要密钥",
+                  "hi": "यह localllm अपनी कुंजी माँगता है", "es": "Este localllm pide su clave",
+                  "ar": "يطلب localllm هذا مفتاحه"},
+    "key_body": {"en": "You are on another device. Use the key printed in the terminal of the PC running localllm.",
+                 "th": "คุณกำลังใช้อุปกรณ์อื่น ใส่คีย์ที่แสดงในเทอร์มินัลของเครื่องที่รัน localllm",
+                 "ja": "別の端末からの接続です。localllm を実行している PC のターミナルに表示されたキーを入力してください。",
+                 "zh": "你在另一台设备上。请使用运行 localllm 的电脑终端里显示的密钥。",
+                 "hi": "आप दूसरे डिवाइस पर हैं। localllm चला रहे PC के टर्मिनल में दिखी कुंजी डालें।",
+                 "es": "Estás en otro dispositivo. Usa la clave que aparece en la terminal del PC que ejecuta localllm.",
+                 "ar": "أنت على جهاز آخر. استخدم المفتاح المعروض في طرفية الحاسوب الذي يشغّل localllm."},
+    "api_key": {"en": "API key", "th": "คีย์ API", "ja": "API キー", "zh": "API 密钥", "hi": "API कुंजी",
+                "es": "Clave de API", "ar": "مفتاح API"},
+    "unlock": {"en": "Unlock", "th": "ปลดล็อก", "ja": "ロック解除", "zh": "解锁", "hi": "खोलें", "es": "Desbloquear",
+               "ar": "فتح"},
+    "empty_title": {"en": "Chat with the model on this PC", "th": "แชทกับโมเดลบนเครื่องนี้",
+                    "ja": "この PC のモデルとチャット", "zh": "与这台电脑上的模型对话", "hi": "इस PC के मॉडल से चैट करें",
+                    "es": "Chatea con el modelo de este PC", "ar": "تحدّث مع النموذج على هذا الحاسوب"},
+    "empty_body": {"en": "Nothing you write leaves this computer. Chats are saved as plain files in {path}.",
+                   "th": "ข้อความที่คุณพิมพ์ไม่ออกจากเครื่องนี้ แชทถูกบันทึกเป็นไฟล์ธรรมดาใน {path}",
+                   "ja": "書いた内容はこのコンピューターから出ません。チャットは {path} に普通のファイルとして保存されます。",
+                   "zh": "你写的内容不会离开这台电脑。对话以普通文件保存在 {path}。",
+                   "hi": "आप जो लिखते हैं वह इस कंप्यूटर से बाहर नहीं जाता। चैट {path} में सामान्य फ़ाइलों के रूप में सहेजी जाती हैं।",
+                   "es": "Nada de lo que escribes sale de este ordenador. Los chats se guardan como archivos en {path}.",
+                   "ar": "لا يغادر ما تكتبه هذا الحاسوب. تُحفظ المحادثات كملفات عادية في {path}."},
+    "untitled": {"en": "untitled", "th": "ไม่มีชื่อ", "ja": "無題", "zh": "未命名", "hi": "बिना शीर्षक",
+                 "es": "sin título", "ar": "بلا عنوان"},
+    "delete": {"en": "Delete", "th": "ลบ", "ja": "削除", "zh": "删除", "hi": "हटाएँ", "es": "Eliminar", "ar": "حذف"},
+    "delete_q": {"en": "Delete this chat?", "th": "ลบแชทนี้ไหม?", "ja": "このチャットを削除しますか？",
+                 "zh": "删除这个对话？", "hi": "यह चैट हटाएँ?", "es": "¿Eliminar este chat?", "ar": "حذف هذه المحادثة؟"},
+    "stopped": {"en": "stopped", "th": "หยุดแล้ว", "ja": "停止しました", "zh": "已停止", "hi": "रोका गया",
+                "es": "detenido", "ar": "تم الإيقاف"},
+    "error": {"en": "error: {msg}", "th": "ผิดพลาด: {msg}", "ja": "エラー: {msg}", "zh": "错误：{msg}",
+              "hi": "त्रुटि: {msg}", "es": "error: {msg}", "ar": "خطأ: {msg}"},
+    "unloaded": {"en": "model unloaded (idle); it loads on the next message",
+                 "th": "ปิดโมเดลไว้ (ไม่ได้ใช้งาน) จะโหลดใหม่เมื่อส่งข้อความถัดไป",
+                 "ja": "モデルは休止中です。次のメッセージで読み込みます", "zh": "模型已卸载（空闲），下一条消息时会重新加载",
+                 "hi": "मॉडल अनलोड है (निष्क्रिय); अगले संदेश पर लोड होगा",
+                 "es": "modelo descargado (inactivo); se carga con el próximo mensaje",
+                 "ar": "النموذج غير محمّل (خامل)؛ يُحمَّل مع الرسالة التالية"},
+    "spilled": {"en": "{gb} spilled to system RAM: slower answers", "th": "{gb} ล้นไปใช้ RAM ของระบบ: ตอบช้าลง",
+                "ja": "{gb} がシステム RAM にあふれています: 応答が遅くなります", "zh": "{gb} 溢出到系统内存：回答会变慢",
+                "hi": "{gb} सिस्टम RAM में चला गया: जवाब धीमे होंगे",
+                "es": "{gb} desbordados a la RAM del sistema: respuestas más lentas",
+                "ar": "{gb} انتقلت إلى ذاكرة النظام: إجابات أبطأ"},
+    "status_unavailable": {"en": "status unavailable", "th": "ดูสถานะไม่ได้", "ja": "状態を取得できません",
+                           "zh": "无法获取状态", "hi": "स्थिति उपलब्ध नहीं", "es": "estado no disponible",
+                           "ar": "الحالة غير متاحة"},
+    "one_model": {"en": "one model is loaded; start with --models A,B to choose",
+                  "th": "โหลดโมเดลไว้ตัวเดียว เริ่มด้วย --models A,B เพื่อเลือกได้",
+                  "ja": "読み込まれているモデルは 1 つです。選ぶには --models A,B で起動してください",
+                  "zh": "只加载了一个模型；用 --models A,B 启动才能选择",
+                  "hi": "एक ही मॉडल लोड है; चुनने के लिए --models A,B से शुरू करें",
+                  "es": "hay un solo modelo cargado; inicia con --models A,B para elegir",
+                  "ar": "نموذج واحد محمّل؛ ابدأ بـ --models A,B للاختيار"},
+    # ---- Models tab ------------------------------------------------------------------------------------------------
+    "suite_global": {"en": "knowledge", "th": "ความรู้ทั่วไป", "ja": "知識", "zh": "知识", "hi": "ज्ञान",
+                     "es": "conocimiento", "ar": "المعرفة"},
+    "suite_regional": {"en": "local exams", "th": "ข้อสอบในประเทศ", "ja": "国内の試験", "zh": "本地考试",
+                       "hi": "स्थानीय परीक्षाएँ", "es": "exámenes locales", "ar": "اختبارات محلية"},
+    "suite_math": {"en": "math", "th": "คณิตศาสตร์", "ja": "数学", "zh": "数学", "hi": "गणित", "es": "matemáticas",
+                   "ar": "الرياضيات"},
+    "suite_translate": {"en": "translation", "th": "การแปล", "ja": "翻訳", "zh": "翻译", "hi": "अनुवाद",
+                        "es": "traducción", "ar": "الترجمة"},
+    "suite_code": {"en": "code", "th": "โค้ด", "ja": "コード", "zh": "代码", "hi": "कोड", "es": "código", "ar": "الشيفرة"},
+    "suite_codegen": {"en": "writing code", "th": "เขียนโค้ด", "ja": "コード生成", "zh": "写代码", "hi": "कोड लिखना",
+                      "es": "escribir código", "ar": "كتابة الشيفرة"},
+    "suite_summarize": {"en": "summaries", "th": "สรุปความ", "ja": "要約", "zh": "摘要", "hi": "सारांश",
+                        "es": "resúmenes", "ar": "التلخيص"},
+    "suite_longctx": {"en": "long documents", "th": "เอกสารยาว", "ja": "長い文書", "zh": "长文档", "hi": "लंबे दस्तावेज़",
+                      "es": "documentos largos", "ar": "المستندات الطويلة"},
+    "suite_vision": {"en": "images", "th": "รูปภาพ", "ja": "画像", "zh": "图像", "hi": "चित्र", "es": "imágenes",
+                     "ar": "الصور"},
+    "fit_fits": {"en": "fits on your GPU", "th": "รันบน GPU ของคุณได้", "ja": "GPU に収まります", "zh": "可完全放入你的 GPU",
+                 "hi": "आपके GPU पर चलता है", "es": "cabe en tu GPU", "ar": "يتسع في معالج الرسوميات لديك"},
+    "fit_spill": {"en": "fits, some of it in RAM (slower)", "th": "รันได้ แต่บางส่วนอยู่ใน RAM (ช้าลง)",
+                  "ja": "一部を RAM に置けば動きます（遅め）", "zh": "可运行，部分放在内存中（较慢）",
+                  "hi": "चलता है, कुछ हिस्सा RAM में (धीमा)", "es": "cabe, con parte en la RAM (más lento)",
+                  "ar": "يعمل مع جزء في الذاكرة (أبطأ)"},
+    "fit_no": {"en": "too big for this PC", "th": "ใหญ่เกินเครื่องนี้", "ja": "この PC には大きすぎます",
+               "zh": "这台电脑放不下", "hi": "इस PC के लिए बहुत बड़ा", "es": "demasiado grande para este PC",
+               "ar": "أكبر من هذا الحاسوب"},
+    "gb_download": {"en": "{gb} GB download", "th": "ดาวน์โหลด {gb} GB", "ja": "ダウンロード {gb} GB",
+                    "zh": "下载 {gb} GB", "hi": "{gb} GB डाउनलोड", "es": "descarga de {gb} GB", "ar": "تنزيل {gb} GB"},
+    "experts_ram": {"en": "{n} layers' experts in RAM", "th": "experts ของ {n} เลเยอร์อยู่ใน RAM",
+                    "ja": "{n} 層分のエキスパートを RAM に", "zh": "{n} 层的专家放在内存", "hi": "{n} परतों के एक्सपर्ट RAM में",
+                    "es": "expertos de {n} capas en RAM", "ar": "خبراء {n} طبقات في الذاكرة"},
+    "qat": {"en": "trained for this size (QAT)", "th": "ฝึกมาสำหรับขนาดนี้ (QAT)", "ja": "このサイズ向けに学習済み（QAT）",
+            "zh": "为此大小训练（QAT）", "hi": "इसी आकार के लिए प्रशिक्षित (QAT)", "es": "entrenado para este tamaño (QAT)",
+            "ar": "مدرَّب لهذا الحجم (QAT)"},
+    "below_floor": {"en": "below our quality floor", "th": "ต่ำกว่าเกณฑ์คุณภาพของเรา", "ja": "品質基準を下回ります",
+                    "zh": "低于我们的质量下限", "hi": "हमारी गुणवत्ता सीमा से नीचे", "es": "por debajo de nuestro mínimo de calidad",
+                    "ar": "دون حدّ الجودة لدينا"},
+    "running": {"en": "running", "th": "กำลังใช้งาน", "ja": "実行中", "zh": "运行中", "hi": "चल रहा है", "es": "en uso",
+                "ar": "قيد التشغيل"},
+    "downloading": {"en": "downloading {key}", "th": "กำลังดาวน์โหลด {key}", "ja": "{key} をダウンロード中",
+                    "zh": "正在下载 {key}", "hi": "{key} डाउनलोड हो रहा है", "es": "descargando {key}",
+                    "ar": "جارٍ تنزيل {key}"},
+    "downloaded": {"en": "downloaded", "th": "ดาวน์โหลดแล้ว", "ja": "ダウンロード済み", "zh": "已下载", "hi": "डाउनलोड हो गया",
+                   "es": "descargado", "ar": "تم التنزيل"},
+    "run_it": {"en": "run it:", "th": "เริ่มใช้ด้วย:", "ja": "起動するには:", "zh": "运行：", "hi": "चलाने के लिए:",
+               "es": "ejecútalo:", "ar": "شغّله:"},
+    "download_btn": {"en": "Download ({gb} GB)", "th": "ดาวน์โหลด ({gb} GB)", "ja": "ダウンロード（{gb} GB）",
+                     "zh": "下载（{gb} GB）", "hi": "डाउनलोड ({gb} GB)", "es": "Descargar ({gb} GB)", "ar": "تنزيل ({gb} GB)"},
+    "best": {"en": "best for you", "th": "ดีที่สุดสำหรับคุณ", "ja": "あなたに最適", "zh": "最适合你", "hi": "आपके लिए सबसे अच्छा",
+             "es": "el mejor para ti", "ar": "الأفضل لك"},
+    "score_in": {"en": "{score}% in {lang}", "th": "{score}% ใน{lang}", "ja": "{lang}で {score}%", "zh": "{lang} {score}%",
+                 "hi": "{lang} में {score}%", "es": "{score}% en {lang}", "ar": "{score}% في {lang}"},
+    "not_measured": {"en": "not measured in {lang} yet", "th": "ยังไม่ได้วัดใน{lang}", "ja": "{lang}ではまだ未測定",
+                     "zh": "尚未在{lang}中测量", "hi": "{lang} में अभी मापा नहीं गया", "es": "aún sin medir en {lang}",
+                     "ar": "لم يُقَس في {lang} بعد"},
+    "starting": {"en": "starting...", "th": "กำลังเริ่ม...", "ja": "開始中...", "zh": "正在开始...", "hi": "शुरू हो रहा है...",
+                 "es": "iniciando...", "ar": "جارٍ البدء..."},
+    "models_unavailable": {"en": "models unavailable", "th": "ดูรายการโมเดลไม่ได้", "ja": "モデル一覧を取得できません",
+                           "zh": "无法获取模型", "hi": "मॉडल उपलब्ध नहीं", "es": "modelos no disponibles",
+                           "ar": "النماذج غير متاحة"},
+    "models_intro": {
+        "en": "Models we have measured, for this PC ({vram} GB VRAM, {ram} GB RAM free) and your language ({lang}). "
+              "Scores are % correct on real exams; speeds were measured on an RX 9070 XT and scaled for models that "
+              "keep part of themselves in RAM.",
+        "th": "โมเดลที่เราวัดผลแล้ว สำหรับเครื่องนี้ (VRAM {vram} GB, RAM ว่าง {ram} GB) และภาษาของคุณ ({lang}) "
+              "คะแนนคือ % ที่ตอบถูกในข้อสอบจริง ความเร็ววัดบน RX 9070 XT และปรับลดสำหรับโมเดลที่ต้องใช้ RAM บางส่วน",
+        "ja": "この PC（VRAM {vram} GB、空き RAM {ram} GB）とあなたの言語（{lang}）向けに測定済みのモデルです。"
+              "スコアは実際の試験の正答率、速度は RX 9070 XT での実測値で、一部を RAM に置くモデルは換算しています。",
+        "zh": "我们测量过的模型，针对这台电脑（显存 {vram} GB，可用内存 {ram} GB）和你的语言（{lang}）。"
+              "分数是真实考试的正确率；速度在 RX 9070 XT 上测得，部分放在内存的模型已按比例换算。",
+        "hi": "हमारे मापे हुए मॉडल, इस PC ({vram} GB VRAM, {ram} GB खाली RAM) और आपकी भाषा ({lang}) के लिए। "
+              "स्कोर असली परीक्षाओं में सही उत्तरों का % है; गति RX 9070 XT पर मापी गई है और जो मॉडल कुछ हिस्सा RAM "
+              "में रखते हैं उनके लिए समायोजित है।",
+        "es": "Modelos que hemos medido, para este PC ({vram} GB de VRAM, {ram} GB de RAM libre) y tu idioma ({lang}). "
+              "Las puntuaciones son % de aciertos en exámenes reales; las velocidades se midieron en una RX 9070 XT y "
+              "se ajustan para los modelos que dejan parte en la RAM.",
+        "ar": "نماذج قسناها، لهذا الحاسوب ({vram} GB من ذاكرة الرسوميات، {ram} GB ذاكرة متاحة) ولغتك ({lang}). "
+              "الدرجات نسبة الإجابات الصحيحة في اختبارات حقيقية؛ والسرعات مقيسة على RX 9070 XT ومعدّلة للنماذج "
+              "التي تضع جزءًا منها في الذاكرة."},
+    # ---- command line ----------------------------------------------------------------------------------------------
+    "cli_first_run": {"en": "first run: here is what this PC can run",
+                      "th": "ใช้ครั้งแรก: นี่คือสิ่งที่เครื่องนี้รันได้", "ja": "初回起動: この PC で動かせるものは次のとおりです",
+                      "zh": "首次运行：这台电脑能运行的内容如下", "hi": "पहली बार: यह PC क्या चला सकता है",
+                      "es": "primera vez: esto es lo que puede ejecutar este PC", "ar": "التشغيل الأول: هذا ما يستطيع هذا الحاسوب تشغيله"},
+    "cli_ready": {"en": "ready. chat: {url}", "th": "พร้อมแล้ว แชท: {url}", "ja": "準備完了。チャット: {url}",
+                  "zh": "准备就绪。对话：{url}", "hi": "तैयार। चैट: {url}", "es": "listo. chat: {url}",
+                  "ar": "جاهز. المحادثة: {url}"},
+    "cli_best": {"en": "Best measured model for you: {key}", "th": "โมเดลที่วัดแล้วดีที่สุดสำหรับคุณ: {key}",
+                 "ja": "あなたに最適な測定済みモデル: {key}", "zh": "为你测得的最佳模型：{key}",
+                 "hi": "आपके लिए सबसे अच्छा मापा गया मॉडल: {key}", "es": "El mejor modelo medido para ti: {key}",
+                 "ar": "أفضل نموذج مُقاس لك: {key}"},
+    "cli_none_fits": {"en": "No measured model fits this GPU yet. Run `localllm list`, or help by measuring one (`localllm eval`).",
+                      "th": "ยังไม่มีโมเดลที่วัดแล้วรันบน GPU นี้ได้ ดู `localllm list` หรือช่วยวัดด้วย `localllm eval`",
+                      "ja": "この GPU に収まる測定済みモデルはまだありません。`localllm list` を見るか、`localllm eval` で測定にご協力ください。",
+                      "zh": "还没有适合这块 GPU 的已测模型。运行 `localllm list`，或用 `localllm eval` 帮忙测量。",
+                      "hi": "इस GPU पर चलने वाला कोई मापा गया मॉडल अभी नहीं है। `localllm list` चलाएँ या `localllm eval` से मापने में मदद करें।",
+                      "es": "Aún no hay ningún modelo medido que quepa en esta GPU. Ejecuta `localllm list` o ayuda midiendo uno (`localllm eval`).",
+                      "ar": "لا يوجد بعد نموذج مُقاس يتسع لهذه البطاقة. شغّل `localllm list` أو ساعد بقياس نموذج (`localllm eval`)."},
+    "cli_confirm_download": {"en": "download {key} ({gb} GB, once, to {dir})?",
+                             "th": "ดาวน์โหลด {key} ({gb} GB ครั้งเดียว ไปที่ {dir}) ไหม?",
+                             "ja": "{key}（{gb} GB、初回のみ）を {dir} にダウンロードしますか？",
+                             "zh": "下载 {key}（{gb} GB，仅一次，到 {dir}）？",
+                             "hi": "{key} ({gb} GB, एक बार) {dir} में डाउनलोड करें?",
+                             "es": "¿descargar {key} ({gb} GB, una vez, en {dir})?",
+                             "ar": "تنزيل {key} ({gb} GB، مرة واحدة، إلى {dir})؟"},
+}
+
+
+def pick(*candidates: str | None) -> str:
+    """The first supported language among the candidates ("th", "th-TH", "zh_CN" all work), else English."""
+    for c in candidates:
+        code = (c or "").replace("_", "-").split("-")[0].lower()
+        if code in LANGS:
+            return code
+    return "en"
+
+
+def ui_lang(browser: str | None = None) -> str:
+    """--lang / LOCALLLM_LANG, then the browser's language (chat page), then this PC's language."""
+    from .bench import system_language
+    return pick(os.environ.get("LOCALLLM_LANG"), browser, system_language())
+
+
+def t(name: str, lang: str | None = None, /, **kw) -> str:          # positional: {key} is a placeholder
+    entry = STRINGS[name]
+    text = entry.get(lang or ui_lang()) or entry["en"]
+    return text.format(**kw) if kw else text
+
+
+def table(lang: str) -> dict:
+    """What GET /localllm/i18n returns: every string in `lang`, English where a translation is missing."""
+    return {"lang": lang, "dir": "rtl" if lang in RTL else "ltr",
+            "strings": {k: v.get(lang) or v["en"] for k, v in STRINGS.items() if not k.startswith("cli_")}}

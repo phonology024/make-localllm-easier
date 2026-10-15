@@ -12,7 +12,7 @@
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;display:flex}
 button,select,textarea,input{font:inherit;color:inherit}
-aside{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+aside{width:260px;flex:none;background:var(--panel);border-inline-end:1px solid var(--line);display:flex;flex-direction:column}
 aside header{padding:14px;display:flex;gap:8px;align-items:center}
 aside header b{flex:1}
 #sessions{flex:1;overflow:auto;padding:0 8px 8px}
@@ -34,6 +34,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .msg .meta{font-size:12px;color:var(--muted);margin-top:4px}
 .body pre{background:var(--code);padding:10px;border-radius:8px;overflow:auto}
 .body code{background:var(--code);padding:1px 4px;border-radius:4px}
+code{direction:ltr;unicode-bidi:isolate}
 .body pre code{background:none;padding:0}
 details.think{color:var(--muted);font-size:13px;margin-bottom:6px}
 .empty{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
@@ -60,7 +61,7 @@ select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background
 .mcard.no{opacity:.65}
 .mcard h3{margin:0;font-size:15px}
 .mcard .facts{font-size:13px;color:var(--muted)}
-.mcard .act{grid-row:1/span 3;grid-column:2;align-self:center;text-align:right}
+.mcard .act{grid-row:1/span 3;grid-column:2;align-self:center;text-align:end}
 .badges{display:flex;flex-wrap:wrap;gap:6px}
 .badge{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--code)}
 .fit{font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid currentColor}
@@ -68,43 +69,65 @@ select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background
 .best{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--accent);color:var(--accent-ink)}
 .cmd{font-size:12px;user-select:all;background:var(--code);padding:2px 6px;border-radius:4px}
 progress{width:120px}
-@media (max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}aside.open{transform:none}.menu{display:inline-block}}
+@media (max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}[dir=rtl] aside{inset:0 0 0 auto;transform:translateX(100%)}aside.open,[dir=rtl] aside.open{transform:none}.menu{display:inline-block}}
 </style>
 </head>
 <body>
 <aside id="side">
-<header><b>localllm</b><button class="btn" id="new" type="button">New chat</button></header>
+<header><b>localllm</b><button class="btn" id="new" type="button" data-i18n="new_chat">New chat</button></header>
 <div id="sessions"></div>
-<div id="status">status: loading...</div>
+<div id="status" data-i18n="status_loading">status: loading...</div>
 </aside>
 <main>
 <div class="top">
-<button class="btn menu" id="menu" type="button" aria-label="Sessions">&#9776;</button>
-<div class="tabs" role="tablist" aria-label="View">
-<button class="tab" id="tab-chat" role="tab" type="button" aria-selected="true" aria-controls="chatview">Chat</button>
-<button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models" tabindex="-1">Models</button>
+<button class="btn menu" id="menu" type="button" aria-label="Chats" data-i18n-aria="chats">&#9776;</button>
+<div class="tabs" role="tablist" aria-label="View" data-i18n-aria="view">
+<button class="tab" id="tab-chat" role="tab" type="button" aria-selected="true" aria-controls="chatview" data-i18n="tab_chat">Chat</button>
+<button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models" tabindex="-1" data-i18n="tab_models">Models</button>
 </div>
-<label class="grow">Model <select id="model"><option value="">automatic</option></select></label>
-<label><input type="checkbox" id="think"> thinking</label>
+<label class="grow"><span data-i18n="model">Model</span> <select id="model"><option value="" data-i18n="automatic">automatic</option></select></label>
+<label><input type="checkbox" id="think"> <span data-i18n="thinking">thinking</span></label>
 </div>
 <div id="chatview" role="tabpanel" aria-labelledby="tab-chat">
 <div id="log"></div>
 <form id="form"><div class="box">
-<textarea id="input" rows="1" placeholder="Message" title="Enter sends, Shift+Enter adds a line"></textarea>
-<button class="btn primary" id="send" type="submit">Send</button>
+<textarea id="input" rows="1" placeholder="Message" title="Enter sends, Shift+Enter adds a line" data-i18n-placeholder="message" data-i18n-title="enter_hint"></textarea>
+<button class="btn primary" id="send" type="submit" data-i18n="send">Send</button>
 </div></form>
 </div>
 <section id="models" role="tabpanel" aria-labelledby="tab-models" aria-live="polite"></section>
 </main>
-<div id="login"><div><b>This localllm asks for its key</b>
-<p class="small">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
-<input id="key" type="password" autocomplete="current-password" aria-label="API key">
-<button class="btn primary" id="keyok" type="button">Unlock</button></div></div>
+<div id="login"><div><b data-i18n="key_title">This localllm asks for its key</b>
+<p class="small" data-i18n="key_body">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
+<input id="key" type="password" autocomplete="current-password" aria-label="API key" data-i18n-aria="api_key">
+<button class="btn primary" id="keyok" type="button" data-i18n="unlock">Unlock</button></div></div>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
 const S = {id: null, title: "", messages: [], model: ""};
 let key = "", ctrl = null, catalog = {};
+// ---- the page's words (#108): from /localllm/i18n, English where a translation is missing --------------------------
+let L = {}, UI = "en";
+function T(k, vars) {
+  let s = L[k] || k;
+  for (const n in vars || {}) s = s.split("{" + n + "}").join(String(vars[n]));
+  return s;
+}
+function langName(code) {
+  try { return new Intl.DisplayNames([UI], {type: "language"}).of(code) || code; } catch (e) { return code; }
+}
+async function loadStrings() {
+  try {
+    const d = await (await fetch("/localllm/i18n?lang=" + encodeURIComponent(navigator.language || ""))).json();
+    L = d.strings || {}; UI = d.lang || "en";
+    document.documentElement.lang = UI; document.documentElement.dir = d.dir || "ltr";
+  } catch (e) { /* keep the English in the markup */ }
+  document.querySelectorAll("[data-i18n]").forEach((el) => { if (L[el.dataset.i18n]) el.textContent = L[el.dataset.i18n]; });
+  for (const [k, attr] of [["i18nPlaceholder", "placeholder"], ["i18nTitle", "title"], ["i18nAria", "aria-label"]])
+    document.querySelectorAll(`[data-${k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}]`).forEach((el) => {
+      if (L[el.dataset[k]]) el.setAttribute(attr, L[el.dataset[k]]);
+    });
+}
 try { key = sessionStorage.getItem("localllm-key") || ""; } catch (e) {}
 
 function headers(extra) {
@@ -136,7 +159,7 @@ function render(md) {
 function bubble(m) {
   const d = document.createElement("div");
   d.className = "msg " + m.role;
-  d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>thinking</summary>${esc(m.thinking)}</details>` : "")
+  d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>${esc(T("thinking"))}</summary>${esc(m.thinking)}</details>` : "")
     + `<div class="body">${m.role === "user" ? esc(m.content) : render(m.content)}</div>`
     + (m.meta ? `<div class="meta">${esc(m.meta)}</div>` : "");
   return d;
@@ -145,8 +168,8 @@ function draw() {
   const log = $("log");
   log.innerHTML = "";
   if (!S.messages.length) {
-    log.innerHTML = `<div class="empty"><h1>Chat with the model on this PC</h1><p>Nothing leaves this computer. Chats are
-      saved as plain files in <code>~/.localllm/sessions/</code>.</p></div>`;
+    log.innerHTML = `<div class="empty"><h1>${esc(T("empty_title"))}</h1><p>${esc(T("empty_body")).replace("{path}",
+      "<code>~/.localllm/sessions/</code>")}</p></div>`;
     return;
   }
   S.messages.forEach((m) => log.appendChild(bubble(m)));
@@ -161,10 +184,10 @@ async function listSessions() {
   items.forEach((s) => {
     const d = document.createElement("div");
     d.className = "sess" + (s.id === S.id ? " on" : "");
-    d.innerHTML = `<span title="${esc(s.title)}">${esc(s.title || "untitled")}</span><button type="button" aria-label="Delete">&times;</button>`;
+    d.innerHTML = `<span title="${esc(s.title)}">${esc(s.title || T("untitled"))}</span><button type="button" aria-label="${esc(T("delete"))}">&times;</button>`;
     d.querySelector("span").onclick = () => open(s.id);
     d.querySelector("button").onclick = async () => {
-      if (!confirm("Delete this chat?")) return;
+      if (!confirm(T("delete_q"))) return;
       await api("/localllm/sessions/" + s.id, {method: "DELETE"});
       if (s.id === S.id) fresh();
       listSessions();
@@ -196,7 +219,7 @@ async function send(text) {
   const body = {messages: S.messages.slice(0, -1).map((m) => ({role: m.role, content: m.content})), stream: true};
   if ($("model").value) body.model = $("model").value;
   ctrl = new AbortController();
-  $("send").textContent = "Stop";
+  $("send").textContent = T("stop");
   const t0 = performance.now();
   try {
     const r = await fetch("/v1/chat/completions", {method: "POST", headers: headers(), body: JSON.stringify(body), signal: ctrl.signal});
@@ -225,10 +248,10 @@ async function send(text) {
     const speed = timings && timings.predicted_per_second ? `${timings.predicted_per_second.toFixed(1)} tok/s` : "";
     reply.meta = [who || (catalog.single || ""), route !== "local" ? route : "", speed, `${((performance.now() - t0) / 1000).toFixed(1)} s`].filter(Boolean).join(" · ");
   } catch (e) {
-    if (e.name === "AbortError") reply.meta = "stopped";
-    else reply.meta = "error: " + e.message;
+    if (e.name === "AbortError") reply.meta = T("stopped");
+    else reply.meta = T("error", {msg: e.message});
   } finally {
-    ctrl = null; $("send").textContent = "Send";
+    ctrl = null; $("send").textContent = T("send");
     draw(); save();
   }
 }
@@ -254,19 +277,17 @@ async function status() {
   if (document.hidden) return;
   try {
     const d = await (await api("/localllm/status")).json();
-    if (!d.loaded) { $("status").textContent = "model unloaded (idle); it loads on the next message"; return; }
+    if (!d.loaded) { $("status").textContent = T("unloaded"); return; }
     const gb = (v) => v == null ? "?" : v.toFixed(1) + " GB";
     const spill = d.spill_gb != null && d.spill_gb > d.spill_warn_gb;
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
-      + (spill ? `<br><span class="warn">${esc(gb(d.spill_gb))} spilled to system RAM: slower answers</span>` : "")
+      + (spill ? `<br><span class="warn">${esc(T("spilled", {gb: gb(d.spill_gb)}))}</span>` : "")
       + (d.savings ? `<br>${esc(d.savings)}` : "");
-  } catch (e) { $("status").textContent = "status unavailable"; }
+  } catch (e) { $("status").textContent = T("status_unavailable"); }
 }
 
 // ---- Models tab (#107): what fits this PC, scores in its language, one-click download --------------------------------
-const SUITE = {global: "knowledge", regional: "local exams", math: "math", translate: "translation", code: "code",
-  codegen: "writing code", summarize: "summaries", longctx: "long documents", vision: "images"};
-const FIT = {fits: "fits on your GPU", spill: "fits, some of it in RAM (slower)", no: "too big for this PC"};
+const suiteName = (s) => L["suite_" + s] || s;              // suite_global, suite_math, ... in i18n.STRINGS
 let modelsTimer = null;
 
 function showTab(name) {
@@ -292,26 +313,27 @@ function modelCard(m, info) {
   d.className = "mcard " + m.fit;
   const unit = (s) => s === "translate" ? " chrF++" : "%";
   const badges = Object.keys(m.badges).sort().map((s) =>
-    `<span class="badge">${esc(SUITE[s] || s)} ${m.badges[s].toFixed(1)}${unit(s)}</span>`).join("");
-  const facts = [`${m.gb} GB download`, m.tok_s ? `~${m.tok_s} tok/s` : "", m.fit === "spill" ? `${m.experts_in_ram} layers' experts in RAM` : "",
-    m.qat ? "trained for this size (QAT)" : "", m.below_floor ? "below our quality floor" : ""].filter(Boolean).join(" · ");
+    `<span class="badge">${esc(suiteName(s))} ${m.badges[s].toFixed(1)}${unit(s)}</span>`).join("");
+  const facts = [T("gb_download", {gb: m.gb}), m.tok_s ? `~${m.tok_s} tok/s` : "",
+    m.fit === "spill" ? T("experts_ram", {n: m.experts_in_ram}) : "", m.qat ? T("qat") : "",
+    m.below_floor ? T("below_floor") : ""].filter(Boolean).join(" · ");
   let act;
-  if (m.active) act = `<span class="badge">running</span>`;
+  if (m.active) act = `<span class="badge">${esc(T("running"))}</span>`;
   else if (m.download && m.download.state === "downloading")
-    act = `<progress max="100" value="${m.download.pct}" aria-label="downloading ${esc(m.key)}"></progress> ${m.download.pct}%`;
+    act = `<progress max="100" value="${m.download.pct}" aria-label="${esc(T("downloading", {key: m.key}))}"></progress> ${m.download.pct}%`;
   else if (m.downloaded || (m.download && m.download.state === "done"))
-    act = `downloaded<br>run it: <code class="cmd">localllm --ui --model ${esc(m.key)}</code>`;
+    act = `${esc(T("downloaded"))}<br>${esc(T("run_it"))} <code class="cmd">localllm --ui --model ${esc(m.key)}</code>`;
   else if (m.fit === "no") act = "";
-  else act = `<button class="btn" type="button" data-dl="${esc(m.key)}">Download (${m.gb} GB)</button>`
+  else act = `<button class="btn" type="button" data-dl="${esc(m.key)}">${esc(T("download_btn", {gb: m.gb}))}</button>`
     + (m.download && m.download.state === "error" ? `<br><span class="warn">${esc(m.download.error)}</span>` : "");
-  d.innerHTML = `<h3>${esc(m.key)} ${m.key === info.best ? '<span class="best">best for you</span>' : ""}</h3>`
+  d.innerHTML = `<h3>${esc(m.key)} ${m.key === info.best ? `<span class="best">${esc(T("best"))}</span>` : ""}</h3>`
     + `<div class="act">${act}</div>`
-    + `<div><span class="fit ${m.fit}">${FIT[m.fit]}</span> <span class="facts">${esc(facts)}</span></div>`
-    + `<div class="badges">${m.score != null ? `<span class="badge"><b>${m.score}%</b> in ${esc(info.lang)}</span>` : `<span class="badge">not measured in ${esc(info.lang)} yet</span>`}${badges}</div>`
+    + `<div><span class="fit ${m.fit}">${esc(T("fit_" + m.fit))}</span> <span class="facts">${esc(facts)}</span></div>`
+    + `<div class="badges">${m.score != null ? `<span class="badge"><b>${esc(T("score_in", {score: m.score, lang: langName(info.lang)}))}</b></span>` : `<span class="badge">${esc(T("not_measured", {lang: langName(info.lang)}))}</span>`}${badges}</div>`
     + (m.note ? `<div class="facts">${esc(m.note)}</div>` : "");
   const b = d.querySelector("[data-dl]");
   if (b) b.onclick = async () => {
-    b.disabled = true; b.textContent = "starting...";
+    b.disabled = true; b.textContent = T("starting");
     try { await api(`/localllm/models/${encodeURIComponent(m.key)}/download`, {method: "POST"}); } catch (e) {}
     loadModels();
   };
@@ -321,11 +343,11 @@ function modelCard(m, info) {
 async function loadModels() {
   clearTimeout(modelsTimer);
   let info;
-  try { info = await (await api("/localllm/models")).json(); } catch (e) { $("models").textContent = "models unavailable"; return; }
+  try { info = await (await api("/localllm/models")).json(); } catch (e) { $("models").textContent = T("models_unavailable"); return; }
   const box = $("models"), focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.dl : null;
-  box.innerHTML = `<p class="intro">Models we have measured, for this PC (${info.vram_gb} GB VRAM, ${info.ram_free_gb} GB RAM free)
-    and your language (<b>${esc(info.lang)}</b>). Scores are % correct on real exams; speeds were measured on an RX 9070 XT
-    and scaled for models that keep part of themselves in RAM.</p>`;
+  box.innerHTML = `<p class="intro">${esc(T("models_intro", {vram: info.vram_gb, ram: info.ram_free_gb, lang: langName(info.lang)}))}</p>`;
+
+
   const list = document.createElement("div");
   list.className = "mlist";
   info.models.forEach((m) => list.appendChild(modelCard(m, info)));
@@ -335,6 +357,7 @@ async function loadModels() {
 }
 
 async function boot() {
+  await loadStrings();
   try {
     catalog = await (await api("/localllm/catalog")).json();
     const sel = $("model");
@@ -347,7 +370,7 @@ async function boot() {
     });
     if (!catalog.choosable && catalog.single) { sel.options[0].textContent = catalog.single; sel.length = 1; }
     sel.disabled = !catalog.choosable;
-    if (!catalog.choosable) sel.title = "one model is loaded; start with --models A,B to choose";
+    if (!catalog.choosable) sel.title = T("one_model");
     draw(); await listSessions(); status();
   } catch (e) { /* askKey() was shown */ }
 }

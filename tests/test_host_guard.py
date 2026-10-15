@@ -35,6 +35,7 @@ def test_ip_and_localhost_hosts_are_served(gw, host):
 
 @pytest.mark.parametrize("host", ["evil.example:{p}", "evil.example", "127.0.0.1.nip.io:{p}", "localhost.evil.example"])
 @pytest.mark.parametrize("path,method,body", [("/v1/models", "GET", None), ("/", "GET", None),
+                                              ("/localllm/i18n?lang=th", "GET", None),
                                               ("/v1/chat/completions", "POST", {"messages": []}),
                                               ("/localllm/sessions", "GET", None)])
 def test_rebinding_hosts_are_refused_on_every_route(gw, host, path, method, body):

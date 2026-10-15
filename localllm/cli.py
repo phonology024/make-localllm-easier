@@ -28,7 +28,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import __version__, catalog, runtime
+from . import __version__, catalog, i18n, runtime
 
 
 def _say(msg: str) -> None:
@@ -135,7 +135,7 @@ def _model_path(key: str) -> Path:
         return found
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
-        if not confirm(f"download {key} ({m['gb']} GB, once, to {dest.parent})?"):
+        if not confirm(i18n.t("cli_confirm_download", key=key, gb=m["gb"], dir=dest.parent)):
             sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks another.")
         _say(f"downloading {key} ({m['gb']} GB, one time) ...")
         _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
@@ -346,14 +346,14 @@ def first_run() -> bool:
 
 def cmd_run(a) -> None:
     if first_run() and not a.model and sys.stdin.isatty():
-        _say("first run: here is what this PC can run")
+        _say(i18n.t("cli_first_run"))
         cmd_doctor(a)
         print()
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
                        ui=getattr(a, "ui", False))
-    _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
+    _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
         webbrowser.open(url)
@@ -455,13 +455,13 @@ def cmd_doctor(_a) -> None:
     ram_avail = runtime.ram_available_gb()
     key = catalog.pick(vram, lang, ram_avail) if dev else None
     if not key:
-        print("\nNo measured model fits this GPU yet. Run `localllm list`, or help by measuring one (`localllm eval`).")
+        print("\n" + i18n.t("cli_none_fits"))
         return
     m = catalog.MODELS[key]
     cpu_moe = catalog.cpu_moe_layers(key, vram, ram_avail) or 0
     in_ram = cpu_moe * m["moe"]["expert_gb_per_layer"] if cpu_moe else 0.0
     ctx = sizing.context_tokens(vram, {**m, "gb": m["gb"] - in_ram})
-    print(f"\nBest measured model for you: {key}  ({m['note']})")
+    print("\n" + i18n.t("cli_best", key=key) + f"  ({m['note']})")
     stale = catalog.build_note(key, runtime.build_of(server))
     if stale:
         print(f"  note: {stale}")
@@ -624,6 +624,8 @@ VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="localllm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
+    ap.add_argument("--lang", choices=i18n.LANGS, help="language of the chat page and messages (default: the browser's, "
+                    "then this PC's; also LOCALLLM_LANG)")
     ap.add_argument("--yes", "-y", action="store_true", help="don't ask before downloading a model (also LOCALLLM_YES=1)")
     ap.add_argument("--model", choices=list(catalog.MODELS), help="override the automatic pick")
     ap.add_argument("--port", type=int, default=8080)
@@ -729,6 +731,8 @@ def main() -> None:
     a = parse_args()
     global ASSUME_YES
     ASSUME_YES = a.yes
+    if getattr(a, "lang", None):
+        os.environ["LOCALLLM_LANG"] = a.lang          # read by i18n.ui_lang, also in the chat page's server
     if a.fn is cmd_serve:
         a.model = a.model or None
     a.fn(a)
