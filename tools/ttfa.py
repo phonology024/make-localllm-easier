@@ -35,6 +35,8 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=18555)
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--note", default="")
+    ap.add_argument("--until-switch", action="store_true",
+                    help="#128/#152: keep going until the best model is downloaded and the server has switched to it")
     a = ap.parse_args()
     home = Path(tempfile.mkdtemp(prefix="localllm-clean-"))
     env = {**os.environ, "LOCALLLM_HOME": str(home), "LOCALLLM_YES": "1", "PYTHONIOENCODING": "utf-8"}
@@ -70,6 +72,29 @@ def main() -> None:
             time.sleep(0.5)
         st = json.loads(get(url + "/localllm/status", 5) or b"{}")
         marks["download_line"] = st.get("download")
+        if a.until_switch:
+            while time.time() - t0 < 3600:               # the best model's download, then the switch
+                st = json.loads(get(url + "/localllm/status", 5) or b"{}")
+                done = (st.get("download_state") or {}).get("status") == "done"
+                if done and "downloaded_s" not in marks:
+                    marks["downloaded_s"] = round(time.time() - t0, 1)
+                if done:
+                    body = {"messages": [{"role": "user", "content": "Say hello in one short sentence."}],
+                            "max_tokens": 1024}
+                    req = urllib.request.Request(url + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                                 headers={"Content-Type": "application/json"})
+                    try:
+                        with urllib.request.urlopen(req, timeout=600) as r:
+                            label = r.headers.get("X-Localllm-Model") or ""
+                            d = json.load(r)
+                    except OSError:
+                        label, d = "", {}
+                    if "switched from" in label:
+                        marks["switched_s"] = round(time.time() - t0, 1)
+                        marks["switch_label"] = label
+                        marks["model_after"] = Path((d or {}).get("model") or "").name
+                        break
+                time.sleep(5)
     finally:
         if os.name == "nt":       # the whole tree first: once the python parent is gone its llama-server is orphaned
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
