@@ -25,7 +25,13 @@ jobs:
         with:
           node-version: "20"
       - name: The page's strings
-        run: python -c "import json; from localllm import i18n; json.dump({l: i18n.table(l) for l in ('en', 'ar')}, open('strings.json', 'w', encoding='utf-8'), ensure_ascii=False)"
+        run: |
+          python - <<'EOF'
+          import json
+          from localllm import i18n
+          with open("strings.json", "w", encoding="utf-8") as f:
+              json.dump({lang: i18n.table(lang) for lang in ("en", "ar")}, f, ensure_ascii=False)
+          EOF
       - name: axe-core and a browser
         run: |
           npm install --no-save --no-audit --no-fund playwright-core@1.48.2 axe-core@4.10.2
