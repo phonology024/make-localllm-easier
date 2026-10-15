@@ -325,6 +325,7 @@ METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/respo
 
 
 def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
+                 bind_host: str | None = None,
                  ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
@@ -357,11 +358,28 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             """X-Localllm-Stay: 1 keeps the loaded model for this request (no swap)."""
             return (self.headers.get("X-Localllm-Stay") or "").strip().lower() in ("1", "true", "yes")
 
+        def _host_ok(self) -> bool:
+            """DNS-rebinding guard (#137): a request let in without a key must name this server by an IP address,
+            localhost or the --host it listens on. A rebinding page uses its own domain name (re-pointed at
+            127.0.0.1), so it is same-origin with itself and passes the CSRF check, but not this one."""
+            host = self.headers.get("Host")
+            if not host:                                   # HTTP/1.0 clients without Host are not browsers
+                return True
+            name = host[1:].split("]", 1)[0] if host.startswith("[") else host.rsplit(":", 1)[0]
+            if name.lower().rstrip(".") == "localhost" or name == bind_host:
+                return True
+            try:
+                ipaddress.ip_address(name)
+                return True
+            except ValueError:
+                return False
+
         def _authorized(self) -> bool:
             """Strip ?key= from the path; check the key when one is required."""
             self.path, query_key = split_key(self.path)
             if not api_key or (trust_loopback and is_loopback(self.client_address[0])):
-                return True
+                self.bad_host = not self._host_ok()
+                return not self.bad_host
             want = api_key.encode()
             return any(hmac.compare_digest(k.encode(), want) for k in presented_keys(self.headers, query_key))
 
@@ -381,6 +399,10 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
 
         def _deny(self):
             self.close_connection = True                        # the unread request body must not become the next request
+            if getattr(self, "bad_host", False):
+                return self._json(403, {"error": {"type": "permission_error", "message": "unexpected Host header: use "
+                                                  "http://127.0.0.1 or http://localhost (DNS-rebinding guard)"}},
+                                  {"Connection": "close"})
             self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key for this "
                                        "localllm gateway (Authorization: Bearer, x-api-key or ?key=)"}},
                        {"WWW-Authenticate": "Bearer", "Connection": "close"})
@@ -512,8 +534,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(400, {"error": str(e)})
 
         def do_GET(self):
-            if not self._authorized() and self.path != "/":      # the chat page is static; its API calls need the key
-                return self._deny()
+            if not self._authorized() and (self.path != "/" or getattr(self, "bad_host", False)):
+                return self._deny()                             # the chat page is static; its API calls need the key
             if ui and self.path == "/":
                 return self._page()
             if ui and self.path == "/localllm/catalog":
@@ -664,6 +686,7 @@ def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str =
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
-    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, ui, meter))
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, bind_host=host,
+                                             ui=ui, meter=meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
