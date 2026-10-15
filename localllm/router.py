@@ -108,6 +108,7 @@ class Provider:
 class Decision:
     label: str                      # shown to the user in X-Localllm-Route
     provider: Provider | None = None
+    escalate: Provider | None = None   # local, but a failed local agent answer is retried here (#97)
 
 
 def load_config() -> dict:
@@ -178,7 +179,14 @@ def decide(body: dict, path: str, cfg: dict | None = None) -> Decision:
         scores = catalog.MODELS.get(local, {}).get("scores", {}) if local else {}
         if any(k.startswith(lang + "/") for k in scores) and catalog.score(local, lang) < floor:
             return Decision(f"cloud:{cloud.name} ({lang} score {catalog.score(local, lang):.0f} < floor {floor})", cloud)
-    return Decision("local")
+    from .agentcall import classify                # agents under localllm: cheap calls local, hard ones opt-in cloud
+    kind, why = classify(body)
+    if kind == "chat":
+        return Decision("local")
+    if kind == "hard" and rules.get("agent_hard_to_cloud"):
+        return Decision(f"cloud:{cloud.name} (agent call, hard: {why})", cloud)
+    return Decision(f"local (agent call, {kind}: {why})", None,
+                    cloud if rules.get("escalate_failed_local") else None)
 
 
 SWITCH_POINTS = 3.0   # swapping models costs seconds on one GPU: only switch for a clear accuracy gain

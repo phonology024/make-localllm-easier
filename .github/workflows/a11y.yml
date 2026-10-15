@@ -1,0 +1,40 @@
+name: a11y
+# axe-core on the chat page in Chromium: light/dark, English/Arabic, chat / Models tab / key dialog (#121).
+# Fails on any serious or critical WCAG 2.1 A/AA violation (contrast included). Script: tools/a11y_check.mjs
+on:
+  push:
+    branches: [main]
+    paths: [localllm/ui.html, localllm/i18n.py, tools/a11y_check.mjs, .github/workflows/a11y.yml]
+  pull_request:
+    paths: [localllm/ui.html, localllm/i18n.py, tools/a11y_check.mjs, .github/workflows/a11y.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  axe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: The page's strings
+        run: |
+          python - <<'EOF'
+          import json
+          from localllm import i18n
+          with open("strings.json", "w", encoding="utf-8") as f:
+              json.dump({lang: i18n.table(lang) for lang in ("en", "ar")}, f, ensure_ascii=False)
+          EOF
+      - name: axe-core and a browser
+        run: |
+          npm install --no-save --no-audit --no-fund playwright-core@1.48.2 axe-core@4.10.2
+          npx -y playwright@1.48.2 install --with-deps chromium
+      - name: Check
+        run: node tools/a11y_check.mjs localllm/ui.html strings.json

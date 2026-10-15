@@ -15,7 +15,7 @@ Hindi, Arabic and Thai lose the most (13 points).
 **Can it use a different local model for each message?** Yes, opt-in: `localllm serve --models auto` routes each
 message to the model with the best measured score for its language and task (e.g. Chinese knowledge to Qwen3.8,
 Chinese math to gemma-4) and says which model answered. On a 16 GB card a swap costs 4-9 s, so it only switches for a
-gain of 3+ points; on 24 GB+ cards both models stay loaded and routing is instant.
+gain of 3+ points; on 32 GB cards both models stay loaded and routing is instant.
 
 **Which local model is better at math?** On MGSM (the same 250 word problems in 11 languages), gemma-4-26B-A4B QAT
 scores 96.8 / 89.6 / 88.8 in English / Thai / Chinese vs 94.4 / 87.2 / 84.4 for Qwen3.8-27B Q3, at 1.8x the speed.
@@ -49,6 +49,13 @@ instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`
 models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
 internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
 
+**Which model should I download?** Open the **Models** tab in `localllm --ui`: every model we have measured, marked
+*fits on your GPU*, *fits, some of it in RAM (slower)* or *too big for this PC*, with its exam scores in your language,
+the expected speed and a download button (checked against its SHA-256). The best one for your PC and language is
+marked.
+
+![The Models tab on a 12 GB card, Thai](img/models-tab.png)
+
 **How much does running an agent locally save?** `localllm savings` counts what this PC answered this month and,
 at the cloud prices you enter once, what it would have cost ([docs/apis.md](apis.md#hermes-with-localllm-and-what-it-saves)).
 
@@ -68,6 +75,8 @@ config comes back when you quit). Start the server with `localllm serve --profil
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
 and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
+In a terminal it also prints a QR code of the address for the phone's camera (without the key unless `--qr-key`), and
+the page can be added to the phone's home screen.
 See [LAN mode](apis.md#use-it-from-another-device-on-your-network-lan-mode).
 
 **Can it fall back to my cloud API key?** Only if you turn it on. Routing is off by default; with your own key in an
@@ -82,6 +91,17 @@ localllm picked, the speed `tune` measured, your score in your language and the 
 leaderboard page. It comes from the same report as the issue (no names, paths or keys) and is saved next to it in
 `~/.localllm/`.
 
+**Something broke. What should I send?** `localllm bugreport` writes one zip with the `doctor` output, versions, the
+last lines of the llama-server log and localllm's settings, with API keys, tokens (the LAN key too), your user name
+and your home folder taken out. The log can hold text from your recent prompts, so it lists what is inside and asks
+first; `--show` prints all of it. Nothing is sent:
+attach the zip to a [bug report](https://github.com/phonology024/make-localllm-easier/issues/new?template=bug.yml).
+
+**Do I need Python?** No. Every release since 0.7.1 has a single `localllm` file for Windows (x64), macOS (Apple
+Silicon and Intel) and Linux (x64), plus an AppImage, with `SHA256SUMS` to check them: [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest). They
+are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.9+,
+`pip install make-localllm-easier` does the same.
+
 **Does it work offline?** After the first download, yes. Your chats never leave your PC. The only other request is the once-a-day update check, which sends nothing about you and is off with `localllm updates off`.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
@@ -89,6 +109,11 @@ file (llama.cpp, models, vision projectors, the task router) is downloaded from 
 SHA-256 stored in the code before it is used. A mismatch deletes the file and stops with the reason.
 `LOCALLLM_LLAMA_BUILD=latest` (or `=bNNNNN`) picks another llama.cpp build, checked against the digest GitHub lists for
 it.
+
+**Is the chat page in my language?** In English, Thai, Japanese, Chinese, Hindi, Spanish and Arabic (right to left):
+it follows your browser's language, then your PC's; `localllm --lang th` (or `LOCALLLM_LANG`) sets it. The first-run
+lines, the ready line and the download question in the terminal follow the same setting. The strings are in
+`localllm/i18n.py`; fixes from native speakers are very welcome.
 
 **Which languages are measured?** 23 languages on Global-MMLU-Lite, 44 countries' own exams on INCLUDE, plus Thai
 (ThaiExam). `localllm eval --langs ...` measures any of them on your hardware.

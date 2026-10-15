@@ -60,6 +60,22 @@ The head trained in CI moves by one message between the two runner CPUs (float d
 slightly different fit); keyword rules first is ahead of embedding only in every run. The first message also starts the
 embedding server: 1.3-1.5 s, once.
 
+## Human-written test set (#40)
+
+`shared_test.jsonl` was written by an AI, like part of the training data, so its 97.9% doesn't prove the router works
+on how people really type. `human_test.jsonl` collects real requests from native speakers:
+
+1. Open a [Routing examples](https://github.com/phonology024/make-localllm-easier/issues/new?template=routing-examples.yml)
+   issue: the language, then one `label | text` per line (labels as above). A bot comments within a minute with what is
+   accepted: no links, e-mail addresses or long numbers, nothing already in the test or training data.
+2. A maintainer adds it: `python tools/router/add_human_examples.py --issue N` (it keeps the issue number on each line,
+   so anyone can ask for theirs to be removed).
+3. Score both routers on it: `python tools/router/train_router.py MODEL --test tools/router/human_test.jsonl` and
+   `python tools/router/eval_laya.py tools/router/human_test.jsonl`.
+
+Done when it has 300+ examples in 8+ languages (Thai, Hindi, Arabic, Indonesian, Vietnamese, Japanese, Spanish and
+Portuguese are most wanted) with both scores posted on #40.
+
 ## In the package (#35)
 
 `localllm serve --models auto` decides each message's task with `router.classify_task()`: the keyword rules first (they

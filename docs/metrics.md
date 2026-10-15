@@ -7,6 +7,15 @@ by anyone who is not a maintainer; `localllm report` issues are the ones labelle
 |---|---|---|---|---|---|
 | 2026-10-13 | 3 | 2 | 690 | 0 | 0 |
 
+## Weekly snapshot
+
+Every Monday the `metrics` workflow runs `tools/traction.py` and adds one JSON line to `data/metrics.jsonl` on the
+`metrics` branch (main is protected, so the data has its own branch): stars, forks, watchers, GitHub clones and views
+(14-day count and uniques), PyPI downloads (7 and 30 days, no mirrors), release asset downloads per tag,
+`localllm report` issues, issues from outside the project and reports on the leaderboard. Read it with
+`git fetch origin metrics && git show origin/metrics:data/metrics.jsonl`; run it by hand from the Actions tab
+(*metrics* > *Run workflow*) or locally with `python tools/traction.py --print`.
+
 ## Targets
 
 Set after the first full month (next snapshot 2026-11-13), so they come from a real baseline. Working numbers for the
