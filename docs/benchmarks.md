@@ -78,8 +78,9 @@ are. A passage counts when it holds the needle's name and number, on both sides.
 | es | 95.0% [86.3-98.3] | 100% [94.0-100] | 96.7% [88.6-99.1] | 100% [94.0-100] | 60 |
 
 **What this means.**
-- **The answer is almost always in what the model gets.** Recall@5 is 100% for text files in every language
-  measured.
+- **On this test set, the answer was always in what the model gets.** Recall@5 is 100% for text files in every
+  language measured. That is the ceiling of this test: 10 short documents (~23 passages each) and 60 questions per
+  language, so it doesn't show how recall@5 holds up on long documents or many attached files.
 - **First place is less sure.** Chinese ranks the right passage first 73% of the time, Spanish 95%. The model reads
   all five, so this matters less than recall@5.
 - **PDFs behave like text, except Arabic.**
