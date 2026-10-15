@@ -169,7 +169,9 @@ say("end")
 
 def docker() -> str | None:
     """The docker CLI if it reaches a running engine for Linux containers (the sandbox image is Linux), else None."""
-    exe = shutil.which("docker")
+    # on Windows, Docker Desktop also puts an extensionless `docker` shell script (for WSL) on PATH, and Python 3.12+
+    # which("docker") returns it; it cannot be started, so the sandbox looked unavailable with Docker running
+    exe = shutil.which("docker.exe" if os.name == "nt" else "docker")
     if not exe:
         return None
     try:
