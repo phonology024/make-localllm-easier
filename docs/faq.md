@@ -109,8 +109,9 @@ small multilingual embedding model that runs on the CPU (multilingual-e5-small, 
 (file and page or line); click one in the page to read it. The same file attached again is not indexed again.
 Deleting `~/.localllm/docs` only removes the index, never your files. PDFs need pypdf: if it isn't installed, localllm
 asks once and downloads the pinned version (0.4 MB, checked against its SHA-256). Scanned PDFs (pictures of pages, no
-text layer) can't be read, since there is no OCR, and text taken out of PDFs in Thai, Hindi or Arabic can lose
-some marks; DOCX, TXT and MD keep every character.
+text layer) can't be read, since there is no OCR. Text taken out of PDFs in Thai, Hindi or Arabic can lose some
+marks, and Arabic PDFs find the right passage less often (recall@5 93% against 100% as text, [benchmarks](benchmarks.md#chat-with-your-files-does-attach-find-the-passage-113)),
+so attach Arabic documents as DOCX or TXT when you can; DOCX, TXT and MD keep every character.
 
 **Does it work offline?** After the first download, yes. Your chats never leave your PC. The only other requests are the update check: two small requests a day to the project website, nothing about you is sent, and it is off with `localllm updates off`.
 

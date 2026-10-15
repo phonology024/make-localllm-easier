@@ -24,6 +24,7 @@ def _doctor(monkeypatch) -> str:
     monkeypatch.setattr(runtime, "build_of", lambda server: None)
     monkeypatch.setattr(bench, "system_language", lambda: "th")
     monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr("localllm.docs.index_size", lambda root=None: (0, 0.0))     # not this PC's attached files
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         cli.cmd_doctor(None)

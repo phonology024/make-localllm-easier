@@ -731,6 +731,11 @@ def cmd_doctor(_a) -> None:
     print(f"  leaves ~{ram_free:.0f} GB of RAM free for other apps (est.)")
     from .taskclf import EMBED_MODEL, EMBED_RAM_GB
     print(f"  with --embeddings: + ~{EMBED_RAM_GB:g} GB RAM for {EMBED_MODEL} on the CPU, no VRAM (est.)")
+    from .docs import index_size
+    files, mb = index_size()
+    have = f"{files} file{'s' * (files != 1)} indexed, {mb:.1f} MB" if files else "nothing indexed yet"
+    print(f"  chat with your files (/attach): the same model, + ~{EMBED_RAM_GB:g} GB RAM if it isn't running yet, "
+          f"+ the index of the files attached ({have}; ~/.localllm/docs)")
     same = bw == sizing.BANDWIDTH["rx 9070 xt"]
     est = m["tok_s_9070xt"] if same else (int(m["tok_s_9070xt"] * bw / 640) if bw else None)
     from . import tune
@@ -1045,6 +1050,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="global,regional (knowledge), math (MGSM), translate (FLORES, chrF++), code (CRUXEval), "
                         "codegen (EvalPlus, needs Docker), vision (MaXM image questions; the server needs a vision "
                         "projector), longctx (needles in 8k-64k documents; start the server with --profile max), "
+                        "docqa (does /attach find the passage: retrieval only, CPU, --url unused), "
                         "summarize (LR-Sum news, chrF++ and ROUGE-L)")
     e.set_defaults(fn=cmd_eval)
     return ap
