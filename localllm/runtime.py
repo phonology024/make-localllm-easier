@@ -31,15 +31,20 @@ def _asset() -> str:
     return f"bin-{system}-vulkan-{arch}"
 
 
-def find_server() -> Path:
-    """LOCALLLM_LLAMA_SERVER, else the wanted build under ~/.localllm/llama.cpp/<build>/ (downloaded once). With
-    LOCALLLM_LLAMA_BUILD=latest any build already there is used."""
+def installed_server() -> Path | None:
+    """LOCALLLM_LLAMA_SERVER, else the wanted build if it is already under ~/.localllm/llama.cpp/<build>/; never
+    downloads. With LOCALLLM_LLAMA_BUILD=latest any build already there is used."""
     if os.environ.get("LOCALLLM_LLAMA_SERVER"):
         return Path(os.environ["LOCALLLM_LLAMA_SERVER"])
     build = os.environ.get("LOCALLLM_LLAMA_BUILD", LLAMA_BUILD)
     where = HOME / "llama.cpp" / ("" if build == "latest" else build)
     found = sorted(where.rglob(EXE)) if where.exists() else []
-    return found[-1] if found else fetch_server()
+    return found[-1] if found else None
+
+
+def find_server() -> Path:
+    """installed_server(), else the wanted build downloaded once."""
+    return installed_server() or fetch_server()
 
 
 def build_of(server: Path) -> str | None:

@@ -71,9 +71,15 @@ def save_defaults(changes: dict, why: str | None = None) -> dict:
 
 
 def _gpu_present() -> bool:
+    """Only with the llama.cpp build already on disk: this runs before every command (`localllm list` too), so it must
+    never be what downloads llama.cpp (after an upgrade pins a new build, say). Not installed or broken: keep the
+    fallback; the next run that starts a model fetches llama.cpp anyway and checks again."""
+    server = runtime.installed_server()
+    if server is None:
+        return False
     try:
-        return bool(runtime.devices(runtime.find_server()))
-    except (OSError, RuntimeError, SystemExit):       # llama.cpp missing or broken: keep the fallback, start anyway
+        return bool(runtime.devices(server))
+    except (OSError, RuntimeError):
         return False
 
 

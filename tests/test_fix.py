@@ -166,3 +166,17 @@ def test_a_model_not_saved_by_no_gpu_never_triggers_a_gpu_probe():
     fix.save_defaults({"model": "x"}, why="no-gpu")
     fix.save_defaults({"model": "qwen3.8-27b-iq2"})                              # saved again without a reason
     assert "why" not in json.loads(fix.DEFAULTS.read_text())
+
+
+def test_the_gpu_probe_never_downloads_llama_cpp(monkeypatch, tmp_path):
+    """apply_defaults runs before every command (`localllm list` too): with the pinned build not on disk (an upgrade
+    pinned a new one, say) the no-gpu default is kept and nothing is fetched."""
+    monkeypatch.delenv("LOCALLLM_LLAMA_SERVER", raising=False)
+    monkeypatch.delenv("LOCALLLM_LLAMA_BUILD", raising=False)
+    monkeypatch.setattr(fix.runtime, "HOME", tmp_path / "empty-home")
+    monkeypatch.setattr(fix.runtime, "fetch_server", lambda *a, **k: pytest.fail("downloaded llama.cpp"))
+    monkeypatch.setattr(fix.runtime, "devices", lambda server: pytest.fail("ran llama-server"))
+    fix.save_defaults({"model": "x"}, why="no-gpu")
+    a = SimpleNamespace(port=8080, model=None, profile="lean")
+    fix.apply_defaults(a, given=set())                                          # the real probe
+    assert a.model == "x" and fix.runtime.installed_server() is None
