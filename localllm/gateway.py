@@ -393,12 +393,24 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return False
             return self.headers.get(UI_HEADER) == "1"
 
+        def _drain(self, limit: int = 1 << 20) -> None:
+            """Read and drop a small unread request body before refusing it. Closing a socket that still holds
+            unread data makes Windows reset the connection, so the client sees WinError 10053 instead of our 401."""
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return
+            if 0 < n <= limit:
+                self.rfile.read(n)
+
         def _forbid(self):
+            self._drain()
             self.close_connection = True
             self._json(403, {"error": "this request must come from the localllm chat page"}, {"Connection": "close"})
 
         def _deny(self):
-            self.close_connection = True                        # the unread request body must not become the next request
+            self._drain()
+            self.close_connection = True                        # a bigger unread body must not become the next request
             if getattr(self, "bad_host", False):
                 return self._json(403, {"error": {"type": "permission_error", "message": "unexpected Host header: use "
                                                   "http://127.0.0.1 or http://localhost (DNS-rebinding guard)"}},
