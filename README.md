@@ -25,6 +25,11 @@ single `localllm` file for Windows, macOS or Linux (or the AppImage) from the [l
 from a terminal; `SHA256SUMS` there lets you check it. winget and Homebrew follow
 ([packaging/README.md](packaging/README.md)).
 
+Or ask your coding agent (Claude Code, Cursor, Codex): paste
+`Install localllm: https://raw.githubusercontent.com/phonology024/make-localllm-easier/main/docs/install-for-agents.md`.
+It checks your PC first without changing anything, and asks before each install or download
+([what it may and may not do](docs/install-for-agents.md)).
+
 ## The commands you'll use
 
 ```
