@@ -986,7 +986,7 @@ def build_parser() -> argparse.ArgumentParser:
     bg = sub.add_parser("bugreport", help="doctor, versions, recent logs and settings in one zip, secrets taken out")
     bg.add_argument("--show", action="store_true", help="print every file before asking")
     bg.set_defaults(fn=cmd_bugreport)
-    up = sub.add_parser("updates", help="update notices: on, off, or check now (one request a day when on)")
+    up = sub.add_parser("updates", help="update notices: on, off, or check now (two small requests a day when on)")
     up.add_argument("action", choices=["on", "off", "check"])
     up.set_defaults(fn=cmd_updates)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
