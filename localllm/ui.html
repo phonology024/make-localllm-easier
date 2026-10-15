@@ -40,6 +40,17 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 code{direction:ltr;unicode-bidi:isolate}
 .body pre code{background:none;padding:0}
 details.think{color:var(--muted);font-size:13px;margin-bottom:6px}
+#files{max-width:780px;margin:0 auto 8px;display:flex;flex-wrap:wrap;gap:6px}
+#files:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px;background:var(--panel)}
+.chip button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;line-height:1;padding:0 4px}
+.chip.busy{color:var(--muted)}
+.sources{font-size:12px;color:var(--muted);margin-top:6px}
+.sources details{display:inline-block;margin-inline-end:10px;vertical-align:top}
+.sources details[open]{display:block;margin:4px 0}
+.sources summary{cursor:pointer}
+.sources blockquote{margin:4px 0 6px;padding:6px 10px;border-inline-start:3px solid var(--line);color:var(--text);white-space:pre-wrap;font-size:13px}
+#chatview.drop{outline:2px dashed var(--accent);outline-offset:-8px}
 .empty{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
 .empty h1{color:var(--text);font-size:22px}
 form{border-top:1px solid var(--line);padding:12px 16px}
@@ -96,7 +107,9 @@ progress{width:120px}
 </div>
 <div id="chatview" role="tabpanel" aria-labelledby="tab-chat">
 <div id="log" role="log" aria-live="polite" aria-busy="false" tabindex="0" aria-label="Chat" data-i18n-aria="tab_chat"></div>
-<form id="form"><div class="box">
+<form id="form"><div id="files" aria-live="polite"></div><div class="box">
+<button class="btn" id="attach" type="button" aria-label="Attach files" data-i18n-aria="attach" title="Attach files" data-i18n-title="attach"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+<input type="file" id="pick" multiple hidden accept=".pdf,.docx,.txt,.md,.markdown,.text">
 <textarea id="input" rows="1" aria-label="Message" data-i18n-aria="message" placeholder="Message" title="Enter sends, Shift+Enter adds a line" data-i18n-placeholder="message" data-i18n-title="enter_hint"></textarea>
 <button class="btn primary" id="send" type="submit" data-i18n="send">Send</button>
 </div></form>
@@ -110,7 +123,7 @@ progress{width:120px}
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const S = {id: null, title: "", messages: [], model: ""};
+const S = {id: null, title: "", messages: [], model: "", files: []};
 let key = "", ctrl = null, catalog = {};
 // ---- the page's words (#108): from /localllm/i18n, English where a translation is missing --------------------------
 let L = {}, UI = "en";
@@ -176,7 +189,9 @@ function bubble(m) {
   d.className = "msg " + m.role;
   d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>${esc(T("thinking"))}</summary>${esc(m.thinking)}</details>` : "")
     + `<div class="body">${m.role === "user" ? esc(m.content) : render(m.content)}</div>`
-    + (m.meta ? `<div class="meta">${esc(m.meta)}</div>` : "");
+    + (m.meta ? `<div class="meta">${esc(m.meta)}</div>` : "")
+    + (m.sources && m.sources.length ? `<div class="sources">${esc(T("sources"))}: ` + m.sources.map((h) =>
+      `<details><summary>[${h.n}] ${esc(h.name)} ${esc(h.loc)}</summary><blockquote>${esc(h.text)}</blockquote></details>`).join("") + "</div>" : "");
   return d;
 }
 function draw() {
@@ -213,12 +228,13 @@ async function listSessions() {
 }
 async function open(id) {
   const r = await api("/localllm/sessions/" + id);
-  Object.assign(S, await r.json());
+  Object.assign(S, {files: []}, await r.json());
   $("model").value = S.model || "";
+  drawFiles();
   $("side").classList.remove("open");
   draw(); listSessions();
 }
-function fresh() { Object.assign(S, {id: null, title: "", messages: [], model: $("model").value}); draw(); listSessions(); }
+function fresh() { Object.assign(S, {id: null, title: "", messages: [], model: $("model").value, files: []}); drawFiles(); draw(); listSessions(); }
 async function save() {
   if (!S.id) S.id = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
   if (!S.title) S.title = (S.messages.find((m) => m.role === "user") || {content: ""}).content.slice(0, 60);
@@ -233,6 +249,12 @@ async function send(text) {
   draw();
   const node = $("log").lastChild;
   const body = {messages: S.messages.slice(0, -1).map((m) => ({role: m.role, content: m.content})), stream: true};
+  if (S.files.length) {          // #113: the passages go with this turn only; the saved chat keeps the question
+    try {
+      const f = await (await api("/localllm/docs/search", {method: "POST", body: JSON.stringify({q: text, ids: S.files.map((x) => x.id)})})).json();
+      if (f.hits) { body.messages[body.messages.length - 1].content = f.message; reply.sources = f.hits; }
+    } catch (e) { reply.meta = T("error", {msg: e.message}); }
+  }
   if ($("model").value) body.model = $("model").value;
   ctrl = new AbortController();
   $("log").setAttribute("aria-busy", "true");
@@ -290,6 +312,56 @@ $("new").onclick = fresh;
 $("menu").onclick = () => $("side").classList.toggle("open");
 $("model").onchange = () => { S.model = $("model").value; };
 $("think").onchange = draw;
+
+// ---- chat with your files (#113): the paperclip or drop; indexed on this PC under ~/.localllm/docs, sources under each answer --
+function drawFiles() {
+  const box = $("files");
+  box.innerHTML = "";
+  S.files.forEach((f, i) => {
+    const c = document.createElement("span");
+    c.className = "chip" + (f.busy ? " busy" : "");
+    c.innerHTML = esc(f.busy ? T("indexing", {name: f.name}) : f.name)
+      + (f.busy ? "" : `<button type="button" aria-label="${esc(T("detach", {name: f.name}))}">&times;</button>`);
+    if (!f.busy) c.querySelector("button").onclick = () => { S.files.splice(i, 1); drawFiles(); if (S.id) save(); };
+    box.appendChild(c);
+  });
+}
+async function upload(file, download) {
+  const r = await fetch("/localllm/docs?name=" + encodeURIComponent(file.name) + (download ? "&download=1" : ""),
+                        {method: "POST", headers: headers({"Content-Type": "application/octet-stream"}), body: file});
+  if (r.status === 401) { askKey(); throw new Error("key needed"); }
+  const d = await r.json();
+  if (r.status === 409 && d.need === "pdf" && !download) {
+    if (!confirm(T("pdf_q"))) throw new Error(d.error);
+    return upload(file, true);
+  }
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+async function attach(list) {
+  for (const file of list) {
+    const slot = {name: file.name, busy: true};
+    S.files.push(slot); drawFiles();
+    try {
+      const m = await upload(file, false);
+      S.files.splice(S.files.indexOf(slot), 1);
+      if (!S.files.some((f) => f.id === m.id)) S.files.push({id: m.id, name: m.name, chunks: m.chunks});
+    } catch (e) {
+      S.files.splice(S.files.indexOf(slot), 1);
+      alert(T("attach_failed", {name: file.name, msg: e.message}));
+    }
+    drawFiles();
+  }
+  if (S.id) save();
+}
+$("attach").onclick = () => $("pick").click();
+$("pick").onchange = () => { attach([...$("pick").files]); $("pick").value = ""; };
+$("chatview").addEventListener("dragover", (ev) => { ev.preventDefault(); $("chatview").classList.add("drop"); });
+$("chatview").addEventListener("dragleave", () => $("chatview").classList.remove("drop"));
+$("chatview").addEventListener("drop", (ev) => {
+  ev.preventDefault(); $("chatview").classList.remove("drop");
+  if (ev.dataTransfer && ev.dataTransfer.files.length) attach([...ev.dataTransfer.files]);
+});
 
 async function status() {
   if (document.hidden) return;

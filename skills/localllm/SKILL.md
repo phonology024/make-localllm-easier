@@ -40,7 +40,7 @@ https://raw.githubusercontent.com/phonology024/make-localllm-easier/main/docs/in
 | `localllm` | first run: pick, download (asks first), serve, open the chat page |
 | `localllm serve` | just the API, no browser; add `--profile max` for agent work (largest context that fits) |
 | `localllm serve --models auto` | route each message to the best local model for its language/task |
-| `localllm chat` | chat in the terminal |
+| `localllm chat` | chat in the terminal; inside it, `/attach FILE` answers from PDF/DOCX/TXT/MD with sources (a PDF asks before its one 0.4 MB download) |
 | `localllm launch <tool>` | start the server, connect the tool, run it, undo the config when it exits |
 
 `localllm` and `localllm serve` keep running in the foreground. Start them as a background process, or ask the user to

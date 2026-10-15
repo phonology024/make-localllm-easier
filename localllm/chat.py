@@ -2,6 +2,7 @@
 
   localllm chat                 start the recommended model if nothing is running, then chat
   /clear  /think  /stay  /status  /save FILE  /exit   (Ctrl+C stops the current answer, Ctrl+C again exits)
+  /attach PATH  /docs  /detach N|all                   answer from your files, with sources (#113, docs.py)
 """
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ import urllib.request
 from pathlib import Path
 
 HELP = ("commands: /clear new chat  /think show or hide reasoning  /stay keep the current model (no swaps)  "
-        "/status memory, spill, context  /save FILE  /exit   (Ctrl+C stops an answer)")
+        "/status memory, spill, context  /attach FILE|FOLDER answer from your files  /docs  /detach N|all  "
+        "/save FILE  /exit   (Ctrl+C stops an answer)")
 CHECK_EVERY = 5   # answers between background spill checks (one check takes ~1-2 s on Windows)
 
 
@@ -119,9 +121,12 @@ def _check_spill(url: str, pending: list) -> None:
         pending.append(w)
 
 
-def repl(url: str, model_label: str = "") -> None:
+def repl(url: str, model_label: str = "", files=None) -> None:
     _utf8_console()
     print(f"[localllm] chatting with {model_label or url}. {HELP}")
+    if files is None:
+        from . import cli, docs
+        files = docs.Attached(ask=cli.confirm)
     messages: list[dict] = []
     show_thinking = stay = False
     last: dict = {}
@@ -159,15 +164,25 @@ def repl(url: str, model_label: str = "") -> None:
             except OSError as e:
                 print(f"(could not save: {e})")
             continue
+        if text.startswith("/attach"):
+            files.attach(text[7:])
+            continue
+        if text == "/docs":
+            print(files.listing())
+            continue
+        if text.startswith("/detach"):
+            files.detach(text[7:])
+            continue
         if text.startswith("/"):
             print(HELP)
             continue
         messages.append({"role": "user", "content": text})
+        sent, hits = files.question(text)          # only this turn carries the passages; history keeps the question
         if pending and not warned:
             print(f"\x1b[33m{pending[0]}\x1b[0m")
             warned = True
         try:
-            answer, t = stream(url, messages, show_thinking, stay=stay)
+            answer, t = stream(url, messages[:-1] + [{"role": "user", "content": sent}], show_thinking, stay=stay)
         except KeyboardInterrupt:
             print("\n(stopped)")
             messages.pop()
@@ -177,6 +192,9 @@ def repl(url: str, model_label: str = "") -> None:
             messages.pop()
             continue
         messages.append({"role": "assistant", "content": answer})
+        if hits:
+            from .docs import sources_line
+            print(f"\x1b[2m{sources_line(hits)}\x1b[0m")
         last, answers = t, answers + 1
         if not warned and not pending and answers % CHECK_EVERY == 0:   # spill can appear later (long context)
             threading.Thread(target=_check_spill, args=(url, pending), daemon=True).start()

@@ -102,6 +102,16 @@ Silicon and Intel) and Linux (x64), plus an AppImage, with `SHA256SUMS` to check
 are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.9+,
 `pip install make-localllm-easier` does the same.
 
+**Can it answer questions about my documents?** Yes: `/attach FILE` (or a folder) in `localllm chat`, or drop the
+file on the chat in `localllm --ui`. PDF, DOCX, TXT and MD. The text is split into passages and indexed on this PC by a
+small multilingual embedding model that runs on the CPU (multilingual-e5-small, about 0.2 GB of RAM, no VRAM), in
+`~/.localllm/docs/`. For each question the five closest passages go to the model, and the answer lists them as sources
+(file and page or line); click one in the page to read it. The same file attached again is not indexed again.
+Deleting `~/.localllm/docs` only removes the index, never your files. PDFs need pypdf: if it isn't installed, localllm
+asks once and downloads the pinned version (0.4 MB, checked against its SHA-256). Scanned PDFs (pictures of pages, no
+text layer) can't be read, since there is no OCR, and text taken out of PDFs in Thai, Hindi or Arabic can lose
+some marks; DOCX, TXT and MD keep every character.
+
 **Does it work offline?** After the first download, yes. Your chats never leave your PC. The only other requests are the update check: two small requests a day to the project website, nothing about you is sent, and it is off with `localllm updates off`.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every

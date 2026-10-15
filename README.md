@@ -42,6 +42,10 @@ localllm serve      # just the API: OpenAI, Anthropic, Ollama and Gemini formats
 More: `localllm list` (every measured model), `localllm connect hermes` (point an agent or Obsidian at it),
 `localllm eval` (score any server in your language). All commands: `localllm --help`.
 
+**Chat with your files.** In `localllm chat` type `/attach report.pdf` (or a folder); in the `--ui` page, drop a file on
+the chat. Each answer comes from the passages that match your question and lists them as sources (file and page),
+all on this PC. PDF, DOCX, TXT and MD.
+
 ## Why it's different
 
 - **It picks for your GPU.** It reads your card and RAM and only offers models that fit and run fast on them.

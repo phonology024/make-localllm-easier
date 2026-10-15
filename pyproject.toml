@@ -13,6 +13,9 @@ dependencies = []
 keywords = ["llm", "local-llm", "llama.cpp", "vulkan", "amd", "gguf", "thai", "offline-ai"]
 classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License", "Operating System :: OS Independent", "Topic :: Scientific/Engineering :: Artificial Intelligence"]
 
+[project.optional-dependencies]
+pdf = ["pypdf==6.19.0"]        # chat with PDFs (#113); without it localllm asks and fetches this exact wheel, SHA-256 checked
+
 [project.urls]
 Homepage = "https://github.com/phonology024/make-localllm-easier"
 

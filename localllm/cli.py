@@ -390,8 +390,10 @@ def _ui(keys: list[str], choosable: bool, dev: dict | None = None, ram_free: flo
     lang = system_language()
     downloads = workspace.Downloads(_fetch_model, lambda k: runtime.HOME / "models" / (catalog.MODELS[k]["file"] + ".part"))
     vram = dev["total_gb"] if dev else 0.0
+    from . import docs
     return {"sessions": store, "catalog": workspace.catalog_info(keys, lang, choosable), "downloads": downloads,
-            "models": lambda: workspace.browser_info(vram, ram_free, lang, keys, _have_model, downloads)}
+            "models": lambda: workspace.browser_info(vram, ram_free, lang, keys, _have_model, downloads),
+            "docs": docs.Library()}     # chat with your files (#113); the e5 server starts on the first file
 
 
 def _status(proc, key: str | None) -> dict:
