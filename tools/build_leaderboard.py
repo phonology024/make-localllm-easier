@@ -7,7 +7,7 @@ issue body with the JSON in a ```json block; see reports/README.md). Outputs, al
 
   data/leaderboard.json     one entry per (GPU, model, llama.cpp build), newest report wins, with flags
   localllm/platforms.json   OS x GPU vendor -> tested by maintainers / community reports (n) / untested (for `doctor`)
-  README.md                 the platform table between <!-- platforms:start --> and <!-- platforms:end -->
+  docs/how-it-works.md      the platform table between <!-- platforms:start --> and <!-- platforms:end -->
 
 A report that fails validation is skipped with the reason. --check exits 1 if any output would change (for CI).
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 from localllm import catalog  # noqa: E402
-from localllm.report import os_family, vendor  # noqa: E402
+from localllm.report import os_family, privacy_problems, vendor  # noqa: E402
 import merge_reports  # noqa: E402
 
 SCHEMA = 1                      # data/leaderboard.json format; bump on any breaking change
@@ -36,6 +37,7 @@ MAINTAINER = {"gpu": "AMD Radeon RX 9070 XT", "vram_gb": 15.9, "ram_gb": 32.0, "
               "llama_cpp": "b11476"}
 MAX_TOK_S = 400                 # decode faster than this on a 20B+ model is almost surely a typo or a wrong file
 LIMITS = {"vram_gb": (0, 1024), "ram_gb": (0, 4096)}
+TEST = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})?/[a-z0-9_-]{1,32}")   # "th/regional": the website makes pages from these
 
 
 def validate(rep: dict) -> list[str]:
@@ -52,9 +54,13 @@ def validate(rep: dict) -> list[str]:
     for name, res in (rep.get("results") or {}).items():
         for test, v in (res or {}).items():
             acc = v.get("acc") if isinstance(v, dict) else None
-            if not test.startswith("_") and not (isinstance(acc, (int, float)) and 0 <= acc <= 100):
+            if test.startswith("_"):
+                continue
+            if not TEST.fullmatch(test):
+                why.append(f"{name} {test!r}: not a language/suite name")
+            elif not (isinstance(acc, (int, float)) and 0 <= acc <= 100):
                 why.append(f"{name} {test}: score {acc!r} not 0-100")
-    return why
+    return why + [f"privacy: {p}" for p in privacy_problems(rep)]
 
 
 def _key(model: str) -> str:
@@ -118,7 +124,7 @@ def table(m: dict) -> str:
 
 def update_readme(readme: str, tbl: str) -> str:
     if START not in readme or END not in readme:
-        raise SystemExit(f"README has no {START} ... {END} section")
+        raise SystemExit(f"docs/how-it-works.md has no {START} ... {END} section")
     head, rest = readme.split(START, 1)
     return f"{head}{START}\n{tbl}\n{END}{rest.split(END, 1)[1]}"
 
@@ -146,10 +152,10 @@ def build(reports: list[dict]) -> dict[str, str]:
     """{relative path: new content} for every output."""
     m = platforms(reports)
     board = {"schema": SCHEMA, "reports": len(reports), "entries": entries(reports), "platforms": m}
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")
     dump = lambda o: json.dumps(o, ensure_ascii=False, indent=1) + "\n"  # noqa: E731
     return {"data/leaderboard.json": dump(board), "localllm/platforms.json": dump(m),
-            "README.md": update_readme(readme, table(m))}
+            "docs/how-it-works.md": update_readme(readme, table(m))}
 
 
 def main() -> None:

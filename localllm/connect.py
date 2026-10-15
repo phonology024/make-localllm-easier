@@ -221,6 +221,13 @@ def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run:
             f"undo:  localllm connect {tool} --undo" + (" --path VAULT" if tool == "obsidian" else "") + warn)
 
 
+def is_connected(tool: str) -> bool:
+    """`localllm connect` already wrote this tool's usual config (and hasn't been undone)."""
+    if tool not in TOOLS or TOOLS[tool][0] is None:
+        return False
+    return str(TOOLS[tool][0](_home())) in _state()
+
+
 def undo(tool: str, path: Path | None = None) -> str:
     if tool == "cline":
         return "nothing to undo: Cline's settings are in VS Code"

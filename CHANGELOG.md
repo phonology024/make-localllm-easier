@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.7.0 (not released yet)
+## 0.7.1 (2026-10-14)
+
+- Release build: the Linux AppImage step installs `desktop-file-utils`, so 0.7.1 is the first release with the
+  single-file `localllm` downloads (0.7.0 reached PyPI, but its binary build failed).
+
+## 0.7.0 (2026-10-14, PyPI only)
 
 Agents, a chat page, and the groundwork for 1.0. Since 0.6.1:
 

@@ -2,8 +2,9 @@ from localllm import catalog, runtime
 
 
 def test_pick_by_vram():
-    assert catalog.pick(8) is None
-    assert catalog.pick(12) == "qwen3.8-27b-iq2"
+    assert catalog.pick(4) is None
+    assert catalog.pick(8) == "qwen3.5-9b-q4"                  # #38: a 9B at 4 bit beats the 27B at 2 bit
+    assert catalog.pick(12) == "qwen3.5-9b-q4"
     assert catalog.pick(16, "th") == "gemma4-26b-a4b-qat"
 
 

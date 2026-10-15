@@ -14,6 +14,8 @@ it shows `doctor` and asks before the multi-GB model download (`--yes` or `LOCAL
 
 These steps use your own accounts, so the workflow doesn't do them:
 
+(Ready-to-run commands for 0.7.1, with the checked files: [submissions/0.7.1/SUBMIT.md](submissions/0.7.1/SUBMIT.md).)
+
 1. **PyPI**: `publish.yml` already runs on the tag (Trusted Publishing).
 2. **winget**: fork [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs), copy
    `manifests/p/phonology024/localllm/<version>/` from the `manifests` artifact into the same path, open a PR. The bots

@@ -6,7 +6,8 @@
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
   localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
-             with --ui: the chat workspace at / and /localllm/catalog, /localllm/sessions[/<id>] (see workspace.py)
+             with --ui: the chat workspace at / and /localllm/catalog, /localllm/models, /localllm/sessions[/<id>]
+             (see workspace.py)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
 user enabled it in ~/.localllm/route.json and a rule says so. The decision is reported in the X-Localllm-Route header.
@@ -39,6 +40,9 @@ PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/emb
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
+PUBLIC_UI = ("/manifest.webmanifest", "/sw.js", "/icon.svg")   # the app files (#122): public like the page
+UI_HEADER = "X-Localllm-UI"        # sent by ui.html on requests that change something (cross-site request guard)
+MODEL_DOWNLOAD = re.compile(r"^/localllm/models/([a-z0-9][a-z0-9.-]{0,63})/download$")   # Models tab (#107)
 KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
 
 
@@ -322,6 +326,7 @@ METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/respo
 
 
 def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
+                 bind_host: str | None = None, embeddings=None,
                  ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
@@ -334,6 +339,19 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 meter.add(usage)
             except OSError:
                 pass                                    # a full disk must not break an answer
+    def estimate(req: dict, cloud) -> str:
+        """'; est. up to $0.012 at your prices': the provider's price_in/price_out in route.json, else the savings
+        meter's prices; '' when neither is set (no made-up numbers)."""
+        conf = (router.load_config().get("providers") or {}).get(cloud.name) or {}
+        price = ({"input_per_m": conf["price_in"], "output_per_m": conf["price_out"]}
+                 if "price_in" in conf and "price_out" in conf else (meter.load().get("price") if meter else None)) or {}
+        if not price:
+            return ""
+        tokens_in = len(json.dumps(req.get("messages", ""), ensure_ascii=False)) // 3
+        tokens_out = req.get("max_tokens") or req.get("max_completion_tokens") or 1024
+        usd = (tokens_in * price["input_per_m"] + tokens_out * price["output_per_m"]) / 1e6
+        return f"; est. up to ${usd:.3f} at your prices"
+
     def local(body: dict, stay: bool = False):
         return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body, stay=stay)
 
@@ -354,16 +372,63 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             """X-Localllm-Stay: 1 keeps the loaded model for this request (no swap)."""
             return (self.headers.get("X-Localllm-Stay") or "").strip().lower() in ("1", "true", "yes")
 
+        def _host_ok(self) -> bool:
+            """DNS-rebinding guard (#137): a request let in without a key must name this server by an IP address,
+            localhost or the --host it listens on. A rebinding page uses its own domain name (re-pointed at
+            127.0.0.1), so it is same-origin with itself and passes the CSRF check, but not this one."""
+            host = self.headers.get("Host")
+            if not host:                                   # HTTP/1.0 clients without Host are not browsers
+                return True
+            name = host[1:].split("]", 1)[0] if host.startswith("[") else host.rsplit(":", 1)[0]
+            if name.lower().rstrip(".") == "localhost" or name == bind_host:
+                return True
+            try:
+                ipaddress.ip_address(name)
+                return True
+            except ValueError:
+                return False
+
         def _authorized(self) -> bool:
             """Strip ?key= from the path; check the key when one is required."""
             self.path, query_key = split_key(self.path)
             if not api_key or (trust_loopback and is_loopback(self.client_address[0])):
-                return True
+                self.bad_host = not self._host_ok()
+                return not self.bad_host
             want = api_key.encode()
             return any(hmac.compare_digest(k.encode(), want) for k in presented_keys(self.headers, query_key))
 
+        def _from_our_page(self) -> bool:
+            """Workspace requests that change something (save/delete a chat, start a download) must come from our own
+            page. On this PC no key is needed, so any website the user has open could otherwise send a simple
+            cross-origin POST. Our page sends X-Localllm-UI: 1, which another origin can't add without a CORS
+            preflight this server never answers; an Origin header from another site is refused outright."""
+            origin, host = self.headers.get("Origin"), self.headers.get("Host", "")
+            if origin is not None and origin not in (f"http://{host}", f"https://{host}"):
+                return False
+            return self.headers.get(UI_HEADER) == "1"
+
+        def _drain(self, limit: int = 1 << 20) -> None:
+            """Read and drop a small unread request body before refusing it. Closing a socket that still holds
+            unread data makes Windows reset the connection, so the client sees WinError 10053 instead of our 401."""
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return
+            if 0 < n <= limit:
+                self.rfile.read(n)
+
+        def _forbid(self):
+            self._drain()
+            self.close_connection = True
+            self._json(403, {"error": "this request must come from the localllm chat page"}, {"Connection": "close"})
+
         def _deny(self):
-            self.close_connection = True                        # the unread request body must not become the next request
+            self._drain()
+            self.close_connection = True                        # a bigger unread body must not become the next request
+            if getattr(self, "bad_host", False):
+                return self._json(403, {"error": {"type": "permission_error", "message": "unexpected Host header: use "
+                                                  "http://127.0.0.1 or http://localhost (DNS-rebinding guard)"}},
+                                  {"Connection": "close"})
             self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key for this "
                                        "localllm gateway (Authorization: Bearer, x-api-key or ?key=)"}},
                        {"WWW-Authenticate": "Bearer", "Connection": "close"})
@@ -400,6 +465,13 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
 
         def _proxy(self, method: str):
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0)) if method == "POST" else None
+            if method == "POST" and self.path == "/v1/embeddings" and embeddings is not None:
+                from .taskclf import EMBED_MODEL, Unavailable          # serve --embeddings (#158)
+                try:
+                    url = embeddings()
+                except Unavailable as e:
+                    return self._json(503, {"error": {"message": f"embeddings unavailable: {e}", "type": "unavailable"}})
+                return self._send(method, url, body, {}, f"local (embeddings: {EMBED_MODEL})", EMBED_MODEL)
             route_hdr, hdrs, cloud = "local", {}, None
             if method == "POST" and self.path in ("/v1/chat/completions", "/v1/messages"):
                 d = router.decide(json.loads(body or b"{}"), self.path)
@@ -412,6 +484,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                     if has_image(req) and not vision_ok(url):
                         api = "anthropic" if self.path == "/v1/messages" else "openai"
                         return self._json(400, error_body(api, NO_VISION))
+                    if d.escalate and not req.get("stream"):
+                        return self._local_or_cloud(url, body, req, route_hdr, model_hdr, d.escalate)
                     return self._send(method, url, body, hdrs, route_hdr, model_hdr)
             url = base_url(method)
             if url is None:
@@ -422,6 +496,37 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 if method != "GET" or isinstance(upstream, str) or upstream.peek_url() == url:
                     raise
                 self._idle()                            # unloaded between the look and the request
+
+        def _local_or_cloud(self, url: str, body: bytes, req: dict, route_hdr: str, model_hdr: str | None, cloud):
+            """#97 escalation (opt-in, non-streaming agent calls): ask the local model; if its answer fails the check
+            (error, empty, broken tool-call JSON, cut off), send the same request to the user's own cloud key and say
+            why, with the estimated cost, in X-Localllm-Route."""
+            from . import agentcall
+            api = "anthropic" if self.path == "/v1/messages" else "openai"
+            r = urllib.request.Request(url.rstrip("/") + self.path, data=body, method="POST",
+                                       headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(r, timeout=3600) as resp:
+                    status, headers, payload = resp.status, resp.headers, resp.read()
+            except urllib.error.HTTPError as e:
+                status, headers, payload = e.code, e.headers, e.read()
+            why = agentcall.failed_check(api, status, payload)
+            if why is None:
+                if meter and status == 200:
+                    from .meter import parse_usage
+                    count(parse_usage(payload))
+                self.send_response(status)
+                for k, v in headers.items():
+                    if k.lower() not in ("transfer-encoding", "connection", "content-length"):
+                        self.send_header(k, v)
+                self.send_header("X-Localllm-Route", route_hdr)
+                if model_hdr:
+                    self.send_header("X-Localllm-Model", model_hdr)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                return self.wfile.write(payload)
+            label = f"cloud:{cloud.name} (escalated: local answer failed the check - {why}{estimate(req, cloud)})"
+            return self._send("POST", cloud.url_base, cloud.adapt(body, self.path), cloud.headers(self.path), label, None)
 
         def _idle(self):
             """A GET while the pool has unloaded its model(s): answer here instead of loading one."""
@@ -472,10 +577,23 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; "
-                             "style-src 'unsafe-inline'; img-src 'self' data:")     # nothing loads from elsewhere
+                             "style-src 'unsafe-inline'; img-src 'self' data:; worker-src 'self'; "
+                             "manifest-src 'self'")                                  # nothing loads from elsewhere
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(html)
+
+        def _static(self, path: str):
+            """The app files (pwa.py): manifest, icon, service worker. Public like the page; nothing personal."""
+            from .pwa import FILES
+            ctype, text = FILES[path]
+            body = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", f"{ctype}; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
 
         def _sessions(self, method: str):
             """/localllm/sessions[/<id>] for the workspace page."""
@@ -495,12 +613,22 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(400, {"error": str(e)})
 
         def do_GET(self):
-            if not self._authorized() and self.path != "/":      # the chat page is static; its API calls need the key
-                return self._deny()
+            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n", *PUBLIC_UI)   # the page, its words, the app
+            if not self._authorized() and (not public or getattr(self, "bad_host", False)):
+                return self._deny()                             # ... but still the Host check (DNS rebinding)
+            if ui and self.path.split("?", 1)[0] == "/localllm/i18n":
+                from urllib.parse import parse_qs, urlsplit
+                from . import i18n
+                browser = (parse_qs(urlsplit(self.path).query).get("lang") or [None])[0]
+                return self._json(200, i18n.table(i18n.ui_lang(browser)))
             if ui and self.path == "/":
                 return self._page()
+            if ui and self.path in PUBLIC_UI:
+                return self._static(self.path)
             if ui and self.path == "/localllm/catalog":
                 return self._json(200, ui["catalog"])
+            if ui and self.path == "/localllm/models" and "models" in ui:
+                return self._json(200, ui["models"]())
             if ui and self.path.startswith("/localllm/sessions"):
                 return self._sessions("GET")
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
@@ -523,19 +651,27 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             if not self._authorized():
                 return self._deny()
             if ui and self.path.startswith("/localllm/sessions/"):
-                return self._sessions("PUT")
+                return self._sessions("PUT") if self._from_our_page() else self._forbid()
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_DELETE(self):
             if not self._authorized():
                 return self._deny()
             if ui and self.path.startswith("/localllm/sessions/"):
-                return self._sessions("DELETE")
+                return self._sessions("DELETE") if self._from_our_page() else self._forbid()
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_POST(self):
             if not self._authorized():
                 return self._deny()
+            m = MODEL_DOWNLOAD.match(self.path)
+            if ui and m and "downloads" in ui:
+                if not self._from_our_page():
+                    return self._forbid()
+                try:
+                    return self._json(202, ui["downloads"].start(m.group(1)))
+                except ValueError as e:
+                    return self._json(404, {"error": str(e)})
             if self.path in ("/api/chat", "/api/generate"):
                 return self._ollama(self.path == "/api/chat")
             m = GEMINI.match(self.path)
@@ -632,11 +768,13 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True, status=None, ui=None, meter=None) -> ThreadingHTTPServer:
-    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
+          trust_loopback: bool = True, status=None, ui=None, meter=None, embeddings=None) -> ThreadingHTTPServer:
+    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status).
+    embeddings: optional callable -> URL of the embeddings server for POST /v1/embeddings (serve --embeddings, #158)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
-    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, ui, meter))
+    srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, bind_host=host,
+                                             embeddings=embeddings, ui=ui, meter=meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

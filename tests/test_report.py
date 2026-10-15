@@ -49,7 +49,8 @@ def test_issue_url_carries_the_report_or_asks_for_the_file(tmp_path, monkeypatch
     _home(tmp_path, monkeypatch)
     rep = report.collect(server=tmp_path / "b1" / "llama-server", devs=[DEV], ram_gb=32.0, lang="th")
     q = urllib.parse.parse_qs(urllib.parse.urlsplit(report.issue_url(rep)).query)
-    assert "RX 9070 XT" in q["title"][0] and '"tok_s": 55.0' in q["body"][0]
+    assert q["template"] == ["results.yml"] and "RX 9070 XT" in q["title"][0]
+    assert json.loads(q["report"][0]) == rep and "tok/s" in q["summary"][0]      # the form's fields, by id
     rep["results"] = {f"model-{i}": {f"xx/s{j}": {"acc": 50.0} for j in range(40)} for i in range(20)}
     url = report.issue_url(rep, tmp_path / "report-2026-10-08.json")
     assert len(url) <= report.MAX_URL and "report-2026-10-08.json" in urllib.parse.unquote_plus(url)

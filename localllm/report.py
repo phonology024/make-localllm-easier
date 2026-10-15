@@ -2,7 +2,8 @@
 
 No usernames, paths or keys: home folders and the user name are scrubbed from every string, and paths keep only their
 last part. Nothing is uploaded; the report is printed, saved under ~/.localllm/, and offered as a prefilled GitHub
-issue the user submits (or edits) themselves.
+issue (the "Share a result" form, .github/ISSUE_TEMPLATE/results.yml) the user submits or edits themselves.
+`privacy_problems` is the same rule run on a report someone shared, before it is published (#101).
 """
 from __future__ import annotations
 
@@ -18,10 +19,13 @@ from pathlib import Path
 from . import __version__, catalog, runtime
 
 ISSUES = "https://github.com/phonology024/make-localllm-easier/issues/new"
+FORM = "results.yml"    # .github/ISSUE_TEMPLATE/results.yml; its fields are prefilled by id (summary, report)
 MAX_URL = 7000          # browsers and GitHub start cutting prefilled URLs somewhere past 8k
 SCHEMA = 1
 SECRET = re.compile(r"(key|token|secret|password|authorization)", re.I)
 ABS_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+HOME_DIR = re.compile(r"(?:[A-Za-z]:[\\/]+Users[\\/]+|/home/|/Users/)[^\\/\s]+", re.I)   # a home folder inside text
 
 
 def _user_bits() -> list[str]:
@@ -51,6 +55,33 @@ def scrub(obj, bits: list[str] | None = None):
                 obj = re.sub(rf"(?<![\w.-]){re.escape(b)}(?![\w.-])", "<user>", obj)   # a word ("user") spares
         return obj                                      # "username", "userland", "users"
     return obj
+
+
+def _strings(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k)
+            yield from _strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _strings(v)
+    elif isinstance(obj, str):
+        yield obj
+
+
+def privacy_problems(report: dict) -> list[str]:
+    """Why a shared report can't be published as it is (empty when it can). Same rule as `scrub`, which `collect`
+    already applies, plus e-mail addresses: a report that was edited by hand, or made by an old version, is checked
+    again before it reaches the public leaderboard."""
+    why = []
+    if scrub(report, bits=[]) != report:
+        why.append("has a secret-looking field (key, token, password ...) or an absolute path")
+    texts = list(_strings(report))
+    if any(HOME_DIR.search(t) for t in texts):
+        why.append("names a home folder")
+    if any(EMAIL.search(t) for t in texts):
+        why.append("has an e-mail address")
+    return why
 
 
 def _read(path: Path) -> dict:
@@ -162,20 +193,22 @@ def summary(report: dict) -> str:
 
 
 def issue_url(report: dict, saved: Path | None = None) -> str:
-    """Prefilled 'new issue' URL; when the JSON makes it too long, the body asks for the saved file instead."""
+    """Prefilled "Share a result" form; when the JSON makes the link too long, the form asks for the saved file."""
     title = f"Results: {report['gpu'] or 'CPU only'} ({report['vram_gb']} GB), {report['os']}"
-    full = f"{summary(report)}\n\n```json\n{json.dumps(report, ensure_ascii=False, indent=1)}\n```\n"
-    url = f"{ISSUES}?{urllib.parse.urlencode({'title': title, 'labels': 'results', 'body': full})}"
-    if len(url) <= MAX_URL:
-        return url
-    ask = f"\n\nThe full report is too long for a link: please attach or paste " \
-          f"`{saved.name if saved else 'report.json'}` (saved by `localllm report`).\n"
+
+    def url(fields: dict) -> str:
+        return f"{ISSUES}?{urllib.parse.urlencode({'template': FORM, 'title': title, **fields})}"
+
+    full = url({"summary": summary(report), "report": json.dumps(report, ensure_ascii=False, indent=1)})
+    if len(full) <= MAX_URL:
+        return full
+    ask = f"The full report is too long for a link: please paste `{saved.name if saved else 'report.json'}` " \
+          f"(saved by `localllm report`) here."
     lines = summary(report).splitlines()
     while True:                                         # keep as much of the summary as fits
-        body = "\n".join(lines) + ask
-        url = f"{ISSUES}?{urllib.parse.urlencode({'title': title, 'labels': 'results', 'body': body})}"
-        if len(url) <= MAX_URL or len(lines) <= 1:
-            return url
+        short = url({"summary": "\n".join(lines), "report": ask})
+        if len(short) <= MAX_URL or len(lines) <= 1:
+            return short
         lines = lines[:-1]
 
 

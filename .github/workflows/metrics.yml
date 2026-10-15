@@ -1,0 +1,45 @@
+name: metrics
+# Weekly traction snapshot (#148): tools/traction.py appends one line to data/metrics.jsonl on the `metrics` branch
+# (main is protected, so the data lives on its own branch; read it with
+#  git show origin/metrics:data/metrics.jsonl). Only GITHUB_TOKEN is used.
+on:
+  schedule:
+    - cron: "17 3 * * 1"          # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write                 # push the new line to the metrics branch; also lets the token read traffic
+
+concurrency:
+  group: metrics
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The metrics branch's file (created on the first run)
+        run: |
+          mkdir -p data
+          git fetch origin metrics && git show origin/metrics:data/metrics.jsonl > data/metrics.jsonl || true
+      - name: Snapshot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/traction.py --out data/metrics.jsonl
+      - name: Commit to the metrics branch
+        run: |
+          mv data/metrics.jsonl "$RUNNER_TEMP/metrics.jsonl"     # untracked here; the branch has it tracked
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin metrics >/dev/null; then
+            git checkout -B metrics origin/metrics
+          else
+            git checkout --orphan metrics && git rm -rq --cached . && git clean -fdq -e data
+          fi
+          mkdir -p data && cp "$RUNNER_TEMP/metrics.jsonl" data/metrics.jsonl
+          git add data/metrics.jsonl
+          git diff --cached --quiet && echo "nothing new" || { git commit -qm "metrics: $(date -u +%G-W%V)"; git push origin metrics; }

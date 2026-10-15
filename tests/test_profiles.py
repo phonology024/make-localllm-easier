@@ -35,3 +35,16 @@ def test_max_fills_the_gpu_and_grows_the_prompt_cache():
 def test_max_never_goes_below_lean():
     # a card that only just fits the model still gets the 8k minimum, not less
     assert catalog.context_for("qwen3.8-27b-q3", 10.0, 8, "max") == catalog.MIN_CTX
+
+
+def test_auto_pool_follows_the_profile():
+    """#112: lean routes only between models that fit the GPU whole; max also takes MoE models with experts in RAM."""
+    from localllm import catalog
+    g = "gemma4-26b-a4b-qat"                                                # MoE, 13.3 GB
+    lean, mx = catalog.auto_pool(12.0, 20.0, "lean"), catalog.auto_pool(12.0, 20.0, "max")
+    assert g not in lean and g in mx and set(lean) < set(mx)
+    assert all(catalog.cpu_moe_layers(k, 12.0, 20.0) == 0 for k in lean)
+    assert all(not catalog.below_floor(k) for k in mx)                    # the 2-bit model stays out either way
+    assert catalog.auto_pool(12.0, 2.0, "max") == lean == catalog.auto_pool(12.0, 2.0, "lean")   # no RAM to spare
+    assert catalog.auto_pool(15.9, 20.0, "max") == catalog.auto_pool(15.9, 20.0, "lean")          # all fit whole
+    assert catalog.pick(12.0, "th", 20.0, candidates=mx) in mx              # the router's pick comes from the pool
