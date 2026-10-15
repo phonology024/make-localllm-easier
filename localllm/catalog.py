@@ -114,6 +114,13 @@ MODELS = {
 }
 
 
+def starter(vram_gb: float, ram_free_gb: float = 0.0) -> str | None:
+    """The first-run model (#116): the smallest catalog model marked "starter" that runs whole on this GPU, so chat
+    works about a minute after the start while the best model downloads. None when no starter fits."""
+    ok = [k for k, m in MODELS.items() if m.get("starter") and cpu_moe_layers(k, vram_gb, ram_free_gb) == 0]
+    return min(ok, key=lambda k: MODELS[k]["gb"]) if ok else None
+
+
 def build_note(key: str, running: str | None) -> str | None:
     """A warning when this PC runs a different llama.cpp build than the model's numbers were measured on, else None."""
     from .runtime import build_number

@@ -300,8 +300,24 @@ async function status() {
     const spill = d.spill_gb != null && d.spill_gb > d.spill_warn_gb;
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
       + (spill ? `<br><span class="warn">${esc(T("spilled", {gb: gb(d.spill_gb)}))}</span>` : "")
-      + (d.savings ? `<br>${esc(d.savings)}` : "");
+      + (d.savings ? `<br>${esc(d.savings)}` : "")
+      + downloadLine(d.download_state);
   } catch (e) { $("status").textContent = navigator.onLine === false || e instanceof TypeError ? T("offline") : T("status_unavailable"); }
+}
+
+// #116: the best model downloading behind the starter, from GET /localllm/status download_state
+function downloadLine(st) {
+  if (!st) return "";
+  const v = {model: st.key, gb: (st.total_gb || 0).toFixed(1)};
+  let t;
+  if (st.status === "done") t = T("dl_done", v);
+  else if (st.status === "failed") t = T("dl_failed", v);
+  else {
+    t = T("dl_progress", {...v, pct: Math.round(100 * (st.done_gb || 0) / (st.total_gb || 1))});
+    if (st.eta_s != null && st.eta_s >= 0)
+      t += " · " + (st.eta_s >= 90 ? T("dl_left_min", {n: Math.round(st.eta_s / 60)}) : T("dl_left_s", {n: Math.max(5, Math.round(st.eta_s / 5) * 5)}));
+  }
+  return `<br>${esc(t)}`;
 }
 
 // ---- Models tab (#107): what fits this PC, scores in its language, one-click download --------------------------------
