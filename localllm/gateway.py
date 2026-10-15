@@ -326,7 +326,7 @@ METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/respo
 
 
 def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
-                 bind_host: str | None = None,
+                 bind_host: str | None = None, embeddings=None,
                  ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
@@ -452,6 +452,13 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
 
         def _proxy(self, method: str):
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0)) if method == "POST" else None
+            if method == "POST" and self.path == "/v1/embeddings" and embeddings is not None:
+                from .taskclf import EMBED_MODEL, Unavailable          # serve --embeddings (#158)
+                try:
+                    url = embeddings()
+                except Unavailable as e:
+                    return self._json(503, {"error": {"message": f"embeddings unavailable: {e}", "type": "unavailable"}})
+                return self._send(method, url, body, {}, f"local (embeddings: {EMBED_MODEL})", EMBED_MODEL)
             route_hdr, hdrs, cloud = "local", {}, None
             if method == "POST" and self.path in ("/v1/chat/completions", "/v1/messages"):
                 d = router.decide(json.loads(body or b"{}"), self.path)
@@ -715,12 +722,13 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True, status=None, ui=None, meter=None) -> ThreadingHTTPServer:
-    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
+          trust_loopback: bool = True, status=None, ui=None, meter=None, embeddings=None) -> ThreadingHTTPServer:
+    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status).
+    embeddings: optional callable -> URL of the embeddings server for POST /v1/embeddings (serve --embeddings, #158)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
     srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, bind_host=host,
-                                             ui=ui, meter=meter))
+                                             embeddings=embeddings, ui=ui, meter=meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
