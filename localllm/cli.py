@@ -228,14 +228,13 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     if models:
         if not dev:
             sys.exit("[localllm] --models needs a GPU")
-        keys = [k for k in catalog.MODELS if catalog.cpu_moe_layers(k, dev["total_gb"], ram_free) == 0
-                and not catalog.below_floor(k)] if models == "auto" else models.split(",")
+        keys = catalog.auto_pool(dev["total_gb"], ram_free, profile) if models == "auto" else models.split(",")
         bad = [k for k in keys if k not in catalog.MODELS]
         if bad or not keys:
             sys.exit(f"[localllm] unknown or unfitting models: {bad or models}. See `localllm list`.")
         from . import gateway, pool
         first = catalog.pick(dev["total_gb"], system_language(), ram_free, candidates=keys)
-        _say(f"smart routing between {', '.join(keys)}")
+        _say(f"smart routing between {', '.join(keys)}" + (f" ({profile} profile)" if models == "auto" else ""))
         ctxs = {k: ctx or catalog.context_for(k, dev["total_gb"], ram_free, profile) for k in keys}
         need = sum(catalog.MODELS[k]["gb"] + catalog.MODELS[k]["kv_kb_per_token"] * ctxs[k] / 2**20
                    + catalog.MODELS[k]["fixed_cache_gb"] + (catalog.MODELS[k].get("mmproj_gb", 0) if vision else 0)

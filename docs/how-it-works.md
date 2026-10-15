@@ -84,6 +84,10 @@ experts can stay in RAM: 45 / 36 / 31 tok/s with 8 / 13 / 18 layers' experts off
 localllm serve --models auto          # or --models qwen3.8-27b-q3,gemma4-26b-a4b-qat
 ```
 
+`--models auto` follows the profile: `lean` (default) routes only between models that fit the GPU whole, so swaps stay
+fast and RAM stays small; `--profile max` also takes MoE models that run with some experts in system RAM (one model is
+loaded at a time, so each gets the whole GPU and the free RAM).
+
 Each message goes to the model with the best *measured* score for its language and task (math vs general). If all the
 models fit in VRAM together (24 GB+ cards for the pair below), they all stay loaded and routing is instant. Otherwise
 one model is on the GPU at a time and it only swaps when the other is at least 3 points better, because a swap costs
