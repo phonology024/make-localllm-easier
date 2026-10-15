@@ -807,7 +807,7 @@ def _doctor_fix(a) -> list:
             print(f"   not applied ([{p.id}])")
             continue
         if p.apply:
-            print(f"saved to {fix.DEFAULTS}: {fix.save_defaults(p.apply)}  (`localllm doctor --reset` undoes it)")
+            print(f"saved to {fix.DEFAULTS}: {fix.save_defaults(p.apply, why=p.id)}  (`localllm doctor --reset` undoes it)")
         elif p.run == ["tune"]:
             cmd_tune(argparse.Namespace(model=None, prefer_energy=False))
     return problems

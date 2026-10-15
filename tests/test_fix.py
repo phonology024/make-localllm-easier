@@ -50,9 +50,10 @@ def test_vram_taken_by_other_apps_names_them_and_offers_a_model_that_fits(monkey
     assert fix.check_vram(DEV, "gemma4-26b-a4b-qat", []) is None
 
 
-def test_low_ram_keeps_the_lean_profile():
+def test_low_ram_is_advice_only():
+    """lean is already the default, so saving profile=lean changed nothing (review of #125)."""
     p = fix.check_ram("gemma4-26b-a4b-qat", ram_free=1.2, need_gb=2.2)
-    assert "Only 1.2 GB of system RAM is free" in p.what and p.apply == {"profile": "lean"}
+    assert "Only 1.2 GB of system RAM is free" in p.what and p.apply == {} and "leave out --profile max" in p.fix
     assert fix.check_ram("gemma4-26b-a4b-qat", ram_free=20, need_gb=2.2) is None
 
 
@@ -139,3 +140,43 @@ def test_plain_doctor_says_when_saved_defaults_are_active():
     fix.save_defaults({"port": 8085})
     line = fix.defaults_line()
     assert "port=8085" in line and "doctor --reset" in line
+
+
+def test_the_cpu_fallback_model_is_dropped_once_a_gpu_is_back(capsys):
+    """no-gpu saves the smallest model; after a driver update that default must not pin a real GPU to it."""
+    small = fix.check_gpu([], loader=True).apply["model"]
+    fix.save_defaults({"model": small}, why="no-gpu")
+    fix.save_defaults({"port": 8085}, why="port-busy")
+    probes = []
+    a = SimpleNamespace(port=8080, model=None, profile="lean")
+    fix.apply_defaults(a, given=set(), gpu_present=lambda: probes.append(1) or False)     # still no GPU: kept
+    assert a.model == small and probes == [1]
+    b = SimpleNamespace(port=8080, model=None, profile="lean")
+    fix.apply_defaults(b, given=set(), gpu_present=lambda: True)
+    assert b.model is None and b.port == 8085                                   # the port fix stays
+    assert json.loads(fix.DEFAULTS.read_text()) == {"port": 8085, "why": {"port": "port-busy"}}
+    assert "dropped the CPU-fallback default" in capsys.readouterr().err
+
+
+def test_a_model_not_saved_by_no_gpu_never_triggers_a_gpu_probe():
+    fix.save_defaults({"model": "qwen3.8-27b-iq2"})
+    a = SimpleNamespace(port=8080, model=None, profile="lean")
+    fix.apply_defaults(a, given=set(), gpu_present=lambda: pytest.fail("probed the GPU"))
+    assert a.model == "qwen3.8-27b-iq2"
+    fix.save_defaults({"model": "x"}, why="no-gpu")
+    fix.save_defaults({"model": "qwen3.8-27b-iq2"})                              # saved again without a reason
+    assert "why" not in json.loads(fix.DEFAULTS.read_text())
+
+
+def test_the_gpu_probe_never_downloads_llama_cpp(monkeypatch, tmp_path):
+    """apply_defaults runs before every command (`localllm list` too): with the pinned build not on disk (an upgrade
+    pinned a new one, say) the no-gpu default is kept and nothing is fetched."""
+    monkeypatch.delenv("LOCALLLM_LLAMA_SERVER", raising=False)
+    monkeypatch.delenv("LOCALLLM_LLAMA_BUILD", raising=False)
+    monkeypatch.setattr(fix.runtime, "HOME", tmp_path / "empty-home")
+    monkeypatch.setattr(fix.runtime, "fetch_server", lambda *a, **k: pytest.fail("downloaded llama.cpp"))
+    monkeypatch.setattr(fix.runtime, "devices", lambda server: pytest.fail("ran llama-server"))
+    fix.save_defaults({"model": "x"}, why="no-gpu")
+    a = SimpleNamespace(port=8080, model=None, profile="lean")
+    fix.apply_defaults(a, given=set())                                          # the real probe
+    assert a.model == "x" and fix.runtime.installed_server() is None
