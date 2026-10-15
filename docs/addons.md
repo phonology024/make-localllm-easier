@@ -1,11 +1,18 @@
 # Optional add-ons (planned)
 
 Nothing here is installed by default. `pip install make-localllm-easier` and `localllm` stay exactly as small as they
-are today. Each add-on is opt-in and can be removed without touching the core. **None of them exists yet** (only Obsidian's config-only part A, which is not an add-on); this page
+are today. Each add-on is opt-in and can be removed without touching the core. The harness exists as an experimental
+package in [addons/harness](../addons/harness/README.md) (not on PyPI, not measured yet); Obsidian's config-only part A
+is in the core and is not an add-on. This page
 says what they will be and what you give up by installing them, so you can decide before we build them. Status lives in
 the linked issues.
 
 ## Harness (agent loop for small local models) - #88
+
+**Status:** a first version is in [addons/harness](../addons/harness/README.md): plan, four tools (files inside the
+project only; commands in the Docker sandbox on a copy), verify with your check command, retry from a fresh context.
+Tested with fake models; it ships to PyPI only if the measurements below say it beats the bare model and
+OpenCode/Aider.
 
 **What it is.** A small program that wraps the local model in a loop: plan, call a tool (read files, run a command, run
 tests in the existing sandbox), check the result, retry from the error. Not to be confused with `localllm eval`, which is
