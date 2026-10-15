@@ -516,7 +516,8 @@ def cmd_run(a) -> None:
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if later:
-        _background(later, getattr(proc, "pool", None))
+        sw = getattr(proc, "pool", None)          # the hot-switchable starter (#128), if _start made one
+        _background(later, sw) if sw is not None else _background(later)
     if not a.no_browser:
         webbrowser.open(url)
     try:
