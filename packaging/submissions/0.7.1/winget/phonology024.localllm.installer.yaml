@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: phonology024.localllm
+PackageVersion: 0.7.1
+InstallerType: portable
+Commands:
+  - localllm
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/phonology024/make-localllm-easier/releases/download/v0.7.1/localllm-windows-x64.exe
+    InstallerSha256: E260B76853335DA3FAC8401CD29DA5EC3EC496AA3B0B7B552AE0C645EBD5F413
+ManifestType: installer
+ManifestVersion: 1.6.0
