@@ -311,6 +311,9 @@ function downloadLine(st) {
   const v = {model: st.key, gb: (st.total_gb || 0).toFixed(1)};
   let t;
   if (st.status === "done") t = T("dl_done", v);
+  else if (st.status === "switching") t = T("dl_switching", v);
+  else if (st.status === "switched") t = T("dl_switched", {...v, s: st.switch_s});
+  else if (st.status === "switch_failed") t = T("dl_switch_failed", v);
   else if (st.status === "failed") t = T("dl_failed", v);
   else {
     t = T("dl_progress", {...v, pct: Math.round(100 * (st.done_gb || 0) / (st.total_gb || 1))});

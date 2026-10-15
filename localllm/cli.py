@@ -295,7 +295,8 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
 
 def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False):
+           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False,
+           swappable: bool = False):
     """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /.
     qr_key: LAN mode's QR code carries the key too."""
     host, api_key, shown = _lan(host, api_key, require_local)
@@ -337,6 +338,14 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
+    if swappable:                   # the first run's starter: it moves to the best model when that is downloaded (#128)
+        from . import gateway, hotswap
+        sw = hotswap.Switchable(key, lambda k: _launch(k, server, dev, ctx if k == key else None, ram_free, vision,
+                                                         profile))
+        gw = gateway.serve(sw, host=host, port=port, model_name=key, api_key=api_key, trust_loopback=trust,
+                           status=lambda: _status(sw.proc, sw.key), ui=_ui([key], False, dev, ram_free) if ui else None,
+                           meter=_meter())
+        return _PoolProc(sw, gw), f"http://127.0.0.1:{port}"
     proc, url = _launch(key, server, dev, ctx, ram_free, vision, profile)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
@@ -503,11 +512,12 @@ def cmd_run(a) -> None:
     proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
-                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False))
+                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False), swappable=bool(later))
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if later:
-        _background(later)
+        sw = getattr(proc, "pool", None)          # the hot-switchable starter (#128), if _start made one
+        _background(later, sw) if sw is not None else _background(later)
     if not a.no_browser:
         webbrowser.open(url)
     try:
@@ -516,15 +526,33 @@ def cmd_run(a) -> None:
         proc.terminate()
 
 
-def _background(key: str):
-    """Download `key` behind the running starter model; say once when it is ready."""
+def _background(key: str, switchable=None):
+    """Download `key` behind the running starter model. With `switchable` (hotswap.Switchable) the server moves to it
+    as soon as it is in place, between answers (#128); without, say once that a restart switches."""
     from . import downloads
     m = catalog.MODELS[key]
     dest = runtime.HOME / "models" / m["file"]
+    done = (lambda k: _switch_to(switchable, k)) if switchable is not None else \
+        (lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
+                        "again to switch to it."))
     return downloads.start(
         key, lambda progress: _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"), progress=progress),
-        on_done=lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
-                               "again to switch to it."))
+        on_done=done)
+
+
+def _switch_to(sw, key: str) -> dict:
+    """The download is done: move the running server to `key` after the answer in progress, and say how it went."""
+    from . import downloads
+    downloads.mark(status="switching")
+    _say(f"{key} is downloaded - switching to it after the answer in progress")
+    r = sw.switch(key)
+    if "error" in r:
+        downloads.mark(status="switch_failed", error=r["error"])
+        _say(f"{key} didn't start ({r['error']}); still on {r['from']} - restart localllm to try again")
+    else:
+        downloads.mark(status="switched", switch_s=r["seconds"])
+        _say(f"now running {key}, the best model for this PC (switched in {r['seconds']:g} s)")
+    return r
 
 
 def cmd_chat(a) -> None:
