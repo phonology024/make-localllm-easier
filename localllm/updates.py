@@ -88,19 +88,27 @@ def _better_model(remote: dict, vram_gb: float, lang: str, ram_free_gb: float) -
     if not new or not vram_gb:
         return None
     mine = catalog.pick(vram_gb, lang, ram_free_gb)
-    old_models = catalog.MODELS
+    cat = _private_catalog({**new, **catalog.MODELS})
     try:                                    # score and fit the new entries with the very same rules
-        catalog.MODELS = {**new, **old_models}
-        ok = [k for k in new if catalog.cpu_moe_layers(k, vram_gb, ram_free_gb) is not None and not catalog.below_floor(k)]
+        ok = [k for k in new if cat.cpu_moe_layers(k, vram_gb, ram_free_gb) is not None and not cat.below_floor(k)]
         if not ok:
             return None
-        best = max(ok, key=lambda k: catalog.score(k, lang))
-        gain = catalog.score(best, lang) - (catalog.score(mine, lang) if mine else 0.0)
+        best = max(ok, key=lambda k: cat.score(k, lang))
+        gain = cat.score(best, lang) - (cat.score(mine, lang) if mine else 0.0)
     except (KeyError, TypeError, ValueError):   # an entry this version can't read: no notice
         return None
-    finally:
-        catalog.MODELS = old_models
     return (best, round(gain, 1)) if gain > catalog.TIE_POINTS else None
+
+
+def _private_catalog(models: dict):
+    """A separate copy of the catalog module whose MODELS is `models`. The real catalog.MODELS is never swapped, even
+    for a moment: the server's routing threads read it while this runs at startup."""
+    import importlib.util
+    spec = importlib.util.find_spec(catalog.__name__)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.MODELS = models
+    return mod
 
 
 def notice(vram_gb: float = 0.0, lang: str = "en", ram_free_gb: float = 0.0) -> str | None:

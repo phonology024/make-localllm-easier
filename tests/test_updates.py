@@ -86,6 +86,28 @@ def test_better_model_for_your_language_that_fits():
     assert "gemma5-27b-qat" not in updates.notice(0.0, "th", 20.0)           # no GPU: only the version notice
 
 
+def test_scoring_new_models_never_touches_the_global_catalog(monkeypatch):
+    """The server's routing threads read catalog.MODELS while the notice is worked out at startup: no swap, ever."""
+    models = copy.deepcopy(catalog.MODELS)
+    models["gemma5-27b-qat"] = {**copy.deepcopy(catalog.MODELS[G]),
+                                "scores": {k: min(100.0, v + 10) for k, v in catalog.MODELS[G]["scores"].items()}}
+    orig, seen, real = catalog.MODELS, [], updates._private_catalog
+
+    def spy(merged):
+        mod = real(merged)
+        score = mod.score
+
+        def checked(*a, **k):
+            seen.append(catalog.MODELS is orig and "gemma5-27b-qat" not in catalog.MODELS)
+            return score(*a, **k)
+        mod.score = checked
+        return mod
+    monkeypatch.setattr(updates, "_private_catalog", spy)
+    updates.fetch(Opener(_remote("99.0.0", models)), now=1.0)
+    assert "gemma5-27b-qat" in updates.notice(15.9, "th", 20.0)
+    assert seen and all(seen) and catalog.MODELS is orig
+
+
 def test_status_carries_the_notice(monkeypatch):
     monkeypatch.setattr(cli, "NOTICE", ["localllm 99.0.0 is out"])
     assert cli._status(None, None)["notice"] == "localllm 99.0.0 is out"
