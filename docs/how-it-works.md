@@ -47,6 +47,7 @@ What it can do here:
   uses ~2.2 GB of system RAM: ~0.3 GB embeddings/CPU-mapped + ~1.0 GB prompt cache + ~0.4 GB ctx checkpoints + ~0.5 GB host (est.)
   leaves ~15 GB of RAM free for other apps (est.)
   with --embeddings: + ~0.2 GB RAM for multilingual-e5-small on the CPU, no VRAM (est.)
+  chat with your files (/attach): the same model, + ~0.2 GB RAM if it isn't running yet, + the index of the files attached (nothing indexed yet; ~/.localllm/docs)
   answers at ~90 tok/s
   speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
 

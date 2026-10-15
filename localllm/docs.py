@@ -35,7 +35,7 @@ from xml.etree import ElementTree
 
 from . import runtime
 
-CHUNKER = 1                    # bump when chunking changes: indexes made by another version are rebuilt
+CHUNKER = 3                    # bump when chunking changes: indexes made by another version are rebuilt
 CHUNK_CHARS = 700              # e5-small reads 512 tokens; a chunk the server still refuses is split in two
 OVERLAP_CHARS = 160            # the last sentence of a chunk (if this short) starts the next one too
 TOP_K = 5
@@ -139,6 +139,20 @@ def _docx(data: bytes) -> list[tuple[str, str]]:
     return out
 
 
+_ARABIC_LATIN = re.compile(r"(?<=[؀-ۿ])(?=[A-Za-z0-9])|(?<=[A-Za-z0-9])(?=[؀-ۿ])")
+_FARSI_TO_ARABIC = str.maketrans({"ی": "ي", "ھ": "ه", "ک": "ك"})
+
+
+def pdf_arabic(text: str) -> str:
+    """Two things PDF fonts do to Arabic (#113 docqa: Arabic PDFs fell to 37% recall@1 against 92% as TXT). Glyph
+    maps turn some yeh/heh/kaf into the Persian and Urdu letters (ی ھ ک) on a page that also has the Arabic ones -
+    real Arabic has no ی, real Persian no ي, so a page with both is mapped back. And a line that mixes directions
+    loses the space between an Arabic word and a Latin word or number."""
+    if "ي" in text and "ی" in text:
+        text = text.translate(_FARSI_TO_ARABIC)
+    return _ARABIC_LATIN.sub(" ", text)
+
+
 def _pdf(data: bytes, allow_download: bool) -> list[tuple[str, str]]:
     pypdf = load_pypdf(allow_download)
     try:
@@ -152,7 +166,7 @@ def _pdf(data: bytes, allow_download: bool) -> list[tuple[str, str]]:
         raise DocError(f"could not read this PDF ({type(e).__name__}: {e})") from None
     out = []
     for n, text in enumerate(pages, 1):
-        out += [(t, f"p.{n}") for t, _ in _paragraphs(text)]
+        out += [(t, f"p.{n}") for t, _ in _paragraphs(pdf_arabic(unicodedata.normalize("NFKC", text)))]
     if not out:
         raise DocError("no text found in this PDF: it is probably scanned images, and localllm has no OCR")
     return out
@@ -226,36 +240,36 @@ _SENTENCE_END = re.compile(r"(?<=[.!?;:])\s+|(?<=[。！？।؟])\s*")
 
 
 def _split(text: str, limit: int) -> list[str]:
-    """Sentences, each cut to at most `limit` characters (at spaces, then anywhere); chunk() packs them."""
+    """Sentences; a sentence longer than `limit` (Thai has no sentence punctuation) becomes its words, and a word longer
+    than `limit` (CJK and Thai runs without spaces) is cut. chunk() packs the pieces."""
     if len(text) <= limit // 3:
         return [text]
     pieces = []
     for sent in (s.strip() for s in _SENTENCE_END.split(text) if s and s.strip()):
-        if len(sent) > limit:
-            words, sent_parts, cur = sent.split(" "), [], ""
-            for w in words:
-                while len(w) > limit:                       # Thai and CJK runs without spaces
-                    if cur:
-                        sent_parts.append(cur)
-                        cur = ""
-                    sent_parts.append(w[:limit])
-                    w = w[limit:]
-                if cur and len(cur) + 1 + len(w) > limit:
-                    sent_parts.append(cur)
-                    cur = w
-                else:
-                    cur = f"{cur} {w}" if cur else w
-            if cur:
-                sent_parts.append(cur)
-        else:
-            sent_parts = [sent]
-        pieces += sent_parts
+        if len(sent) <= limit:
+            pieces.append(sent)
+            continue
+        for w in sent.split(" "):
+            while len(w) > limit:
+                pieces.append(w[:limit])
+                w = w[limit:]
+            if w:
+                pieces.append(w)
     return pieces
 
 
 def _last_sentence(text: str) -> str:
+    """What the next chunk repeats: the last sentence if it is short, else (no sentence ends, as in Thai) the last
+    words, up to half of OVERLAP_CHARS. #113: a Thai fact cut at a space was in neither chunk whole."""
     sents = [s for s in _SENTENCE_END.split(text) if s and s.strip()]
-    return sents[-1] if len(sents) > 1 and len(sents[-1]) <= OVERLAP_CHARS else ""
+    if len(sents) > 1:
+        return sents[-1] if len(sents[-1]) <= OVERLAP_CHARS else ""
+    tail = ""
+    for w in reversed(text.split(" ")):
+        if len(tail) + 1 + len(w) > OVERLAP_CHARS // 2:
+            break
+        tail = f"{w} {tail}" if tail else w
+    return tail if tail and len(tail) < len(text) else ""
 
 
 def chunk(units: list[tuple[str, str]], limit: int = CHUNK_CHARS) -> list[dict]:
@@ -338,6 +352,17 @@ def embed_model_id() -> str:
 
 
 # ---- the library -------------------------------------------------------------------------------------------------
+
+def index_size(root: Path | None = None) -> tuple[int, float]:
+    """(files indexed, MB on disk) under ~/.localllm/docs, for `doctor`: an attached file's vectors and passages are
+    held in RAM at about this size while a chat searches it."""
+    root = Path(root) if root else runtime.HOME / "docs"
+    if not root.is_dir():
+        return 0, 0.0
+    folders = [d for d in root.iterdir() if d.is_dir() and (d / "meta.json").is_file()]
+    size = sum(f.stat().st_size for d in folders for f in d.iterdir() if f.is_file())
+    return len(folders), size / 2**20
+
 
 def _halves(text: str) -> list[str]:
     mid = len(text) // 2

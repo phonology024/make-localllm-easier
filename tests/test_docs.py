@@ -130,7 +130,9 @@ def test_a_passage_the_server_refuses_is_split_until_it_fits():
     text = " ".join(f"word{i}" for i in range(120))                    # ~800 chars, one paragraph
     meta = _lib(FakeEmbed(too_long=250)).add("long.txt", text.encode())
     chunks = [json.loads(l) for l in (runtime.HOME / "docs" / meta["id"] / "chunks.jsonl").read_text("utf-8").splitlines()]
-    assert all(len(c["text"]) <= 250 for c in chunks) and " ".join(c["text"] for c in chunks).split() == text.split()
+    assert all(len(c["text"]) <= 250 for c in chunks)
+    seen = " ".join(c["text"] for c in chunks).split()
+    assert set(seen) == set(text.split()) and len(seen) < 1.3 * len(text.split())     # all words, overlap is small
 
 
 def test_folders_add_every_supported_file(tmp_path):
@@ -314,3 +316,46 @@ def test_the_binary_bundles_every_stdlib_module_pypdf_imports():
     stdlib = {n for n in names if n.split(".")[0] in sys.stdlib_module_names} - {"__future__"}
     assert stdlib <= set(docs.PYPDF_STDLIB), stdlib - set(docs.PYPDF_STDLIB)
     assert "--hidden-import" in (Path(__file__).resolve().parents[1] / "packaging" / "build_exe.py").read_text()
+
+
+def test_docqa_items_and_scoring_through_the_real_pipeline():
+    from localllm import bench
+    sents = [f"Filler sentence {i} talks about rivers and towns." for i in range(1012)]
+    items = bench.docqa_items("en", sents)
+    assert len(items) == bench.DOCQA_DOCS * len(bench.NEEDLE_NAMES) and items == bench.docqa_items("en", sents)
+    assert all(it["needle"] in it["text"] and it["q"].endswith("?") for it in items)
+    assert len({it["text"] for it in items}) == bench.DOCQA_DOCS                     # six questions per document
+    got = bench.run_docqa(items[:12], library=_lib())
+    assert len(got) == 12 and all(g["whole"] for g in got) and all(g["rank"] in (None, 1, 2, 3, 4, 5) for g in got)
+    assert sum(g["rank"] is not None for g in got) >= 6                              # trigram fake still finds most
+
+
+def test_eval_reports_docqa_without_a_chat_server(monkeypatch, capsys):
+    from localllm import bench
+    monkeypatch.setattr(bench, "HOME", runtime.HOME)                               # results.json in the test home
+    monkeypatch.setattr(bench, "load", lambda suite, lang, limit=0: bench.docqa_items(
+        lang, [f"Filler sentence {i} about rivers." for i in range(400)])[:12])
+    monkeypatch.setattr(bench, "run_docqa", lambda items: [{"rank": 1, "whole": True, "chunks": 9}] * 6 +
+                        [{"rank": None, "whole": False, "chunks": 9}] * 6)
+    res = bench.run("http://127.0.0.1:9", "e5", ["en"], suites=("docqa",))["en/docqa"]
+    assert (res["recall5"], res["recall1"], res["n"], res["needle_cut"]) == (50.0, 50.0, 12, 6)
+    assert (runtime.HOME / "results.json").exists()
+    assert "R@5  50.0% [25.4-74.6]  R@1  50.0% [25.4-74.6]  (12 questions in 2 documents; needles cut by the chunker: 6"         in capsys.readouterr().out
+    assert bench.wilson(60, 60) == (94.0, 100.0) and bench.wilson(0, 60) == (0.0, 6.0)
+
+
+def test_a_thai_fact_at_a_cut_is_whole_in_the_next_chunk():
+    """Thai has no sentence punctuation, only spaces: #113's docqa run found a needle cut in two by the chunker."""
+    words = [f"ประโยค{i}ทดสอบ" for i in range(200)]
+    needle = "เลขลับของ Falcon คือ 12345"
+    for at in range(40, 80):                                   # wherever the cut falls, the needle is whole somewhere
+        text = " ".join(words[:at] + [needle] + words[at:])
+        assert any(needle in c["text"] for c in docs.chunk([(text, "line 1")])), at
+
+
+def test_pdf_arabic_letters_and_glued_words_are_repaired_only_when_mangled():
+    mangled = "في یوم الاثنین ھوOrchid 82081"                                # ي and ی on one page: a font artifact
+    assert docs.pdf_arabic(mangled) == "في يوم الاثنين هو Orchid 82081"
+    persian = "این یک کتاب است"                                             # real Persian: no ي, left alone
+    assert docs.pdf_arabic(persian) == persian
+    assert docs.pdf_arabic("Hello world 123") == "Hello world 123"

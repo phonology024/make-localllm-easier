@@ -50,6 +50,51 @@ under 2 points as a tie and picks the faster model.
    experts of 31 of 36 layers in RAM it answers at 9.1 tok/s, with all of them in RAM 5.0 tok/s; at 28 the card spills
    ([#82](https://github.com/phonology024/make-localllm-easier/issues/82)).
 
+## Chat with your files: does `/attach` find the passage? (#113)
+
+`localllm eval --suites docqa --langs en,th,ja,hi,ar,zh,es` measures the retrieval step of `/attach`, with no chat
+model and on the CPU only.
+- **The documents:** per language, 10 documents of 100 consecutive FLORES-101 devtest sentences, in paragraphs of 5,
+  each about 23 passages once indexed.
+- **The needles:** six "secret number" sentences per document, each under a different name. They are hard negatives
+  for each other: the same words, another name.
+- **The questions:** one per needle, as a person would ask it ("What is the secret number of Falcon?"), so 60 per
+  language.
+- **The pipeline:** the real reader, chunker, index and multilingual-e5-small.
+- **Scoring:** recall@1 means the right passage comes first; recall@5 means it is among the five the model gets.
+  The brackets are 95% Wilson intervals.
+
+`tools/docqa_pdf.py` prints the same documents to PDF with Edge and reads them back through pypdf, as people's PDFs
+are. A passage counts when it holds the needle's name and number, on both sides.
+
+| lang | TXT recall@1 | TXT recall@5 | PDF recall@1 | PDF recall@5 | questions |
+|---|---|---|---|---|---|
+| en | 93.3% [84.1-97.4] | 100% [94.0-100] | 88.3% [77.8-94.2] | 100% [94.0-100] | 60 |
+| th | 80.0% [68.2-88.2] | 100% [94.0-100] | 80.0% [68.2-88.2] | 100% [94.0-100] | 60 |
+| ja | 86.7% [75.8-93.1] | 100% [94.0-100] | 91.7% [81.9-96.4] | 100% [94.0-100] | 60 |
+| hi | 86.7% [75.8-93.1] | 100% [94.0-100] | 86.7% [75.8-93.1] | 98.3% [91.1-99.7] | 60 |
+| ar | 91.7% [81.9-96.4] | 100% [94.0-100] | **63.3% [50.7-74.4]** | **93.3% [84.1-97.4]** | 60 |
+| zh | 73.3% [61.0-82.9] | 100% [94.0-100] | 73.3% [61.0-82.9] | 100% [94.0-100] | 60 |
+| es | 95.0% [86.3-98.3] | 100% [94.0-100] | 96.7% [88.6-99.1] | 100% [94.0-100] | 60 |
+
+**What this means.**
+- **The answer is almost always in what the model gets.** Recall@5 is 100% for text files in every language
+  measured.
+- **First place is less sure.** Chinese ranks the right passage first 73% of the time, Spanish 95%. The model reads
+  all five, so this matters less than recall@5.
+- **PDFs behave like text, except Arabic.**
+  - **Fixed so far.** Arabic PDFs started at 36.7% recall@1 and 83.3% recall@5. The fonts' glyph maps turn some
+    Arabic letters into their Persian and Urdu forms, and lines that mix directions glue Arabic and Latin words
+    together. Both are now repaired on mangled pages only, which brought Arabic to the numbers above.
+  - **Still lost.** Word order on lines that mix Arabic with Latin names or numbers. For Arabic documents, DOCX or
+    TXT keeps every word in order.
+- **A chunker bug the suite caught.** The first run found a Thai needle cut in two by the chunker: Thai has no
+  sentence punctuation, so long runs were packed word by word to the limit with no overlap. Chunks of unpunctuated
+  text now repeat their last words in the next chunk, and Thai recall@5 went from 98.3% to 100%.
+
+Setup: Windows 11, CPU only, multilingual-e5-small Q8_0, chunker version 3, 2026-10-15. Thai recall@1 read 86.7% in a
+run before that chunker change and 80.0% after it, 4 questions apart, inside both intervals.
+
 ## Smaller cards and CPU-only PCs (#38)
 
 Same tests as the catalog models, full sets, llama.cpp b11476. Quality doesn't depend on the GPU, so it was measured on

@@ -29,6 +29,11 @@ Task suites (opt-in with --suites, they generate text so they are slower):
             8k, 32k and 64k tokens. Correct = every hidden number is in the reply. Lengths the server's context can't
             hold are skipped, so `localllm serve --profile max` (or --ctx 70000) runs them all. Shows whether the
             context `doctor` promises keeps its quality, not only whether it fits
+  docqa     Chat with your files (#113), retrieval only: does `/attach` bring back the passage that answers? Per language
+            DOCQA_DOCS documents of FLORES-101 sentences, each with six "secret number" needles under different names
+            (hard negatives: the same words, another name); the question for one name must return the passage holding
+            its needle. Recall@1 and recall@5 (the five passages the model gets) through the real reader, chunker, index
+            and CPU embedding model (docs.py). No chat model and no GPU: --url is not used
 """
 from __future__ import annotations
 
@@ -88,7 +93,7 @@ CODEGEN_FIXES = {
                      r"rel_tol=1e-07, abs_tol=\1)"),
     "Mbpp/255": (r"\[\['Dog', 'Cat', 'CatBird', 'Bird', 'Fish'\], 77\], ", ""),
 }
-SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx", "summarize")
+SUITES = ("global", "regional", "math", "translate", "code", "codegen", "vision", "longctx", "summarize", "docqa")
 LONGCTX_LENGTHS = (8192, 32768, 65536)
 NEEDLE_NAMES = ("Orchid", "Falcon", "Copper", "Lantern", "Willow", "Harbor")
 # (needle, question for one, question for three) per language. Words that also mean "digit" (th ตัวเลข, zh/ja 数字,
@@ -118,6 +123,7 @@ SUMMARIZE_N, SUMMARIZE_CHARS = 100, 6000
 SUMMARIZE_SYSTEM = "Summarize the news article in one or two sentences, in {lang}. Reply with the summary only."
 NO_SPACES = ("th", "zh", "ja", "lo", "km", "my")      # ROUGE-L over characters for scripts without word spaces
 LONGCTX_SYSTEM = "Read the document and answer the question at the end from it."
+DOCQA_DOCS, DOCQA_SENTENCES, DOCQA_PARAGRAPH = 10, 100, 5    # documents per language, sentences each, per paragraph
 MAXM = {"en": "en", "fr": "fr", "hi": "hi", "he": "iw", "ro": "ro", "th": "th", "zh": "zh"}   # ISO -> dataset split
 VISION_SYSTEM = "Look at the image and answer the question in {lang} with one word or a short phrase. Reply with the answer only."
 
@@ -136,7 +142,7 @@ def system_language() -> str:
 def available(lang: str, suites: tuple[str, ...] = ("global", "regional")) -> list[str]:
     have = {"global": lang in GLOBAL_LANGS, "regional": lang in INCLUDE or lang == "th", "math": lang in MGSM_LANGS,
             "translate": lang in FLORES and lang != "en", "code": lang == "en", "codegen": lang == "en",
-            "vision": lang in MAXM, "longctx": lang in NEEDLES, "summarize": lang in LRSUM}
+            "vision": lang in MAXM, "longctx": lang in NEEDLES, "summarize": lang in LRSUM, "docqa": lang in NEEDLES}
     return [s for s in suites if have[s]]
 
 
@@ -222,6 +228,8 @@ def load(suite: str, lang: str, limit: int = 0) -> list[dict]:
     elif suite == "summarize" and lang in LRSUM:
         for r in _rows("bltlab/lr-sum", LRSUM[lang], "test", limit=SUMMARIZE_N)[:SUMMARIZE_N]:
             items.append({"text": r["text"][:SUMMARIZE_CHARS], "ref": r["summary"], "lang": lang})
+    elif suite == "docqa" and lang in NEEDLES:
+        items = docqa_items(lang, [r["sentence"] for r in _rows("gsarti/flores_101", FLORES.get(lang, "eng"), "devtest")])
     elif suite == "longctx" and lang in NEEDLES:
         items = longctx_items(lang, [r["sentence"] for r in _rows("gsarti/flores_101", FLORES.get(lang, "eng"),
                                                                     "devtest")])
@@ -463,6 +471,64 @@ def longctx_items(lang: str, sentences: list[str], seed: int = 93) -> list[dict]
     return items
 
 
+def docqa_items(lang: str, sentences: list[str], seed: int = 113) -> list[dict]:
+    """DOCQA_DOCS documents of consecutive FLORES sentences in paragraphs, six needles each at random places, and the
+    question for each needle. Deterministic (fixed seed). One item = one question."""
+    import random
+    rnd = random.Random(seed)
+    needle, one, _ = NEEDLES[lang]
+    step = max(1, (len(sentences) - DOCQA_SENTENCES) // max(1, DOCQA_DOCS - 1))
+    items = []
+    for d in range(DOCQA_DOCS):
+        sents = list(sentences[d * step:d * step + DOCQA_SENTENCES])
+        nums = [rnd.randint(10000, 99999) for _ in NEEDLE_NAMES]
+        spots = sorted(rnd.sample(range(1, len(sents)), len(NEEDLE_NAMES)), reverse=True)
+        names = rnd.sample(NEEDLE_NAMES, len(NEEDLE_NAMES))
+        for at, name, num in zip(spots, names, nums):
+            sents.insert(at, needle.format(name=name, num=num).strip())
+        paras = [" ".join(sents[i:i + DOCQA_PARAGRAPH]) for i in range(0, len(sents), DOCQA_PARAGRAPH)]
+        text = "\n\n".join(paras)
+        for name, num in zip(names, nums):
+            items.append({"lang": lang, "doc": d, "text": text, "q": docqa_question(one.format(name=name)),
+                          "needle": needle.format(name=name, num=num).strip()})
+    return items
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson interval in percent: honest at 0/n and n/n, where the normal "±" says ±0."""
+    if not n:
+        return 0.0, 100.0
+    p = k / n
+    mid, half = (p + z * z / (2 * n)) / (1 + z * z / n), z * ((p * (1 - p) + z * z / (4 * n)) / n) ** 0.5 / (1 + z * z / n)
+    return round(100 * max(0.0, mid - half), 1), round(100 * min(1.0, mid + half), 1)
+
+
+def docqa_question(q: str) -> str:
+    """The question as a person would ask it about their file: longctx's "reply with the number only" dropped."""
+    import re
+    m = re.match(r".*?[?？؟]", q)
+    return m.group(0) if m else q.split(" ตอบ")[0]
+
+
+def run_docqa(items: list[dict], library=None) -> list[dict]:
+    """Per question: the rank (1-5) of the first passage holding its needle, or None; and whether the chunker left the
+    needle whole in some passage (a needle cut in two can't be found, whatever the embedding model does)."""
+    from . import docs
+    lib = library or docs.Library(root=HOME / "bench" / "docqa-index")     # content-keyed: a rerun embeds nothing
+    metas, out = {}, []
+    for it in items:
+        key = (it["lang"], it["doc"])
+        if key not in metas:
+            metas[key] = lib.add(f"docqa-{it['lang']}-{it['doc']}.txt", it["text"].encode("utf-8"))
+        meta = metas[key]
+        needle = docs.normalize(it["needle"])
+        whole = any(needle in c["text"] for c in lib._load(meta["id"])[0])
+        hits = lib.search(it["q"], [meta["id"]], k=5)
+        rank = next((h["n"] for h in hits if needle in h["text"]), None)
+        out.append({"rank": rank, "whole": whole, "chunks": meta["chunks"]})
+    return out
+
+
 def needle_prompt(item: dict, n_sentences: int) -> str:
     """The document (n_sentences of filler, cycled, with the needles at their depths) and the question."""
     needle, one, many = NEEDLES[item["lang"]]
@@ -575,6 +641,22 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                                           "by_tokens": {str(k): round(100 * sum(v) / len(v), 1) for k, v in by.items()}}
                 per = "  ".join(f"{k // 1024}k {100 * sum(v) / len(v):.0f}%" for k, v in sorted(by.items()))
                 print(f"  {lang:3} {suite:9} {acc:5.1f}%  ({per})", flush=True)
+                _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
+                continue
+            if suite == "docqa":              # retrieval only: the embedding model on the CPU, --url unused
+                got = run_docqa(items)
+                n = len(got)
+                k1, k5 = sum(g["rank"] == 1 for g in got), sum(g["rank"] is not None for g in got)
+                r1, r5 = round(100 * k1 / n, 1), round(100 * k5 / n, 1)
+                c1, c5 = wilson(k1, n), wilson(k5, n)
+                cut = sum(not g["whole"] for g in got)
+                docs_n = len({it["doc"] for it in items})
+                res[f"{lang}/{suite}"] = {"acc": r5, "recall5": r5, "recall1": r1, "recall5_ci95": c5, "recall1_ci95": c1,
+                                          "n": n, "docs": docs_n,
+                                          "passages": round(sum(g["chunks"] for g in got) / n), "needle_cut": cut,
+                                          **paired(items, [g["rank"] is not None for g in got])}
+                print(f"  {lang:3} {suite:9} R@5 {r5:5.1f}% [{c5[0]}-{c5[1]}]  R@1 {r1:5.1f}% [{c1[0]}-{c1[1]}]  ({n} "
+                      f"questions in {docs_n} documents{f'; needles cut by the chunker: {cut}' if cut else ''})", flush=True)
                 _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
                 continue
             if suite == "codegen":            # write everything first, then run the tests in the Docker sandbox
