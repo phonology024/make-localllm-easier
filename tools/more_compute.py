@@ -38,7 +38,8 @@ MOA_SYSTEM = ("You are given a math problem and answers from other assistants. T
 class Server:
     def __init__(self, model: Path, port: int, slots: int, mtp=False):
         server, _devs, dev, _ram = cli._machine()
-        args = runtime.server_args(model, dev["id"] if dev else None, port, 3072 * slots, mtp) + ["-np", str(slots)]
+        # 8k per slot: the MoA / debate prompt holds the problem plus every model's worked answer (3k overflowed: HTTP 400)
+        args = runtime.server_args(model, dev["id"] if dev else None, port, 8192 * slots, mtp) + ["-np", str(slots)]
         self.name, self.url = model.stem, f"http://127.0.0.1:{port}"
         log = open(Path(__file__).with_name("more_compute_server.log"), "ab")
         self.proc = subprocess.Popen([str(server), *args], env=runtime.server_env(None, False), stdout=log,

@@ -148,11 +148,16 @@ class OpenAISession:
                               "content": tool_run(c["function"]["name"], args) if ok else "error: arguments are not JSON"})
         return stats, calls
 
-    def drop_oldest(self) -> None:
-        """Drop the oldest user turn with its replies and tool results (keeps the system prompt)."""
-        nxt = next((i for i in range(2, len(self.msgs)) if self.msgs[i]["role"] == "user"), None)
+    def estimate_tokens(self) -> int:
+        return len(json.dumps(self.msgs, ensure_ascii=False)) // 3     # ~3 characters per token, on the safe side
+
+    def drop_oldest(self) -> bool:
+        """Drop the oldest user turn with its replies and tool results (keeps the system prompt and the current turn)."""
+        nxt = next((i for i in range(2, len(self.msgs)) if self.msgs[i]["role"] == "user"
+                    and isinstance(self.msgs[i].get("content"), str)), None)
         if nxt:
             del self.msgs[1:nxt]
+        return bool(nxt)
 
 
 class AnthropicSession:
@@ -183,11 +188,15 @@ class AnthropicSession:
             self.msgs.append({"role": "user", "content": results})
         return stats, calls
 
-    def drop_oldest(self) -> None:
+    def estimate_tokens(self) -> int:
+        return (len(json.dumps(self.msgs, ensure_ascii=False)) + len(SYSTEM)) // 3
+
+    def drop_oldest(self) -> bool:
         firsts = [i for i, m in enumerate(self.msgs) if m["role"] == "user"
                   and any(b.get("type") == "text" for b in m["content"])]
         if len(firsts) > 1:
             del self.msgs[:firsts[1]]
+        return len(firsts) > 1
 
 
 def start_server(setup: str, key: str, ctx: int) -> tuple[subprocess.Popen, list[str]]:
@@ -231,17 +240,24 @@ def session(key: str, setup: str, api: str, turns: int, ctx: int) -> dict:
         for i in range(turns):
             s.user(QUESTIONS[i % len(QUESTIONS)])
             reqs, calls, bad, t0 = [], 0, 0, time.time()
+            overflow = False
             for _ in range(6):                                  # tool rounds per user turn
+                # compact before every request, not only between turns: a turn's own tool results can add ~9k tokens
+                while s.estimate_tokens() > 0.7 * ctx and s.drop_oldest():
+                    pass
+                if s.estimate_tokens() > 0.9 * ctx:             # this turn alone doesn't fit: stop it, count it
+                    overflow = True
+                    break
                 stats, cs = s.step()
                 reqs.append(stats)
                 calls += len(cs)
                 bad += sum(not ok or n not in [t[0] for t in TOOLS] for n, _a, ok in cs)
                 if not cs:
                     break
-            if (reqs[-1].get("prompt_tokens") or 0) > 0.8 * ctx:
-                s.drop_oldest()
+            if not reqs:
+                reqs.append({})
             mem = {**proc_stats(proc.pid), **runtime.process_memory(proc.pid)}
-            row = {"turn": i + 1, "requests": len(reqs), "tool_calls": calls, "bad_calls": bad,
+            row = {"turn": i + 1, "requests": len(reqs), "tool_calls": calls, "bad_calls": bad, "overflow": overflow,
                    "turn_s": round(time.time() - t0, 1), "prompt_tokens": reqs[-1].get("prompt_tokens"),
                    "prefill_ms": sum(r.get("prefill_ms") or 0 for r in reqs) or None,
                    "cached": reqs[-1].get("cached"), "tok_s": reqs[-1].get("tok_s"),
