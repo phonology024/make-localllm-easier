@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: phonology024.localllm
+PackageVersion: 0.7.1
+PackageLocale: en-US
+Publisher: phonology024
+PackageName: localllm (make-localllm-easier)
+PackageUrl: https://github.com/phonology024/make-localllm-easier
+License: MIT
+LicenseUrl: https://github.com/phonology024/make-localllm-easier/blob/main/LICENSE
+Moniker: localllm
+ShortDescription: One command runs the best local AI your PC can handle, picked from measured scores in your language
+Tags:
+  - llm
+  - local-llm
+  - llama-cpp
+  - ai
+ReleaseNotesUrl: https://github.com/phonology024/make-localllm-easier/releases/tag/v0.7.1
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

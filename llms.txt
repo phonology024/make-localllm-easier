@@ -24,6 +24,6 @@
 - AMD/Intel without Resizable BAR: set GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1 for up to 1.7x decode (llama.cpp#27097)
 
 ## Links
-- [Website](https://make-localllm-easier.pages.dev/)
+- [Website](https://phonology024.github.io/make-localllm-easier/)
 - [README](https://github.com/phonology024/make-localllm-easier#readme)
 - [Roadmap](https://github.com/phonology024/make-localllm-easier/blob/main/ROADMAP.md)

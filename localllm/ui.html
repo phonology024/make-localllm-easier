@@ -4,23 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>localllm</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#14774c">
 <style>
-:root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#6b6f68;--line:#dcdcd4;--accent:#1a8a5a;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
+:root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#5c6059;--line:#dcdcd4;--accent:#14774c;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
 @media (prefers-color-scheme:dark){:root{--bg:#141614;--panel:#1c1f1c;--text:#e6e8e3;--muted:#9aa096;--line:#2e332e;--accent:#3dbb84;--accent-ink:#0b130e;--me:#1d2b23;--code:#242824;--warn:#e0a060}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",sans-serif;display:flex}
 button,select,textarea,input{font:inherit;color:inherit}
-aside{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+aside{width:260px;flex:none;background:var(--panel);border-inline-end:1px solid var(--line);display:flex;flex-direction:column}
 aside header{padding:14px;display:flex;gap:8px;align-items:center}
 aside header b{flex:1}
 #sessions{flex:1;overflow:auto;padding:0 8px 8px}
 .sess{display:flex;align-items:center;gap:4px;border-radius:8px;padding:6px 8px;cursor:pointer}
 .sess:hover,.sess.on{background:var(--bg)}
-.sess span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sess button{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted)}
-.sess:hover button{opacity:1}
+.sess-open{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:none;text-align:start;padding:0;cursor:pointer}
+.sess-del{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted)}
+.sess:hover .sess-del,.sess-del:focus-visible,.sess.on .sess-del{opacity:1}
 #status{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:pre-line}
 main{flex:1;display:flex;flex-direction:column;min-width:0}
 .top{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
@@ -34,6 +37,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .msg .meta{font-size:12px;color:var(--muted);margin-top:4px}
 .body pre{background:var(--code);padding:10px;border-radius:8px;overflow:auto}
 .body code{background:var(--code);padding:1px 4px;border-radius:4px}
+code{direction:ltr;unicode-bidi:isolate}
 .body pre code{background:none;padding:0}
 details.think{color:var(--muted);font-size:13px;margin-bottom:6px}
 .empty{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
@@ -48,40 +52,100 @@ select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background
 #login{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center}
 #login div{background:var(--bg);padding:22px;border-radius:12px;width:min(380px,90vw)}
 #login input{width:100%;margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
-@media (max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}aside.open{transform:none}.menu{display:inline-block}}
+.tabs{display:flex;gap:4px}
+.tab{border:1px solid transparent;background:none;border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--muted)}
+.tab[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+#chatview{flex:1;min-height:0;display:flex;flex-direction:column}
+#models{flex:1;overflow:auto;padding:16px;display:none}
+#models .intro{max-width:900px;margin:0 auto 12px;color:var(--muted)}
+.mlist{max-width:900px;margin:0 auto;display:grid;gap:10px}
+.mcard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:6px 12px}
+.mcard.no{border-style:dashed}
+.mcard h2{margin:0;font-size:15px}
+.mcard .facts{font-size:13px;color:var(--muted)}
+.mcard .act{grid-row:1/span 3;grid-column:2;align-self:center;text-align:end}
+.badges{display:flex;flex-wrap:wrap;gap:6px}
+.badge{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--code)}
+.fit{font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid currentColor}
+.fit.fits{color:var(--accent)}.fit.spill{color:var(--warn)}.fit.no{color:var(--muted)}
+.best{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--accent);color:var(--accent-ink)}
+.cmd{font-size:12px;user-select:all;background:var(--code);padding:2px 6px;border-radius:4px}
+progress{width:120px}
+@media (max-width:760px){aside{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s}[dir=rtl] aside{inset:0 0 0 auto;transform:translateX(100%)}aside.open,[dir=rtl] aside.open{transform:none}.menu{display:inline-block}}
 </style>
 </head>
 <body>
-<aside id="side">
-<header><b>localllm</b><button class="btn" id="new" type="button">New chat</button></header>
-<div id="sessions"></div>
-<div id="status">status: loading...</div>
+<aside id="side" aria-labelledby="side-title">
+<header><b id="side-title">localllm</b><button class="btn" id="new" type="button" data-i18n="new_chat">New chat</button></header>
+<nav id="sessions" aria-label="Chats" data-i18n-aria="chats"></nav>
+<div id="status" role="status" aria-live="polite" data-i18n="status_loading">status: loading...</div>
 </aside>
 <main>
+<h1 class="sr-only">localllm</h1>
 <div class="top">
-<button class="btn menu" id="menu" type="button" aria-label="Sessions">&#9776;</button>
-<label class="grow">Model <select id="model"><option value="">automatic</option></select></label>
-<label><input type="checkbox" id="think"> thinking</label>
+<button class="btn menu" id="menu" type="button" aria-label="Chats" data-i18n-aria="chats">&#9776;</button>
+<div class="tabs" role="tablist" aria-label="View" data-i18n-aria="view">
+<button class="tab" id="tab-chat" role="tab" type="button" aria-selected="true" aria-controls="chatview" data-i18n="tab_chat">Chat</button>
+<button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models" tabindex="-1" data-i18n="tab_models">Models</button>
 </div>
-<div id="log"></div>
+<label class="grow"><span data-i18n="model">Model</span> <select id="model"><option value="" data-i18n="automatic">automatic</option></select></label>
+<label><input type="checkbox" id="think"> <span data-i18n="thinking">thinking</span></label>
+</div>
+<div id="chatview" role="tabpanel" aria-labelledby="tab-chat">
+<div id="log" role="log" aria-live="polite" aria-busy="false" tabindex="0" aria-label="Chat" data-i18n-aria="tab_chat"></div>
 <form id="form"><div class="box">
-<textarea id="input" rows="1" placeholder="Message" title="Enter sends, Shift+Enter adds a line"></textarea>
-<button class="btn primary" id="send" type="submit">Send</button>
+<textarea id="input" rows="1" aria-label="Message" data-i18n-aria="message" placeholder="Message" title="Enter sends, Shift+Enter adds a line" data-i18n-placeholder="message" data-i18n-title="enter_hint"></textarea>
+<button class="btn primary" id="send" type="submit" data-i18n="send">Send</button>
 </div></form>
+</div>
+<section id="models" role="tabpanel" aria-labelledby="tab-models" aria-live="polite"></section>
 </main>
-<div id="login"><div><b>This localllm asks for its key</b>
-<p class="small">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
-<input id="key" type="password" autocomplete="current-password" aria-label="API key">
-<button class="btn primary" id="keyok" type="button">Unlock</button></div></div>
+<div id="login" role="dialog" aria-modal="true" aria-labelledby="login-title"><div><b id="login-title" data-i18n="key_title">This localllm asks for its key</b>
+<p class="small" data-i18n="key_body">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
+<input id="key" type="password" autocomplete="current-password" aria-label="API key" data-i18n-aria="api_key">
+<button class="btn primary" id="keyok" type="button" data-i18n="unlock">Unlock</button></div></div>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
 const S = {id: null, title: "", messages: [], model: ""};
 let key = "", ctrl = null, catalog = {};
+// ---- the page's words (#108): from /localllm/i18n, English where a translation is missing --------------------------
+let L = {}, UI = "en";
+function T(k, vars) {
+  let s = L[k] || k;
+  for (const n in vars || {}) s = s.split("{" + n + "}").join(String(vars[n]));
+  return s;
+}
+function langName(code) {
+  try { return new Intl.DisplayNames([UI], {type: "language"}).of(code) || code; } catch (e) { return code; }
+}
+async function loadStrings() {
+  try {
+    const d = await (await fetch("/localllm/i18n?lang=" + encodeURIComponent(navigator.language || ""))).json();
+    L = d.strings || {}; UI = d.lang || "en";
+    document.documentElement.lang = UI; document.documentElement.dir = d.dir || "ltr";
+  } catch (e) { /* keep the English in the markup */ }
+  document.querySelectorAll("[data-i18n]").forEach((el) => { if (L[el.dataset.i18n]) el.textContent = L[el.dataset.i18n]; });
+  for (const [k, attr] of [["i18nPlaceholder", "placeholder"], ["i18nTitle", "title"], ["i18nAria", "aria-label"]])
+    document.querySelectorAll(`[data-${k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}]`).forEach((el) => {
+      if (L[el.dataset[k]]) el.setAttribute(attr, L[el.dataset[k]]);
+    });
+}
 try { key = sessionStorage.getItem("localllm-key") || ""; } catch (e) {}
+(function keyFromLink() {      // a QR code made with --qr-key opens /?key=...: keep it for this tab, drop it from the URL
+  const k = new URLSearchParams(location.search).get("key");
+  if (!k) return;
+  key = k;
+  try { sessionStorage.setItem("localllm-key", k); } catch (e) {}
+  history.replaceState(null, "", location.pathname);
+})();
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 function headers(extra) {
-  const h = Object.assign({"Content-Type": "application/json"}, extra || {});
+  const h = Object.assign({"Content-Type": "application/json", "X-Localllm-UI": "1"}, extra || {});
   if (key) h.Authorization = "Bearer " + key;
   return h;
 }
@@ -91,10 +155,11 @@ async function api(path, opts) {
   return r;
 }
 function askKey() { $("login").style.display = "flex"; $("key").focus(); }
+$("key").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("keyok").click(); });
 $("keyok").onclick = () => {
   key = $("key").value.trim();
   try { sessionStorage.setItem("localllm-key", key); } catch (e) {}
-  $("login").style.display = "none"; boot();
+  $("login").style.display = "none"; $("input").focus(); boot();
 };
 
 function esc(s) { return s.replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]); }
@@ -109,7 +174,7 @@ function render(md) {
 function bubble(m) {
   const d = document.createElement("div");
   d.className = "msg " + m.role;
-  d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>thinking</summary>${esc(m.thinking)}</details>` : "")
+  d.innerHTML = (m.thinking && $("think").checked ? `<details class="think"><summary>${esc(T("thinking"))}</summary>${esc(m.thinking)}</details>` : "")
     + `<div class="body">${m.role === "user" ? esc(m.content) : render(m.content)}</div>`
     + (m.meta ? `<div class="meta">${esc(m.meta)}</div>` : "");
   return d;
@@ -118,8 +183,8 @@ function draw() {
   const log = $("log");
   log.innerHTML = "";
   if (!S.messages.length) {
-    log.innerHTML = `<div class="empty"><h1>Chat with the model on this PC</h1><p>Nothing leaves this computer. Chats are
-      saved as plain files in <code>~/.localllm/sessions/</code>.</p></div>`;
+    log.innerHTML = `<div class="empty"><h1>${esc(T("empty_title"))}</h1><p>${esc(T("empty_body")).replace("{path}",
+      "<code>~/.localllm/sessions/</code>")}</p></div>`;
     return;
   }
   S.messages.forEach((m) => log.appendChild(bubble(m)));
@@ -134,10 +199,11 @@ async function listSessions() {
   items.forEach((s) => {
     const d = document.createElement("div");
     d.className = "sess" + (s.id === S.id ? " on" : "");
-    d.innerHTML = `<span title="${esc(s.title)}">${esc(s.title || "untitled")}</span><button type="button" aria-label="Delete">&times;</button>`;
-    d.querySelector("span").onclick = () => open(s.id);
-    d.querySelector("button").onclick = async () => {
-      if (!confirm("Delete this chat?")) return;
+    d.innerHTML = `<button type="button" class="sess-open" title="${esc(s.title)}"${s.id === S.id ? ' aria-current="true"' : ""}>`
+      + `${esc(s.title || T("untitled"))}</button><button type="button" class="sess-del" aria-label="${esc(T("delete"))}: ${esc(s.title || T("untitled"))}">&times;</button>`;
+    d.querySelector(".sess-open").onclick = () => open(s.id);
+    d.querySelector(".sess-del").onclick = async () => {
+      if (!confirm(T("delete_q"))) return;
       await api("/localllm/sessions/" + s.id, {method: "DELETE"});
       if (s.id === S.id) fresh();
       listSessions();
@@ -169,7 +235,8 @@ async function send(text) {
   const body = {messages: S.messages.slice(0, -1).map((m) => ({role: m.role, content: m.content})), stream: true};
   if ($("model").value) body.model = $("model").value;
   ctrl = new AbortController();
-  $("send").textContent = "Stop";
+  $("log").setAttribute("aria-busy", "true");
+  $("send").textContent = T("stop");
   const t0 = performance.now();
   try {
     const r = await fetch("/v1/chat/completions", {method: "POST", headers: headers(), body: JSON.stringify(body), signal: ctrl.signal});
@@ -198,10 +265,11 @@ async function send(text) {
     const speed = timings && timings.predicted_per_second ? `${timings.predicted_per_second.toFixed(1)} tok/s` : "";
     reply.meta = [who || (catalog.single || ""), route !== "local" ? route : "", speed, `${((performance.now() - t0) / 1000).toFixed(1)} s`].filter(Boolean).join(" · ");
   } catch (e) {
-    if (e.name === "AbortError") reply.meta = "stopped";
-    else reply.meta = "error: " + e.message;
+    if (e.name === "AbortError") reply.meta = T("stopped");
+    else reply.meta = T("error", {msg: e.message});
   } finally {
-    ctrl = null; $("send").textContent = "Send";
+    ctrl = null; $("send").textContent = T("send");
+    $("log").setAttribute("aria-busy", "false");
     draw(); save();
   }
 }
@@ -227,16 +295,106 @@ async function status() {
   if (document.hidden) return;
   try {
     const d = await (await api("/localllm/status")).json();
-    if (!d.loaded) { $("status").textContent = "model unloaded (idle); it loads on the next message"; return; }
+    if (!d.loaded) { $("status").textContent = T("unloaded"); return; }
     const gb = (v) => v == null ? "?" : v.toFixed(1) + " GB";
     const spill = d.spill_gb != null && d.spill_gb > d.spill_warn_gb;
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
-      + (spill ? `<br><span class="warn">${esc(gb(d.spill_gb))} spilled to system RAM: slower answers</span>` : "")
-      + (d.savings ? `<br>${esc(d.savings)}` : "");
-  } catch (e) { $("status").textContent = "status unavailable"; }
+      + (spill ? `<br><span class="warn">${esc(T("spilled", {gb: gb(d.spill_gb)}))}</span>` : "")
+      + (d.savings ? `<br>${esc(d.savings)}` : "")
+      + downloadLine(d.download_state);
+  } catch (e) { $("status").textContent = navigator.onLine === false || e instanceof TypeError ? T("offline") : T("status_unavailable"); }
+}
+
+// #116: the best model downloading behind the starter, from GET /localllm/status download_state
+function downloadLine(st) {
+  if (!st) return "";
+  const v = {model: st.key, gb: (st.total_gb || 0).toFixed(1)};
+  let t;
+  if (st.status === "done") t = T("dl_done", v);
+  else if (st.status === "switching") t = T("dl_switching", v);
+  else if (st.status === "switched") t = T("dl_switched", {...v, s: st.switch_s});
+  else if (st.status === "switch_failed") t = T("dl_switch_failed", v);
+  else if (st.status === "failed") t = T("dl_failed", v);
+  else {
+    t = T("dl_progress", {...v, pct: Math.round(100 * (st.done_gb || 0) / (st.total_gb || 1))});
+    if (st.eta_s != null && st.eta_s >= 0)
+      t += " · " + (st.eta_s >= 90 ? T("dl_left_min", {n: Math.round(st.eta_s / 60)}) : T("dl_left_s", {n: Math.max(5, Math.round(st.eta_s / 5) * 5)}));
+  }
+  return `<br>${esc(t)}`;
+}
+
+// ---- Models tab (#107): what fits this PC, scores in its language, one-click download --------------------------------
+const suiteName = (s) => L["suite_" + s] || s;              // suite_global, suite_math, ... in i18n.STRINGS
+let modelsTimer = null;
+
+function showTab(name) {
+  const models = name === "models";
+  $("tab-chat").setAttribute("aria-selected", String(!models));
+  $("tab-models").setAttribute("aria-selected", String(models));
+  $("tab-chat").tabIndex = models ? -1 : 0;
+  $("tab-models").tabIndex = models ? 0 : -1;
+  $("chatview").style.display = models ? "none" : "flex";
+  $("models").style.display = models ? "block" : "none";
+  if (models) loadModels(); else clearTimeout(modelsTimer);
+}
+$("tab-chat").onclick = () => showTab("chat");
+$("tab-models").onclick = () => showTab("models");
+document.querySelector(".tabs").addEventListener("keydown", (ev) => {     // arrow keys move between tabs
+  if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+  const next = ev.target.id === "tab-chat" ? "models" : "chat";
+  showTab(next); $("tab-" + next).focus();
+});
+
+function modelCard(m, info) {
+  const d = document.createElement("div");
+  d.className = "mcard " + m.fit;
+  const unit = (s) => s === "translate" ? " chrF++" : "%";
+  const badges = Object.keys(m.badges).sort().map((s) =>
+    `<span class="badge">${esc(suiteName(s))} ${m.badges[s].toFixed(1)}${unit(s)}</span>`).join("");
+  const facts = [T("gb_download", {gb: m.gb}), m.tok_s ? `~${m.tok_s} tok/s` : "",
+    m.fit === "spill" ? T("experts_ram", {n: m.experts_in_ram}) : "", m.qat ? T("qat") : "",
+    m.below_floor ? T("below_floor") : ""].filter(Boolean).join(" · ");
+  let act;
+  if (m.active) act = `<span class="badge">${esc(T("running"))}</span>`;
+  else if (m.download && m.download.state === "downloading")
+    act = `<progress max="100" value="${m.download.pct}" aria-label="${esc(T("downloading", {key: m.key}))}"></progress> ${m.download.pct}%`;
+  else if (m.downloaded || (m.download && m.download.state === "done"))
+    act = `${esc(T("downloaded"))}<br>${esc(T("run_it"))} <code class="cmd">localllm --ui --model ${esc(m.key)}</code>`;
+  else if (m.fit === "no") act = "";
+  else act = `<button class="btn" type="button" data-dl="${esc(m.key)}">${esc(T("download_btn", {gb: m.gb}))}</button>`
+    + (m.download && m.download.state === "error" ? `<br><span class="warn">${esc(m.download.error)}</span>` : "");
+  d.innerHTML = `<h2>${esc(m.key)} ${m.key === info.best ? `<span class="best">${esc(T("best"))}</span>` : ""}</h2>`
+    + `<div class="act">${act}</div>`
+    + `<div><span class="fit ${m.fit}">${esc(T("fit_" + m.fit))}</span> <span class="facts">${esc(facts)}</span></div>`
+    + `<div class="badges">${m.score != null ? `<span class="badge"><b>${esc(T("score_in", {score: m.score, lang: langName(info.lang)}))}</b></span>` : `<span class="badge">${esc(T("not_measured", {lang: langName(info.lang)}))}</span>`}${badges}</div>`
+    + (m.note ? `<div class="facts">${esc(m.note)}</div>` : "");
+  const b = d.querySelector("[data-dl]");
+  if (b) b.onclick = async () => {
+    b.disabled = true; b.textContent = T("starting");
+    try { await api(`/localllm/models/${encodeURIComponent(m.key)}/download`, {method: "POST"}); } catch (e) {}
+    loadModels();
+  };
+  return d;
+}
+
+async function loadModels() {
+  clearTimeout(modelsTimer);
+  let info;
+  try { info = await (await api("/localllm/models")).json(); } catch (e) { $("models").textContent = T("models_unavailable"); return; }
+  const box = $("models"), focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.dl : null;
+  box.innerHTML = `<p class="intro">${esc(T("models_intro", {vram: info.vram_gb, ram: info.ram_free_gb, lang: langName(info.lang)}))}</p>`;
+
+
+  const list = document.createElement("div");
+  list.className = "mlist";
+  info.models.forEach((m) => list.appendChild(modelCard(m, info)));
+  box.appendChild(list);
+  if (focused) { const again = box.querySelector(`[data-dl="${CSS.escape(focused)}"]`); if (again) again.focus(); }
+  if (info.models.some((m) => m.download && m.download.state === "downloading")) modelsTimer = setTimeout(loadModels, 2000);
 }
 
 async function boot() {
+  await loadStrings();
   try {
     catalog = await (await api("/localllm/catalog")).json();
     const sel = $("model");
@@ -249,7 +407,7 @@ async function boot() {
     });
     if (!catalog.choosable && catalog.single) { sel.options[0].textContent = catalog.single; sel.length = 1; }
     sel.disabled = !catalog.choosable;
-    if (!catalog.choosable) sel.title = "one model is loaded; start with --models A,B to choose";
+    if (!catalog.choosable) sel.title = T("one_model");
     draw(); await listSessions(); status();
   } catch (e) { /* askKey() was shown */ }
 }

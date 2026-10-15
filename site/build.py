@@ -1,20 +1,22 @@
 """Build the static website into site/public/ (#74). Standard library only.
 
   python site/build.py                       # then open site/public/index.html, or serve the folder
-  SITE_URL=https://example.pages.dev python site/build.py
+  SITE_URL=https://example.org python site/build.py   # another address (a path such as /repo is kept in links)
 
 Numbers come from the same places the README uses: localllm/catalog.py (scores, speeds), data/leaderboard.json
 (tools/build_leaderboard.py) and tools/footprint_results.jsonl (tools/headline.py). Nothing is typed in twice.
-Deployed to Cloudflare Pages (the default *.pages.dev address): see site/README.md.
+Deployed to GitHub Pages by .github/workflows/pages.yml on every push to main: see site/README.md.
 """
 from __future__ import annotations
 
 import html
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -24,7 +26,8 @@ import headline  # noqa: E402
 
 SITE = Path(__file__).resolve().parent
 OUT = SITE / "public"
-URL = os.environ.get("SITE_URL", "https://make-localllm-easier.pages.dev").rstrip("/")
+URL = os.environ.get("SITE_URL", "https://phonology024.github.io/make-localllm-easier").rstrip("/")
+BASE = urlparse(URL).path.rstrip("/")   # "/make-localllm-easier": GitHub Pages serves a project site under the repo name
 GH = "https://github.com/phonology024/make-localllm-easier"
 PYPI = "https://pypi.org/project/make-localllm-easier/"
 ISSUES = GH + "/issues"
@@ -34,7 +37,7 @@ LANG_NAMES = {"en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese", 
 
 NAV = [("Features", "/features/"), ("How it works", "/how-it-works/"), ("Use cases", "/use-cases/"),
        ("Compare", "/compare/"), ("Leaderboard", "/leaderboard/"), ("Guides", "/guides/")]
-NAV_TH = [("วิธีเริ่มต้น", "/th/get-started/"), ("ตารางคะแนน", "/leaderboard/#th"), ("คู่มือ (อังกฤษ)", "/guides/")]
+NAV_TH = [("วิธีเริ่มต้น", "/th/get-started/"), ("ตารางคะแนน", "/leaderboard/th/"), ("คู่มือ (อังกฤษ)", "/guides/")]
 LOGO = ('<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="4" fill="none" '
         'stroke="currentColor" stroke-width="2"/><path d="M7 9l3 3-3 3M12 15h5" fill="none" stroke="currentColor" '
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
@@ -62,7 +65,7 @@ INSTALL = term('<span class="p">$ </span>pip install make-localllm-easier\n<span
 
 
 def doctor_sample() -> str:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")     # checked by tests/test_readme.py
     block = readme.split("## What `localllm doctor` tells you", 1)[1].split("```", 2)[1].strip("\n")
     out = []
     for line in esc(block).splitlines():
@@ -136,7 +139,7 @@ def layout(path: str, title: str, desc: str, body: str, lang: str = "en", schema
 <div><h4>Use it</h4><a href="/get-started/">Get started</a><a href="/how-it-works/">How it works</a><a href="/leaderboard/">Leaderboard</a><a href="{GH}/blob/main/docs/apis.md">API docs</a></div>
 <div><h4>Read</h4><a href="/features/">Features</a><a href="/use-cases/">Use cases</a><a href="/compare/">Compare</a><a href="/guides/">Guides</a></div>
 <div><h4>Project</h4><a href="{GH}">GitHub</a><a href="{PYPI}">PyPI</a><a href="{GH}/blob/main/ROADMAP.md">Roadmap</a><a href="{GH}/blob/main/CONTRIBUTING.md">Contributing</a><a href="{GH}/releases">Releases</a></div>
-<div><h4>Contact</h4><a href="{ISSUES}/new">Report a problem</a><a href="{ISSUES}/new?title=Report">Share a result</a><a href="{ISSUES}">Questions and ideas</a><a href="/th/">ภาษาไทย</a></div>
+<div><h4>Contact</h4><a href="{ISSUES}/new">Report a problem</a><a href="{ISSUES}/new?template=results.yml">Share a result</a><a href="{ISSUES}">Questions and ideas</a><a href="/th/">ภาษาไทย</a></div>
 </div>
 </div></footer>
 <script src="/assets/site.js" defer></script>
@@ -501,32 +504,44 @@ and <code>doctor</code> tells you what would fit, but no small model has been me
 
 def compare() -> None:
     rows = [
-        ("Choosing a model", "Picked for you from measured scores in your language, with the reason shown",
-         "You pick from a large library", "You pick from a model browser", "You find and download GGUF files"),
-        ("Model library", "Small: 3 measured models today", "Large", "Large (GGUF and MLX)", "Any GGUF"),
-        ("Per-language scores", "Yes, for 7 languages; measure others with <code>eval</code>", "No", "No", "No"),
+        ("Choosing a model", "Picked for you from measured scores in your language, with the reason shown; the Models "
+         "tab shows what fits your PC", "You pick from its library", "You pick from a model browser",
+         "You pick from its model hub", "You find and download GGUF files"),
+        ("Model library", f"Small: {len(M)} measured models today, 2.7-13.3 GB", "Large", "Large (GGUF, and MLX on "
+         "Apple Silicon)", "GGUF models, plus cloud providers", "Any GGUF"),
+        ("Per-language scores", "Yes, for 7+ languages; measure others with <code>eval</code>", "No", "No", "No", "No"),
         ("Launch settings", "Profiled per model; <code>tune</code> measures them on your PC",
-         "Ollama's defaults", "Settings in the app", "Every flag is yours"),
+         "Ollama's defaults", "Settings in the app", "Settings in the app", "Every flag is yours"),
         ("System RAM in a long chat", f"~{RAM_G['localllm_gb']:.1f} GB (measured)", "Not measured by us",
-         "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
-        ("Interface", "Browser chat page with saved chats (<code>--ui</code>), terminal chat, API",
-         "CLI, API, desktop app", "Desktop app with a GUI",
-         "CLI, server, simple web page"),
-        ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own API plus OpenAI-compatible",
-         "Its own API plus OpenAI-compatible", "OpenAI-compatible, Anthropic Messages"),
-        ("GPUs", "Vulkan (AMD, NVIDIA, Intel), Metal", "CUDA, ROCm, Metal, Vulkan", "CUDA, Vulkan, Metal",
-         "All backends"),
-        ("Open source", "Yes, MIT", "Yes, MIT", "No (free app)", "Yes, MIT"),
+         "Not measured by us", "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
+        ("Interface", "Browser chat page in 7 languages (<code>--ui</code>), terminal chat, API",
+         "CLI, API, desktop app", "Desktop app", "Desktop app", "CLI, server, simple web page"),
+        ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own, OpenAI-compatible, Anthropic Messages "
+         "(a subset)", "Its own REST, OpenAI-compatible, Anthropic-compatible", "OpenAI-compatible",
+         "OpenAI-compatible, Anthropic Messages"),
+        ("GPUs", "Vulkan (AMD, NVIDIA, Intel), Metal", "NVIDIA, AMD (ROCm), Metal, Vulkan", "llama.cpp backends; "
+         "MLX on Apple Silicon", "llama.cpp backends", "All backends"),
+        ("Open source", "Yes, MIT", "Yes, MIT", "No (free app, also for work)", "Yes, Apache 2.0", "Yes, MIT"),
     ]
     trs = "".join(f"<tr><td><b>{r[0]}</b></td>" + "".join(f"<td>{c}</td>" for c in r[1:]) + "</tr>" for r in rows)
-    body = page_head("Compare", "localllm, Ollama, LM Studio, or llama.cpp yourself",
-                     "They all run local models, and three of them run on llama.cpp. The difference is who chooses "
+    sources = [("Ollama: GPU support", "https://docs.ollama.com/gpu"),
+               ("Ollama: Anthropic compatibility", "https://docs.ollama.com/api/anthropic-compatibility"),
+               ("Ollama: license", "https://github.com/ollama/ollama/blob/main/LICENSE"),
+               ("LM Studio: developer docs (API formats)", "https://lmstudio.ai/docs/developer"),
+               ("LM Studio: app docs (llama.cpp, MLX)", "https://lmstudio.ai/docs/app"),
+               ("LM Studio: free for work (July 2025)", "https://lmstudio.ai/blog/free-for-work"),
+               ("Jan: desktop docs", "https://www.jan.ai/docs/desktop"),
+               ("Jan: license", "https://github.com/janhq/jan/blob/main/LICENSE"),
+               ("llama.cpp: license", "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE")]
+    cited = "".join(f'<li><a href="{u}" rel="nofollow">{esc(t)}</a></li>' for t, u in sources)
+    body = page_head("Compare", "localllm, Ollama, LM Studio, Jan, or llama.cpp yourself",
+                     "They all run local models, and most of them run on llama.cpp. The difference is who chooses "
                      "the model and the settings, and how much you can see of why.") + f"""
 <section><div class="wrap">
-<div class="tbl"><table><thead><tr><th></th><th>localllm</th><th>Ollama</th><th>LM Studio</th><th>llama.cpp
+<div class="tbl"><table><thead><tr><th></th><th>localllm</th><th>Ollama</th><th>LM Studio</th><th>Jan</th><th>llama.cpp
 yourself</th></tr></thead><tbody>{trs}</tbody></table></div>
-<p class="small muted" style="margin-top:10px">Other tools' features change often; this table reflects October 2026.
-RAM numbers are only given where we measured them. Corrections are welcome as an
+<p class="small muted" style="margin-top:10px">Other tools change often; this table reflects their own documentation in
+October 2026 (sources below). RAM numbers are only given where we measured them. Corrections are welcome as an
 <a href="{ISSUES}">issue</a>.</p>
 </div></section>
 
@@ -537,9 +552,13 @@ RAM numbers are only given where we measured them. Corrections are welcome as an
 fewer models, but each one measured per language, and the choice made for your card. If you already like Ollama's
 workflow, keep it; localllm's endpoint also speaks the Ollama API, so apps built for Ollama work against it.</p>
 <h2>vs LM Studio</h2>
-<p>LM Studio has a good desktop interface for browsing, downloading and chatting. localllm has no desktop app. It is
-for people who would rather have the answer to "which model and which settings" than a list to choose from, and who
-are fine with a browser page or a terminal.</p>
+<p>LM Studio has a polished desktop app for browsing, downloading and chatting, and runs MLX models on Apple Silicon.
+It is free, also for work, but not open source. localllm is open source and has no desktop app: a browser page, a
+terminal chat and the API, with the model and settings chosen from measurements.</p>
+<h2>vs Jan</h2>
+<p>Jan is an open-source desktop app (Apache 2.0) that mixes local models with cloud providers in one window. localllm
+stays local unless you add your own key on purpose, and answers "which model is best in my language on this card"
+from its measurements instead of a list.</p>
 </div>
 <div class="prose">
 <h2>vs running llama.cpp yourself</h2>
@@ -549,18 +568,20 @@ quantization holds up in your language. You can read every flag it passes in
 <a href="{GH}/blob/main/localllm/runtime.py">runtime.py</a>.</p>
 <h2>When to pick something else</h2>
 <ul>
-<li>You want a polished desktop app: LM Studio.</li>
-<li>You want a model we don't have in the catalog: Ollama, LM Studio or llama.cpp.</li>
+<li>You want a desktop app with a model browser: LM Studio or Jan.</li>
+<li>You want a model we don't have in the catalog: Ollama, LM Studio, Jan or llama.cpp.</li>
+<li>You want MLX on a Mac today: LM Studio.</li>
 <li>You want full control of every setting: llama.cpp.</li>
-<li>Your GPU has less than ~10 GB: any of the others, for now.</li>
 </ul>
+<h2>Sources</h2>
+<ul class="small">{cited}</ul>
 </div>
 </div></section>
 {end_cta("Want the measured choice?", ("See the features", "/features/"))}
 """
-    layout("/compare/", "localllm vs Ollama vs LM Studio vs llama.cpp",
-           "An honest comparison: who picks the model and the settings, per-language scores, RAM use, interfaces and "
-           "APIs. Where to use localllm and where another tool is the better fit.", body)
+    layout("/compare/", "localllm vs Ollama vs LM Studio vs Jan vs llama.cpp",
+           "A sourced comparison: who picks the model and the settings, per-language scores, RAM use, interfaces, "
+           "APIs and licenses. Where to use localllm and where another tool is the better fit.", body)
 
 
 # ---- Get started -----------------------------------------------------------------------------------------------------
@@ -611,7 +632,7 @@ def start() -> None:
 <p class="small muted">The first run shows what your PC can run and asks before the 8-14 GB model download.
 <code>localllm doctor</code> shows the same without downloading a model.</p>
 <h3>No Python?</h3>
-<p>From version 0.7.0, every <a href="{GH}/releases">release</a> has a single <code>localllm</code> file for Windows,
+<p>From version 0.7.1, every <a href="{GH}/releases">release</a> has a single <code>localllm</code> file for Windows,
 macOS and Linux, and an AppImage. Download it and run it from a terminal. winget and Homebrew packages follow.</p>
 </div>
 <div class="prose">
@@ -644,8 +665,7 @@ and you read it before you submit it.</p>
 
 def leaderboard() -> None:
     data = json.loads((ROOT / "data" / "leaderboard.json").read_text(encoding="utf-8"))
-    langs = sorted({k.split("/")[0] for e in data["entries"] for k in e["scores"]},
-                   key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+    langs = sorted({c for e in data["entries"] for c in score_langs(e)}, key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
     opts = "".join(f'<option value="{c}">{LANG_NAMES.get(c, c)}</option>' for c in langs)
     payload = {"entries": data["entries"], "languages": {c: LANG_NAMES.get(c, c) for c in langs}}
     plat = data["platforms"]
@@ -680,6 +700,13 @@ Thai). <b>Math</b>: MGSM. <b>Translation</b>: FLORES-101, chrF++ (0-100). Zero-s
 <a href="{GH}/blob/main/data/leaderboard.json">data/leaderboard.json</a>.</p>
 </div></section>
 
+<section id="by"><div class="wrap">
+<h2>By language and by GPU</h2>
+<p class="muted narrow">The same numbers as plain pages, one per language and one per graphics card.</p>
+<p>{" ".join(f'<a class="tag" href="/leaderboard/{c}/">{esc(LANG_NAMES.get(c, c))}</a>' for c in langs)}</p>
+<p>{" ".join(f'<a class="tag" href="/leaderboard/gpu/{slug(g)}/">{esc(g)}</a>' for g in gpus(data))}</p>
+</div></section>
+
 <section id="platforms"><div class="wrap">
 <h2>Where it is tested</h2>
 <p class="muted narrow">One test PC is ours: Windows 11 with an RX 9070 XT. The rest of this table fills in from shared
@@ -707,6 +734,95 @@ tuned settings and scores. No names, paths or keys; you read it before you submi
                    "distribution": {"@type": "DataDownload", "encodingFormat": "application/json",
                                     "contentUrl": GH.replace("github.com", "raw.githubusercontent.com")
                                     + "/main/data/leaderboard.json"}})
+    for c in langs:
+        language_page(data, c)
+    for g in gpus(data):
+        gpu_page(data, g)
+
+
+SUITES = [("global", "Knowledge (translated)", "%"), ("regional", "Local exams", "%"), ("math", "Math", "%"),
+          ("translate", "Translation", "chrF++")]   # same columns as the board in assets/site.js
+
+
+def slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "unknown"
+
+
+LANG_CODE = re.compile(r"[a-z]{2,3}(-[a-z0-9]{2,8})?")   # report data names pages and links: nothing else gets through
+
+
+def score_langs(e: dict) -> set[str]:
+    return {c for c in (k.split("/")[0] for k in e["scores"]) if LANG_CODE.fullmatch(c)}
+
+
+def gpus(data: dict) -> list[str]:
+    return sorted({e["gpu"] for e in data["entries"]})
+
+
+def mean_score(e: dict, lang: str) -> float:
+    vals = [v for k, v in e["scores"].items() if k.split("/")[0] == lang and isinstance(v, (int, float))]
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def language_page(data: dict, lang: str) -> None:
+    """One static page per language (no JavaScript needed, so search engines see the table)."""
+    if not LANG_CODE.fullmatch(lang):
+        raise ValueError(f"not a language code: {lang!r}")
+    name = esc(LANG_NAMES.get(lang, lang))
+    rows = sorted((e for e in data["entries"] if any(k.split("/")[0] == lang for k in e["scores"])),
+                  key=lambda e: -mean_score(e, lang))
+    keys = [f"{lang}/{s}" for s, _, _ in SUITES]
+    best = {k: max((e["scores"][k] for e in rows if isinstance(e["scores"].get(k), (int, float))), default=None)
+            for k in keys}
+    head = ('<tr><th>Model</th><th>GPU</th><th class="num">Decode tok/s</th>'
+            + "".join(f'<th class="num">{n}<br><span class="muted small">{u}</span></th>' for _, n, u in SUITES)
+            + "<th>Source</th></tr>")
+    body_rows = ""
+    for e in rows:
+        cells = "".join(
+            f'<td class="num{" best" if e["scores"][k] == best[k] and len(rows) > 1 else ""}">{e["scores"][k]:.1f}</td>'
+            if isinstance(e["scores"].get(k), (int, float)) else '<td class="num muted">-</td>' for k in keys)
+        body_rows += (f'<tr><td><code>{esc(e["model"])}</code></td>'
+                      f'<td><a href="/leaderboard/gpu/{slug(e["gpu"])}/">{esc(e["gpu"])}</a></td>'
+                      f'<td class="num">{esc(str(e.get("tok_s") or "-"))}</td>{cells}<td>{esc(e["source"])}</td></tr>')
+    top = f"<code>{esc(rows[0]['model'])}</code> on {esc(rows[0]['gpu'])}" if rows else "nothing yet"
+    body = page_head("Leaderboard", f"Best local LLM for {name}",
+                     f"Measured {name} scores of quantized local models, per GPU. Highest average so far: {top}.",
+                     '<a href="/leaderboard/">Leaderboard</a>') + f"""
+<section><div class="wrap">
+<div class="tbl"><table><thead>{head}</thead><tbody>{body_rows}</tbody></table></div>
+<p class="small muted" style="margin-top:12px">Zero-shot, thinking off; margins about &plusmn;4-5 points. How each
+column is measured: <a href="/leaderboard/">leaderboard</a>. Missing your GPU? Run
+<code>localllm eval --langs en,{esc(lang)}</code> and share it with <code>localllm report</code>.</p>
+</div></section>
+"""
+    layout(f"/leaderboard/{lang}/", f"Best local LLM for {LANG_NAMES.get(lang, lang)}: measured scores per GPU",
+           f"Which local LLM answers best in {LANG_NAMES.get(lang, lang)}: measured accuracy and decode speed per GPU.",
+           body)
+
+
+def gpu_page(data: dict, gpu: str) -> None:
+    """One static page per GPU: every model measured on it, its speed and the languages it was scored in."""
+    rows = sorted((e for e in data["entries"] if e["gpu"] == gpu), key=lambda e: -(e.get("tok_s") or 0))
+    trs = ""
+    for e in rows:
+        langs = sorted(score_langs(e), key=lambda c: (c != "en", LANG_NAMES.get(c, c)))
+        links = " ".join(f'<a href="/leaderboard/{c}/">{esc(LANG_NAMES.get(c, c))}</a>' for c in langs)
+        trs += (f'<tr><td><code>{esc(e["model"])}</code></td><td class="num">{esc(str(e.get("tok_s") or "-"))}</td>'
+                f'<td>{esc(e.get("os", ""))}</td><td>{esc(e.get("llama_cpp", ""))}</td><td>{links}</td>'
+                f'<td>{esc(e["source"])}</td></tr>')
+    vram = rows[0].get("vram_gb") if rows else None
+    lead = (f"Local models measured on the {esc(gpu)}" + (f" ({vram:g} GB VRAM)" if isinstance(vram, (int, float)) else "")
+            + ": decode speed and the languages each one was scored in.")
+    body = page_head("Leaderboard", f"Local LLMs on the {esc(gpu)}", lead,
+                     '<a href="/leaderboard/">Leaderboard</a>') + f"""
+<section><div class="wrap">
+<div class="tbl"><table><thead><tr><th>Model</th><th class="num">Decode tok/s</th><th>OS</th><th>llama.cpp</th>
+<th>Scored in</th><th>Source</th></tr></thead><tbody>{trs}</tbody></table></div>
+</div></section>
+"""
+    layout(f"/leaderboard/gpu/{slug(gpu)}/", f"Local LLM speed and scores on the {gpu}",
+           f"Which local LLMs run on the {gpu}, how fast they decode, and how they score per language.", body)
 
 
 # ---- Guides (the README FAQ questions, as pages) ---------------------------------------------------------------------
@@ -1036,7 +1152,7 @@ localllm จึงเก็บคะแนนแยกตามภาษา แ�
 <p>เรามีเครื่องทดสอบเครื่องเดียว (Windows + RX 9070 XT) ถ้าคุณใช้ NVIDIA, Mac หรือการ์ดรุ่นอื่น ใช้เวลา 10-30 นาที:</p>
 {term('<span class="p">$ </span>localllm tune' + chr(10) + '<span class="p">$ </span>localllm eval --langs en,th' + chr(10) + '<span class="p">$ </span>localllm report', "แชร์ผลวัด", "report-th")}
 <p class="small muted"><code>report</code> จะเปิด issue บน GitHub ที่กรอกข้อมูลไว้ให้ ไม่มีชื่อผู้ใช้ path หรือ key อ่านทวนได้ก่อนส่ง
-ผลจะขึ้นใน <a href="/leaderboard/#th">ตารางคะแนน</a></p>
+ผลจะขึ้นใน <a href="/leaderboard/th/">ตารางคะแนน</a></p>
 </div></section>
 """
     layout("/th/", "localllm: รัน AI ในเครื่องตัวเอง เลือกโมเดลจากคะแนนภาษาไทยที่วัดจริง",
@@ -1057,7 +1173,7 @@ def thai_start() -> None:
 </ol>
 {INSTALL}
 <h3>ไม่มี Python?</h3>
-<p>ตั้งแต่เวอร์ชัน 0.7.0 ทุก <a href="{GH}/releases">release</a> จะมีไฟล์ <code>localllm</code> ไฟล์เดียวสำหรับ Windows,
+<p>ตั้งแต่เวอร์ชัน 0.7.1 ทุก <a href="{GH}/releases">release</a> จะมีไฟล์ <code>localllm</code> ไฟล์เดียวสำหรับ Windows,
 macOS และ Linux ดาวน์โหลดแล้วรันจาก terminal ได้เลย</p>
 </div>
 <div class="prose">
@@ -1097,6 +1213,11 @@ def not_found() -> None:
     layout("/404/", "Page not found", "This page does not exist.", body)
 
 
+def rebase(text: str) -> str:
+    """Root-relative links get the base path, so the site works under /make-localllm-easier/ and at a root domain."""
+    return re.sub(r'((?:href|src)=")/(?!/)', lambda m: m.group(1) + BASE + "/", text) if BASE else text
+
+
 def write() -> None:
     OUT.mkdir(exist_ok=True)
     for old in OUT.iterdir():                          # empty it, keep the folder (a local server may have it open)
@@ -1107,13 +1228,14 @@ def write() -> None:
     for path, text in pages.items():
         dest = OUT / "404.html" if path == "/404/" else OUT / path.strip("/") / "index.html"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8", newline="\n")
+        dest.write_text(rebase(text), encoding="utf-8", newline="\n")
     urls = "".join(f"<url><loc>{URL}{p}</loc></url>\n" for p in pages if p != "/404/")
     (OUT / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/'
                                      f'schemas/sitemap/0.9">\n{urls}</urlset>\n', encoding="utf-8", newline="\n")
     (OUT / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {URL}/sitemap.xml\n", encoding="utf-8",
                                     newline="\n")
     shutil.copy2(ROOT / "llms.txt", OUT / "llms.txt")
+    shutil.copytree(ROOT / "data" / "catalog", OUT / "catalog")   # measured catalog JSON + schema (#164)
     for f in (SITE / "static").glob("*") if (SITE / "static").exists() else []:   # e.g. a Search Console file
         shutil.copy2(f, OUT / f.name)
     (OUT / "_headers").write_text("/assets/*\n  Cache-Control: public, max-age=3600\n/*\n"

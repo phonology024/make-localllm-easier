@@ -45,7 +45,8 @@ def test_vram_taken_by_other_apps_names_them_and_offers_a_model_that_fits(monkey
     p = fix.check_vram(busy, "gemma4-26b-a4b-qat", [("QuantFleet", 2.2), ("dwm", 2.5)])
     assert p.id == "vram-busy" and "only 10.5 GB of 15.9 GB is free" in p.what
     assert "QuantFleet (2.2 GB)" in p.fix and "this run only, use a smaller model" in p.fix
-    assert "localllm --model qwen3.8-27b-iq2" in p.fix and p.apply == {}    # a busy GPU is temporary: nothing saved
+    fit = fix.catalog.pick(10.5, None, 20.0, candidates=[k for k, v in fix.catalog.MODELS.items() if v["gb"] < 13.3])
+    assert fit and f"localllm --model {fit}" in p.fix and p.apply == {}    # the catalog's own pick; nothing saved
     assert fix.check_vram(DEV, "gemma4-26b-a4b-qat", []) is None
 
 
@@ -120,7 +121,7 @@ def test_doctor_fix_applies_nothing_without_consent(monkeypatch, capsys):
 
 def test_vram_taken_with_nothing_smaller_that_fits(monkeypatch):
     monkeypatch.setattr(fix.runtime, "ram_available_gb", lambda: 20.0)
-    p = fix.check_vram({**DEV, "free_gb": 6.0}, "gemma4-26b-a4b-qat", [])
+    p = fix.check_vram({**DEV, "free_gb": 4.0}, "gemma4-26b-a4b-qat", [])   # below the smallest catalog model (#142)
     assert p.apply == {} and "Close what holds VRAM - other apps" in p.fix and "--model" not in p.fix
 
 

@@ -14,8 +14,8 @@ localllm eval --langs en,<yours>      # e.g. en,de or en,th; a few minutes per l
 localllm report                       # opens a prefilled GitHub issue; read it, then submit
 ```
 
-The report has no user names, paths or keys. It shows up in the README's "Where it is tested" table and on the
-website's leaderboard. Interesting results we haven't seen before: NVIDIA on Windows or Linux, Apple Silicon, Intel
+The report has no user names, paths or keys. It shows up in the "Where it is tested" table ([docs/how-it-works.md](docs/how-it-works.md#where-it-is-tested))
+and on the website's leaderboard. Interesting results we haven't seen before: NVIDIA on Windows or Linux, Apple Silicon, Intel
 Arc, 6-12 GB cards, CPU-only PCs.
 
 Renting a cloud GPU for an hour? `tools/cloud_lab.sh` does all of the above unattended and marks the report as
@@ -40,7 +40,7 @@ The tests don't need a GPU or a model download; they run on Windows, Linux and m
   before you start so two people don't do the same work.
 - `localllm/` uses the standard library only. Optional tools under `tools/` may use numpy, gguf or matplotlib.
 - Keep it short: small functions, comments that say *why*, no new dependencies without asking.
-- A change to a number in the README needs the measurement behind it (GPU, RAM, OS, llama.cpp build, command).
+- A change to a number in the README or docs/ needs the measurement behind it (GPU, RAM, OS, llama.cpp build, command).
   `tests/test_readme.py` checks the `doctor` sample and the RAM table against the code and `tools/*.jsonl`.
 - Anything in [docs/stability.md](docs/stability.md) can't be removed without the deprecation steps there.
 

@@ -10,7 +10,9 @@
   localllm eval             score a running server in English + your language (global and local exams)
   localllm report           your GPU, tuned settings and scores in one JSON + a prefilled issue to share them
   localllm savings          tokens answered locally this month (and $ at the prices you set)
+  localllm bugreport        a zip to attach to a bug report (no keys, no user name)
   localllm connect TOOL     point hermes / opencode / claude-code / codex / aider / cline / obsidian at the local endpoint
+  localllm launch TOOL      start localllm (profile max) + connect + the agent, undo the config when it exits
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import __version__, catalog, runtime
+from . import __version__, catalog, i18n, runtime
 
 
 def _say(msg: str) -> None:
@@ -41,9 +43,11 @@ class ChecksumError(Exception):
     """A downloaded file is not the one we measured: it was deleted, nothing was run from it."""
 
 
-def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str | None = None) -> None:
-    """Resumable download with a one-line progress bar. timeout is per connect/read: a stalled link raises.
-    With sha256 the finished file must match it, else it is deleted and ChecksumError says so."""
+def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str | None = None, progress=None) -> None:
+    """Resumable download with a one-line progress bar and ETA. timeout is per connect/read: a stalled link raises.
+    With sha256 the finished file must match it, else it is deleted and ChecksumError says so.
+    progress(done_bytes, total_bytes, bytes_per_s) replaces the bar (background downloads, #116)."""
+    from .downloads import eta
     import hashlib
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -63,11 +67,16 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
                 f.write(chunk); got += len(chunk)
                 if sha256:
                     h.update(chunk)
-                if total:
+                rate = got / max(time.time() - t0, 1e-3)
+                if progress:
+                    progress(done + got, total, rate)
+                elif total:
                     pct = 100 * (done + got) / total
-                    speed = got / max(time.time() - t0, 1e-3) / 2**20
-                    print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({speed:.0f} MB/s)  ", end="", flush=True)
-    print()
+                    left = eta((total - done - got) / rate if rate else None)
+                    print(f"\r  {label}: {pct:5.1f}% of {total / 2**30:.1f} GB  ({rate / 2**20:.0f} MB/s"
+                          f"{', ' + left + ' left' if left else ''})  ", end="", flush=True)
+    if not progress:
+        print()
     if total and done + got < total:                    # the link closed early: keep the .part to resume from
         raise IncompleteDownload(f"{label}: got {done + got} of {total} bytes")
     if sha256 and h.hexdigest() != sha256.lower():
@@ -77,18 +86,90 @@ def _download(url: str, dest: Path, label: str, timeout: float = 60, sha256: str
     tmp.replace(dest)
 
 
-def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5) -> None:
-    """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits."""
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":                     # os.kill(pid, 0) would send Ctrl+C on Windows
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, pid)          # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return code.value == 259                         # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _take_lock(dest: Path) -> Path | None:
+    """One writer per model file across processes: <file>.part.lock holds the writer's pid. Returns the lock path if
+    this process got it, None if a live process holds it (a lock left by a dead one is taken over)."""
+    lock = dest.with_suffix(dest.suffix + ".part.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return lock
+        except FileExistsError:
+            try:
+                pid = int(lock.read_text().strip() or 0)
+            except (OSError, ValueError):
+                pid = 0
+            if _pid_alive(pid) and pid != os.getpid():
+                return None
+            try:
+                lock.unlink()                            # stale: its process is gone
+            except OSError:
+                return None
+    return None
+
+
+LOCK_POLL_S = 5.0
+
+
+def _fetch(url: str, dest: Path, label: str, sha256: str | None, tries: int = 5, progress=None) -> None:
+    """_download, resumed after a dropped connection (up to `tries` times); a checksum mismatch exits. If another
+    localllm is already downloading this file, wait for it instead of writing the same .part."""
+    lock = _take_lock(dest)
+    if lock is None and not progress:
+        _say(f"another localllm is already downloading {label}; waiting for it to finish ...")
+    while lock is None:
+        if dest.exists():
+            return
+        time.sleep(LOCK_POLL_S)
+        lock = _take_lock(dest)
+    try:
+        if dest.exists():                                # finished by the other process while we waited
+            return
+        _fetch_locked(url, dest, label, sha256, tries, progress)
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _fetch_locked(url: str, dest: Path, label: str, sha256: str | None, tries: int, progress) -> None:
     for attempt in range(1, tries + 1):
         try:
-            _download(url, dest, label, sha256=sha256)
+            _download(url, dest, label, sha256=sha256, progress=progress)
             return
         except ChecksumError as e:
             sys.exit(f"[localllm] {e}")
         except (IncompleteDownload, OSError, http.client.HTTPException) as e:   # URLError, timeouts, resets
             if attempt == tries:
                 sys.exit(f"[localllm] download failed {tries} times ({e}); run the command again to resume it")
-            _say(f"connection dropped ({e}); resuming ({attempt}/{tries - 1}) ...")
+            if not progress:
+                _say(f"connection dropped ({e}); resuming ({attempt}/{tries - 1}) ...")
             time.sleep(min(30, 2 ** attempt))
 
 
@@ -97,6 +178,8 @@ def _hf_url(m: dict, name: str) -> str:
 
 
 ASSUME_YES = False   # --yes, or LOCALLLM_YES=1: never ask (scripts, installers)
+CONSENTED: set[str] = set()      # models the person already agreed to download this run (asked once, up front)
+NO_THINK: set[str] = set()       # models started with reasoning off (the first-run starter, #116)
 
 
 def confirm(question: str) -> bool:
@@ -109,14 +192,31 @@ def confirm(question: str) -> bool:
         return True
 
 
-def _model_path(key: str) -> Path:
+def _have_model(key: str) -> Path | None:
+    """The model's file if it is on disk (LOCALLLM_MODELS folders first, then ~/.localllm/models), else None."""
     m = catalog.MODELS[key]
-    for d in filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)):
+    for d in [*filter(None, os.environ.get("LOCALLLM_MODELS", "").split(os.pathsep)), runtime.HOME / "models"]:
         if (Path(d) / m["file"]).exists():
             return Path(d) / m["file"]
+    return None
+
+
+def _fetch_model(key: str) -> Path:
+    """Download a catalog model to ~/.localllm/models, checked against its SHA-256 (no question asked)."""
+    m = catalog.MODELS[key]
+    dest = runtime.HOME / "models" / m["file"]
+    _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
+    return dest
+
+
+def _model_path(key: str) -> Path:
+    m = catalog.MODELS[key]
+    found = _have_model(key)
+    if found:
+        return found
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
-        if not confirm(f"download {key} ({m['gb']} GB, once, to {dest.parent})?"):
+        if key not in CONSENTED and not confirm(i18n.t("cli_confirm_download", key=key, gb=m["gb"], dir=dest.parent)):
             sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks another.")
         _say(f"downloading {key} ({m['gb']} GB, one time) ...")
         _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
@@ -195,26 +295,34 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
 
 def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False, profile: str = "lean", ui: bool = False):
-    """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /."""
+           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False,
+           swappable: bool = False, embeddings: bool = False):
+    """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /.
+    qr_key: LAN mode's QR code carries the key too. embeddings: answer /v1/embeddings with multilingual-e5-small."""
     host, api_key, shown = _lan(host, api_key, require_local)
     trust = not require_local
     if shown != "127.0.0.1":
         _say(f"LAN mode: other devices use http://{shown}:{port} with the key; this PC needs none")
+        _print_qr(f"http://{shown}:{port}/" + (f"?key={api_key}" if qr_key and api_key else ""), qr_key)
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
+    from . import taskclf
     ram_free = runtime.ram_available_gb()
+    clf = taskclf.Classifier(server) if (models or embeddings) else None   # the router's e5 server, shared (#158)
+    emb = clf.embeddings_url if embeddings else None
+    if embeddings:
+        _say(f"embeddings: POST /v1/embeddings answers with {taskclf.EMBED_MODEL} on the CPU (no VRAM, "
+             f"~{taskclf.EMBED_RAM_GB:g} GB RAM est.); it starts on the first request")
     if models:
         if not dev:
             sys.exit("[localllm] --models needs a GPU")
-        keys = [k for k in catalog.MODELS if catalog.cpu_moe_layers(k, dev["total_gb"], ram_free) == 0
-                and not catalog.below_floor(k)] if models == "auto" else models.split(",")
+        keys = catalog.auto_pool(dev["total_gb"], ram_free, profile) if models == "auto" else models.split(",")
         bad = [k for k in keys if k not in catalog.MODELS]
         if bad or not keys:
             sys.exit(f"[localllm] unknown or unfitting models: {bad or models}. See `localllm list`.")
         from . import gateway, pool
         first = catalog.pick(dev["total_gb"], system_language(), ram_free, candidates=keys)
-        _say(f"smart routing between {', '.join(keys)}")
+        _say(f"smart routing between {', '.join(keys)}" + (f" ({profile} profile)" if models == "auto" else ""))
         ctxs = {k: ctx or catalog.context_for(k, dev["total_gb"], ram_free, profile) for k in keys}
         need = sum(catalog.MODELS[k]["gb"] + catalog.MODELS[k]["kv_kb_per_token"] * ctxs[k] / 2**20
                    + catalog.MODELS[k]["fixed_cache_gb"] + (catalog.MODELS[k].get("mmproj_gb", 0) if vision else 0)
@@ -222,25 +330,49 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
         resident = need <= dev["total_gb"]
         _say(f"all {len(keys)} models fit in VRAM together ({need:.1f} GB): no swaps" if resident else
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
-        from . import taskclf
-        clf = taskclf.Classifier(server)    # math/code/translate in any language; its server starts on the 1st message
+        # clf: math/code/translate in any language; its server starts on the 1st message
         p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctxs[k], ram_free, vision, profile), dev["total_gb"],
                       ram_free, first,
                       resident, files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf,
                       idle_unload_s=pool.IDLE_UNLOAD_S if idle_min is None else idle_min * 60)
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
                                             trust_loopback=trust, status=lambda: _status(p.proc, p.current),
-                                            ui=_ui(keys, True) if ui else None, meter=_meter())),
+                                            ui=_ui(keys, True, dev, ram_free) if ui else None,
+                                            meter=_meter(), embeddings=emb)),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
+    if swappable:                   # the first run's starter: it moves to the best model when that is downloaded (#128)
+        from . import gateway, hotswap
+        sw = hotswap.Switchable(key, lambda k: _launch(k, server, dev, ctx if k == key else None, ram_free, vision,
+                                                         profile))
+        gw = gateway.serve(sw, host=host, port=port, model_name=key, api_key=api_key, trust_loopback=trust,
+                           status=lambda: _status(sw.proc, sw.key), ui=_ui([key], False, dev, ram_free) if ui else None,
+                           meter=_meter(), embeddings=emb)
+        return _PoolProc(sw, gw), f"http://127.0.0.1:{port}"
     proc, url = _launch(key, server, dev, ctx, ram_free, vision, profile)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
                                   trust_loopback=trust, status=lambda: _status(proc, key),
-                                  ui=_ui([key], False) if ui else None, meter=_meter())
+                                  ui=_ui([key], False, dev, ram_free) if ui else None, meter=_meter(),
+                                  embeddings=emb)
     return proc, f"http://127.0.0.1:{port}"
+
+
+def _print_qr(url: str, with_key: bool = False) -> None:
+    """A QR code of the LAN address for a phone camera (#122). The key stays out unless --qr-key."""
+    if not sys.stdout.isatty():
+        return
+    from . import qr
+    try:
+        "█▀▄".encode(sys.stdout.encoding or "ascii")
+        plain = False
+    except (UnicodeEncodeError, LookupError):        # e.g. a Windows console on a legacy code page
+        plain = True
+    print(qr.terminal(qr.encode(url, "M"), plain=plain))
+    _say("scan it with the phone's camera" + (" - this code contains the key: anyone who sees it can use this PC"
+                                              if with_key else ", then type the key shown above"))
 
 
 def _meter():
@@ -248,21 +380,29 @@ def _meter():
     return meter.Meter()
 
 
-def _ui(keys: list[str], choosable: bool) -> dict:
+def _ui(keys: list[str], choosable: bool, dev: dict | None = None, ram_free: float = 0.0) -> dict:
     from . import workspace
     from .bench import system_language
     store = workspace.Sessions()
     _say(f"chat workspace: chats are saved in {store.dir}")
-    return {"sessions": store, "catalog": workspace.catalog_info(keys, system_language(), choosable)}
+    lang = system_language()
+    downloads = workspace.Downloads(_fetch_model, lambda k: runtime.HOME / "models" / (catalog.MODELS[k]["file"] + ".part"))
+    vram = dev["total_gb"] if dev else 0.0
+    return {"sessions": store, "catalog": workspace.catalog_info(keys, lang, choosable), "downloads": downloads,
+            "models": lambda: workspace.browser_info(vram, ram_free, lang, keys, _have_model, downloads)}
 
 
 def _status(proc, key: str | None) -> dict:
     """For GET /localllm/status: what the running llama-server uses right now."""
     from . import meter
     saved = meter.line(meter.Meter().month())
+    from . import downloads
+    st = downloads.state()
+    dl = downloads.line(st)
+    extra = {"download": dl, "download_state": st} if dl else {}   # text for `localllm chat`, state for the page
     if proc is None:
-        return {"loaded": False, "savings": saved}
-    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved,
+        return {"loaded": False, "savings": saved, **extra}
+    return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved, **extra,
             **runtime.process_memory(proc.pid)}
 
 
@@ -287,6 +427,8 @@ def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: boo
     mtp = (tuned["mtp"] if tuned else catalog.MODELS[key]["mtp"]) if catalog.MODELS[key]["mtp"] else False
     inner = _free_port()   # llama-server listens privately; the gateway on `port` speaks OpenAI/Anthropic/Ollama/Gemini
     args = runtime.server_args(model, dev["id"] if dev else None, inner, ctx, mtp, cpu_moe=cpu_moe, profile=profile)
+    if key in NO_THINK:          # first-run starter: answer right away instead of reasoning first (#116)
+        args += ["--reasoning-budget", "0"]
     if profile == "max":
         _say(f"profile max: {ctx // 1000}k-token context, larger prompt cache in RAM")
     if vision:
@@ -320,23 +462,104 @@ def first_run() -> bool:
     return not have and not os.environ.get("LOCALLLM_MODELS")
 
 
+def _starter_plan(a) -> tuple[str | None, str | None]:
+    """(model to start with, model to download behind it). On a first run whose best model isn't downloaded, start the
+    small starter model so chat works in about a minute and fetch the best one in the background (#116)."""
+    if a.model or getattr(a, "models", None) or os.environ.get("LOCALLLM_NO_STARTER"):
+        return a.model, None
+    from .bench import system_language
+    _server, _devs, dev, _ram = _machine()
+    if not dev:
+        return None, None
+    ram_free = runtime.ram_available_gb()
+    best = catalog.pick(dev["total_gb"], system_language(), ram_free)
+    if not best or _have_model(best):
+        return best, None
+    start = catalog.starter(dev["total_gb"], ram_free)
+    if not start or start == best:
+        return best, None
+    return start, best
+
+
+def _ask_first_run(start: str, later: str) -> str:
+    """One question before a first run downloads anything: 'both', 'starter' or 'none'. --yes, LOCALLLM_YES and scripts
+    (no terminal) mean both, like every other download."""
+    s, b = catalog.MODELS[start], catalog.MODELS[later]
+    if ASSUME_YES or os.environ.get("LOCALLLM_YES") or not sys.stdin.isatty():
+        return "both"
+    q = i18n.t("cli_first_run_ask", start=start, sgb=s["gb"], best=later, bgb=b["gb"]) + " [Y/n/s] "
+    try:
+        ans = input(f"[localllm] {q}").strip().lower()
+    except EOFError:
+        return "both"
+    return "starter" if ans in ("s", "starter") else "none" if ans in ("n", "no") else "both"
+
+
 def cmd_run(a) -> None:
     if first_run() and not a.model and sys.stdin.isatty():
-        _say("first run: here is what this PC can run")
+        _say(i18n.t("cli_first_run"))
         cmd_doctor(a)
         print()
-    proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
+    key, later = _starter_plan(a)
+    if later:
+        choice = _ask_first_run(key, later)
+        if choice == "none":
+            sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks one.")
+        CONSENTED.add(key)
+        if choice == "starter":
+            _say(i18n.t("cli_starter_only", start=key, best=later))
+            later = None
+        else:
+            CONSENTED.add(later)
+            NO_THINK.add(key)                  # quick first answers until the best model is in
+            s, b = catalog.MODELS[key], catalog.MODELS[later]
+            _say(f"starting with {key} ({s['gb']} GB) so you can chat in about a minute; {later} ({b['gb']} GB), the "
+                 "best model for this PC, downloads in the background (`/status` in chat shows how far)")
+    proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
-                       ui=getattr(a, "ui", False))
-    _say(f"ready. chat: {url}   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
+                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False), swappable=bool(later),
+                       embeddings=getattr(a, "embeddings", False))
+    _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
+    if later:
+        sw = getattr(proc, "pool", None)          # the hot-switchable starter (#128), if _start made one
+        _background(later, sw) if sw is not None else _background(later)
     if not a.no_browser:
         webbrowser.open(url)
     try:
         proc.wait()
     except KeyboardInterrupt:
         proc.terminate()
+
+
+def _background(key: str, switchable=None):
+    """Download `key` behind the running starter model. With `switchable` (hotswap.Switchable) the server moves to it
+    as soon as it is in place, between answers (#128); without, say once that a restart switches."""
+    from . import downloads
+    m = catalog.MODELS[key]
+    dest = runtime.HOME / "models" / m["file"]
+    done = (lambda k: _switch_to(switchable, k)) if switchable is not None else \
+        (lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
+                        "again to switch to it."))
+    return downloads.start(
+        key, lambda progress: _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"), progress=progress),
+        on_done=done)
+
+
+def _switch_to(sw, key: str) -> dict:
+    """The download is done: move the running server to `key` after the answer in progress, and say how it went."""
+    from . import downloads
+    downloads.mark(status="switching")
+    _say(f"{key} is downloaded - switching to it after the answer in progress")
+    r = sw.switch(key)
+    if "error" in r:
+        downloads.mark(status="switch_failed", error=r["error"])
+        _say(f"{key} didn't start ({r['error']}); still on {r['from']} - restart localllm to try again")
+    else:
+        downloads.mark(status="switched", switch_s=r["seconds"])
+        _say(f"now running {key}, the best model for this PC (switched in {r['seconds']:g} s)")
+    return r
 
 
 def cmd_chat(a) -> None:
@@ -431,13 +654,13 @@ def cmd_doctor(_a) -> None:
     ram_avail = runtime.ram_available_gb()
     key = catalog.pick(vram, lang, ram_avail) if dev else None
     if not key:
-        print("\nNo measured model fits this GPU yet. Run `localllm list`, or help by measuring one (`localllm eval`).")
+        print("\n" + i18n.t("cli_none_fits"))
         return
     m = catalog.MODELS[key]
     cpu_moe = catalog.cpu_moe_layers(key, vram, ram_avail) or 0
     in_ram = cpu_moe * m["moe"]["expert_gb_per_layer"] if cpu_moe else 0.0
     ctx = sizing.context_tokens(vram, {**m, "gb": m["gb"] - in_ram})
-    print(f"\nBest measured model for you: {key}  ({m['note']})")
+    print("\n" + i18n.t("cli_best", key=key) + f"  ({m['note']})")
     stale = catalog.build_note(key, runtime.build_of(server))
     if stale:
         print(f"  note: {stale}")
@@ -474,6 +697,8 @@ def cmd_doctor(_a) -> None:
           f" + ~{ram_est['prompt_cache_gb']:.1f} GB prompt cache + ~{ram_est['checkpoints_gb']:.1f} GB ctx checkpoints"
           f" + ~{ram_est['host_gb']:.1f} GB host (est.)")
     print(f"  leaves ~{ram_free:.0f} GB of RAM free for other apps (est.)")
+    from .taskclf import EMBED_MODEL, EMBED_RAM_GB
+    print(f"  with --embeddings: + ~{EMBED_RAM_GB:g} GB RAM for {EMBED_MODEL} on the CPU, no VRAM (est.)")
     same = bw == sizing.BANDWIDTH["rx 9070 xt"]
     est = m["tok_s_9070xt"] if same else (int(m["tok_s_9070xt"] * bw / 640) if bw else None)
     from . import tune
@@ -590,6 +815,25 @@ def cmd_list(_a) -> None:
     print(f"  measured on llama.cpp {', '.join(builds)} (`localllm doctor` says if yours differs)")
 
 
+BUG_FORM = "https://github.com/phonology024/make-localllm-easier/issues/new?template=bug.yml"
+
+
+def cmd_bugreport(a) -> None:
+    from . import bugreport
+    files = bugreport.collect(lambda: cmd_doctor(a))
+    _say("the bug report holds these files (API keys, tokens, your user name and home folder are taken out):")
+    print(bugreport.summary(files))
+    if a.show:
+        for name, text in files.items():
+            print(f"\n===== {name} =====\n{text}", end="")
+    elif not a.yes:
+        _say("see everything first: localllm bugreport --show")
+    if not confirm("write the zip?"):
+        sys.exit("[localllm] nothing written")
+    out = bugreport.write(files)
+    _say(f"wrote {out} - attach it to a bug report (nothing was sent): {BUG_FORM}")
+
+
 def cmd_report(a) -> None:
     from . import report
     rep = report.collect()
@@ -601,6 +845,11 @@ def cmd_report(a) -> None:
     if names:
         _say(f"your eval run names go in as typed: {', '.join(names)} - check none of them names you before posting")
     _say(f"share it (you review everything before submitting): {url}")
+    if getattr(a, "share", False):
+        from . import share
+        card, page = share.write(rep, out.parent)
+        _say(f"share card: {card} (post it anywhere; it links to {page})")
+        url = card.as_uri()
     if not a.no_browser:
         webbrowser.open(url)
 
@@ -625,6 +874,12 @@ def cmd_connect(a) -> None:
     print(connect.connect(a.tool, base, a.model_id or connect.model_id(base), path, a.dry_run))
 
 
+def cmd_launch(a) -> None:
+    from . import chat, launch
+    sys.exit(launch.run(a.tool, a.port, a.keep, a.args, alive=chat.server_alive, say=_say,
+                        start_server=lambda: _start(a.model, a.port, None, profile="max")))
+
+
 def cmd_eval(a) -> None:
     from . import bench
     langs = a.langs.split(",") if a.langs else sorted({"en", bench.system_language()})
@@ -636,6 +891,8 @@ UI_HELP = ("our chat workspace at / instead of llama-server's page: saved chats 
            "a model picker with --models, live VRAM/RAM; on the LAN it asks for the key")
 PROFILE_HELP = ("lean (default): least RAM and VRAM, 8k context. max: use what this PC has - a context that fills the "
                 "GPU and a bigger prompt cache for agents (`localllm doctor` shows both)")
+EMBED_HELP = ("also answer /v1/embeddings (OpenAI format) with multilingual-e5-small on the CPU, for Obsidian "
+              "vault search and RAG; downloaded once, SHA-256 checked")
 VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-1.1 GB of VRAM; off by default so "
                "text-only use doesn't pay for it)")
 
@@ -643,6 +900,8 @@ VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="localllm", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
+    ap.add_argument("--lang", choices=i18n.LANGS, help="language of the chat page and messages (default: the browser's, "
+                    "then this PC's; also LOCALLLM_LANG)")
     ap.add_argument("--yes", "-y", action="store_true", help="don't ask before downloading a model (also LOCALLLM_YES=1)")
     ap.add_argument("--model", choices=list(catalog.MODELS), help="override the automatic pick")
     ap.add_argument("--port", type=int, default=8080)
@@ -660,11 +919,15 @@ def build_parser() -> argparse.ArgumentParser:
                                      "generated and printed once)"}),
            (("--require-key-local",), {"action": "store_true",
                                        "help": "require the key from this PC too: use it behind a reverse proxy or "
-                                               "tunnel (nginx, Caddy, cloudflared, ngrok) on this machine"})]
+                                               "tunnel (nginx, Caddy, cloudflared, ngrok) on this machine"}),
+           (("--qr-key",), {"action": "store_true",
+                            "help": "LAN mode: put the key in the printed QR code too (anyone who sees it can use "
+                                    "this PC)"})]
     for flags, kw in lan:
         ap.add_argument(*flags, **kw)
     ap.add_argument("--vision", action="store_true", help=VISION_HELP)
     ap.add_argument("--ui", action="store_true", help=UI_HELP)
+    ap.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
     d = sub.add_parser("doctor", help="what this PC can run; --fix finds and fixes first-run problems")
@@ -676,7 +939,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list").set_defaults(fn=cmd_list)
     rp = sub.add_parser("report", help="your GPU, tuned settings and eval scores in one JSON, ready to share")
     rp.add_argument("--no-browser", action="store_true", help="only print the prefilled issue link")
+    rp.add_argument("--share", action="store_true", help="also draw a card of your result (SVG) to post anywhere")
     rp.set_defaults(fn=cmd_report)
+    bg = sub.add_parser("bugreport", help="doctor, versions, recent logs and settings in one zip, secrets taken out")
+    bg.add_argument("--show", action="store_true", help="print every file before asking")
+    bg.set_defaults(fn=cmd_bugreport)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     t.add_argument("--prefer-energy", action="store_true",
@@ -697,6 +964,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--idle-unload", **idle)
     s.add_argument("--vision", action="store_true", help=VISION_HELP)
     s.add_argument("--ui", action="store_true", help=UI_HELP)
+    s.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     for flags, kw in lan:
         s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)
@@ -714,6 +982,12 @@ def build_parser() -> argparse.ArgumentParser:
     cn.add_argument("--path", help="write this file instead of the tool's usual one (e.g. a project config); for "
                                    "obsidian, the vault folder")
     cn.set_defaults(fn=cmd_connect)
+    la = sub.add_parser("launch", help="start localllm (profile max), connect a coding agent, run it; undo on exit")
+    la.add_argument("tool", choices=["opencode", "aider", "hermes", "claude-code", "codex"])
+    la.add_argument("--keep", action="store_true", help="keep the tool pointed at localllm after it exits")
+    la.add_argument("--port", type=int, default=8080)
+    la.add_argument("--model", help="catalog model to start (default: the best for this PC)")
+    la.set_defaults(fn=cmd_launch, args=[])     # arguments for the tool go after --, see parse_args
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)
     e.add_argument("--langs", help="comma-separated ISO codes, default: en + this PC's language")
@@ -726,13 +1000,31 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """build_parser().parse_args, except that for `launch` everything after `--` goes to the tool untouched."""
+    argv = sys.argv[1:] if argv is None else list(argv)
+    tool_args = []
+    if "launch" in argv and "--" in argv:
+        i = argv.index("--")
+        argv, tool_args = argv[:i], argv[i + 1:]
+    a = build_parser().parse_args(argv)
+    if getattr(a, "fn", None) is cmd_launch:
+        a.args = tool_args
+    return a
+
+
 def main() -> None:
-    a = build_parser().parse_args()
+    a = parse_args()
     from . import fix
-    given = {f.lstrip("-").split("=")[0] for f in sys.argv[1:] if f.startswith("--")}
+    argv = sys.argv[1:]
+    if getattr(a, "fn", None) is cmd_launch and "--" in argv:
+        argv = argv[:argv.index("--")]            # flags after `--` belong to the launched tool
+    given = {f.lstrip("-").split("=")[0] for f in argv if f.startswith("--")}
     fix.apply_defaults(a, given)              # defaults saved by `doctor --fix`; typed flags win
     global ASSUME_YES
     ASSUME_YES = a.yes
+    if getattr(a, "lang", None):
+        os.environ["LOCALLLM_LANG"] = a.lang          # read by i18n.ui_lang, also in the chat page's server
     if a.fn is cmd_serve:
         a.model = a.model or None
     a.fn(a)

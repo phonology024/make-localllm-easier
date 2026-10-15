@@ -6,386 +6,73 @@
 
 Read this in: English | [தமிழ்](docs/README.ta.md)
 
-**The leanest way to run local AI: least CPU, RAM and GPU memory, smallest files, measured quality.**
+**`localllm` checks your GPU, picks the most accurate AI model that fits it *in your language*, downloads it and starts
+a private chat. Offline and free.**
 
-`localllm` picks, downloads and runs the most accurate local AI model for your PC and your language, chosen from real
-benchmark measurements, with llama.cpp tuned for AMD, NVIDIA, Intel and Apple GPUs.
+![localllm doctor, then a streamed answer at 122 tok/s, recorded on an RX 9070 XT](docs/img/demo.gif)
+
+<sub>Recorded from a real run with `tools/record_demo.py`: the text is the commands' own output and the answer streams at the speed llama-server produced it.</sub>
+
+## Install
 
 ```
 pip install make-localllm-easier
 localllm
 ```
 
-No Python? From 0.7.0 each [release](https://github.com/phonology024/make-localllm-easier/releases) has a single
-`localllm` file for Windows, macOS and Linux (and an AppImage); winget and Homebrew follow
-([packaging/README.md](packaging/README.md)). The first run shows what your PC can run and asks before the model download.
+That's it: the first run shows what your PC can run and asks before it downloads the model. No Python? Download the
+single `localllm` file for Windows, macOS or Linux (or the AppImage) from the [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest) and run it
+from a terminal; `SHA256SUMS` there lets you check it. winget and Homebrew follow
+([packaging/README.md](packaging/README.md)).
 
-That's it. `localllm` checks your GPU and RAM, picks the most accurate model we have *measured* for your language that
-fits your card, downloads llama.cpp and the model, starts it with settings profiled op by op, and opens the chat page.
-You also get an OpenAI-compatible API at `http://127.0.0.1:8080/v1` for any app that speaks it. Offline, private, free.
+Or ask your coding agent (Claude Code, Cursor, Codex): paste
+`Install localllm: https://raw.githubusercontent.com/phonology024/make-localllm-easier/main/docs/install-for-agents.md`.
+It checks your PC first without changing anything, and asks before each install or download
+([what it may and may not do](docs/install-for-agents.md)).
 
-![Same 30-turn chat: llama.cpp defaults use about 9 GB of system RAM, localllm about 2.3 GB](docs/img/ram-30-turns.png)
-
-```
-localllm chat       # chat right here in the terminal (Thai, Japanese, any language)
-localllm doctor     # what this GPU is good for: model sizes, speed, how much text it can hold
-localllm list       # every model we have measured, with scores per language
-localllm serve      # API only (OpenAI, Anthropic, Ollama and Gemini formats), no browser
-localllm --ui       # our chat page: saved chats, model picker, live VRAM/RAM
-localllm savings    # tokens answered locally this month (and $ at the prices you set)
-localllm route      # optional: mix in your own cloud key, compare local vs cloud
-localllm eval       # score any running server in English + your language
-localllm connect hermes   # point an agent (hermes, opencode, claude-code, codex, aider) or Obsidian at it
-```
-
-## FAQ
-
-**Which local LLM should I run on my GPU?** Run `localllm doctor`. It lists which model sizes fit your card (4B up to
-120B MoE), at which quantization, how fast they should run, the most accurate measured model for your language, and
-how much system RAM that model uses (est.).
-
-**Can a 16 GB GPU run a 27B model?** Yes. Qwen3.8-27B at ~3.5 bits (12.2 GB) runs at ~50 tok/s on an RX 9070 XT and
-keeps 81.8% on English Global-MMLU-Lite. gemma-4-26B-A4B (13.3 GB) runs at ~85 tok/s with similar accuracy.
-
-**Is a 2-bit quantized model good enough?** Usually not for non-English use: 2-bit costs 8-13 accuracy points, and
-Hindi, Arabic and Thai lose the most (13 points).
-
-**Can it use a different local model for each message?** Yes, opt-in: `localllm serve --models auto` routes each
-message to the model with the best measured score for its language and task (e.g. Chinese knowledge to Qwen3.8,
-Chinese math to gemma-4) and says which model answered. On a 16 GB card a swap costs 4-9 s, so it only switches for a
-gain of 3+ points; on 24 GB+ cards both models stay loaded and routing is instant.
-
-**Which local model is better at math?** On MGSM (the same 250 word problems in 11 languages), gemma-4-26B-A4B QAT
-scores 96.8 / 89.6 / 88.8 in English / Thai / Chinese vs 94.4 / 87.2 / 84.4 for Qwen3.8-27B Q3, at 1.8x the speed.
-Measure any server yourself with `localllm eval --suites math --langs en,de,ja`.
-
-**Which local model translates better?** On FLORES-101 (100 sentences each way, chrF++), gemma-4-26B-A4B QAT beats
-Qwen3.8-27B Q3 in Hindi (+4.7), Arabic (+2.9), Japanese (+1.6) and Thai (+1.5); Qwen leads Chinese by 1.4. Try
-`localllm eval --suites translate --langs th,ja,sw` (101 languages).
-
-**Does the model still find things deep in a long document?** `localllm serve --profile max`, then
-`localllm eval --suites longctx --langs en,th,hi,ar`: secret numbers hidden at 10-90% depth of 8k, 32k and 64k-token
-documents written in the language itself (FLORES sentences), one and three at a time. It checks the context `doctor`
-promises, not just whether it fits. Catalog numbers are not measured yet (queued in `tools/runner_longctx.json`).
-
-**Why is llama.cpp slow on my AMD (or Intel) GPU on Windows?** If Resizable BAR is off, llama.cpp's Vulkan backend puts
-buffers in a 256 MB host-visible heap backed by system RAM and decode drops up to 1.7x. `localllm` sets
-`GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` for you ([llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097)).
-
-**Can it run a 70B-300B model on a 16 GB GPU?** Not by quantization alone without losing quality: a dense 70B is ~14 GB
-only at 1.58 bit, and our own 2-bit results already cost 8-13 points. The realistic routes are MoE models with the experts
-in system RAM, expert pruning, SSD expert streaming and test-time compute. We are measuring them, none is shipped yet:
-[docs/research-big-models.md](docs/research-big-models.md) and ROADMAP 0.9.
-
-**Can I use it in Obsidian?** Yes, through the Copilot for Obsidian plugin: `localllm connect obsidian --path
-YOUR_VAULT` makes the local model its default and tells you anything that would still go to a cloud service
-([docs/apis.md](docs/apis.md#obsidian)). A harness and our own Obsidian plugin are planned as optional add-ons that never
-touch the base install ([docs/addons.md](docs/addons.md)).
-
-**Is there a chat window with saved chats?** `localllm --ui` (or `localllm serve --ui`) opens our own chat page
-instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`, a model picker when you run several
-models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
-internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
-
-**How much does running an agent locally save?** `localllm savings` counts what this PC answered this month and,
-at the cloud prices you enter once, what it would have cost ([docs/apis.md](docs/apis.md#hermes-with-localllm-and-what-it-saves)).
-
-**Can I chat with a local LLM in the terminal?** Yes: `localllm chat`. Answers stream as they're written, the
-conversation is remembered, `/save` writes it to a file, `/think` shows the model's reasoning, `/status` shows VRAM, RAM, GPU spill,
-context used and the last answer's speed, Ctrl+C stops an answer.
-
-**Can I use it as an Ollama, OpenAI, Anthropic or Gemini replacement?** Yes. One local endpoint at
-`http://127.0.0.1:8080` speaks all four APIs, tool / function calling and images (`--vision`) included, so existing apps
-and SDKs only need a new base URL. See [docs/apis.md](docs/apis.md).
-
-**Can I use it with Hermes Agent, OpenCode, Claude Code, Codex or Aider?** Yes: `localllm connect hermes` (or
-`opencode`, `claude-code`, `codex`, `aider`, `cline`) writes that tool's config to use the local endpoint and backs up
-the old one; `--undo` restores it. Start the server with `localllm serve --profile max` so long agent prompts fit. See
-[docs/apis.md](docs/apis.md#coding-agents-localllm-connect).
-
-**Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
-and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
-See [LAN mode](docs/apis.md#use-it-from-another-device-on-your-network-lan-mode).
-
-**Can it fall back to my cloud API key?** Only if you turn it on. Routing is off by default; with your own key in an
-environment variable it sends a request to the cloud only when a rule says so (prompt too long, a cloud model asked for
-by name, or the local model scores below your floor in that language) and tells you where each answer came from.
-
-**How much RAM does a local LLM need?** With the model fully on the GPU, about 2-2.5 GB of system RAM with `localllm`
-(vs ~9 GB growing with llama-server's defaults). `localllm doctor` prints the estimate for your PC.
-
-**Does it work offline?** After the first download, yes. Nothing leaves your PC.
-
-**Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
-file (llama.cpp, models, vision projectors, the task router) is downloaded from a pinned commit and checked against a
-SHA-256 stored in the code before it is used. A mismatch deletes the file and stops with the reason.
-`LOCALLLM_LLAMA_BUILD=latest` (or `=bNNNNN`) picks another llama.cpp build, checked against the digest GitHub lists for
-it.
-
-**Which languages are measured?** 23 languages on Global-MMLU-Lite, 44 countries' own exams on INCLUDE, plus Thai
-(ThaiExam). `localllm eval --langs ...` measures any of them on your hardware.
-
-## What `localllm doctor` tells you
+## The commands you'll use
 
 ```
-GPU AMD Radeon RX 9070 XT  15.9 GB  (640 GB/s)    RAM 32 GB    language: th
-Tested: Windows/AMD: tested by maintainers
-
-Model sizes for this PC (whole model on the GPU = fast):
-  [OK  ] 4B                       Q8 4.2 GB  ~90 tok/s (est.)
-  [OK  ] 8B                       Q8 8.5 GB  ~45 tok/s (est.)
-  [OK  ] 14B                      Q6 11.5 GB  ~33 tok/s (est.)
-  [OK  ] 24-32B                   Q3 13.2 GB  ~29 tok/s (est.)
-  [SLOW] 30B MoE (3B active)      Q4 18.0 GB with experts in RAM - works, ~10-25 tok/s
-  [NO  ] 70B                      needs ~42.0 GB - too big for this PC
-  [NO  ] 120B MoE (10B active)    needs ~72.0 GB - too big for this PC
-
-Best measured model for you: gemma4-26b-a4b-qat  (MoE with ~4B active params: fastest)
-What it can do here:
-  EN  translated world-knowledge exam   82.2% correct
-  EN  grade-school math word problems   96.8% correct
-  TH  grade-school math word problems   89.6% correct  <- your language
-  TH  real local school/licence exams   65.7% correct  <- your language
-  TH  translation to/from English       55.6 chrF++ (0-100)  <- your language
-  also measured in ar, es, hi, ja, zh (`localllm list`)
-  holds ~78k tokens at once (~130 pages of text) next to the model
-  uses ~2.2 GB of system RAM: ~0.3 GB embeddings/CPU-mapped + ~1.0 GB prompt cache + ~0.4 GB ctx checkpoints + ~0.5 GB host (est.)
-  leaves ~15 GB of RAM free for other apps (est.)
-  answers at ~90 tok/s
-  speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
-
-Profiles (--profile):
-  lean (default)    8k context  ~ 2.2 GB RAM  least memory
-  max              78k context  ~ 9.6 GB RAM  long documents, agent sessions
+localllm            # pick, download and start the best model, open the chat page
+localllm chat       # chat in the terminal, any language
+localllm doctor     # what this GPU can run: model sizes, speed, RAM
+localllm serve      # just the API: OpenAI, Anthropic, Ollama and Gemini formats at http://127.0.0.1:8080
 ```
 
-Speeds marked *est.* come from your card's memory bandwidth, calibrated on measured runs. Everything else is measured.
+More: `localllm list` (every measured model), `localllm connect hermes` (point an agent or Obsidian at it),
+`localllm eval` (score any server in your language). All commands: `localllm --help`.
 
-**lean or max?** `lean` is the default: an 8k context and caches sized so RAM stays around 2 GB - right for chat and
-short questions. `--profile max` spends what the PC has: a context that fills the free VRAM (78k on a 16 GB card) and
-a prompt cache of up to a quarter of the RAM, so coding agents and long documents don't re-read their prompt every
-turn. Same model, same answers; only memory changes.
+## Why it's different
 
-**Energy.** `localllm tune` also reads the GPU's board power while it measures (AMD through the driver on Windows or
-hwmon on Linux, NVIDIA through `nvidia-smi`), and `doctor` then shows joules per token next to the speed. Only the GPU
-board is counted, not the CPU or the power supply. `localllm tune --prefer-energy` keeps a setting that saves more than
-15% energy per token while costing less than 5% speed.
+- **It picks for your GPU.** It reads your card and RAM and only offers models that fit and run fast on them.
+- **Measured in your language.** Models are ranked by real exam scores in Thai, Hindi, Arabic, Japanese and 20+ more
+  languages, not by English benchmarks alone.
+- **Uses less RAM.** llama.cpp tuned op by op: about 4x less system RAM than its defaults, same speed (below).
+- **Private.** After the first download nothing leaves your PC; downloads are checked against pinned SHA-256s.
 
-## Less RAM than running llama.cpp yourself (0.2)
+## Less RAM, same speed
 
-llama-server's defaults keep a prompt cache of up to 8 GiB plus 32 conversation checkpoints in system RAM, so RAM keeps
-growing while you chat. `localllm` sizes both to your PC. Same 30-turn chat, RX 9070 XT, 32 GB RAM:
+Same 30-turn chat, RX 9070 XT, 32 GB RAM:
 
 | model | llama.cpp defaults | `localllm` | speed |
 |---|---|---|---|
 | Qwen3.8-27B Q3 | 9.30 GB RAM | **2.37 GB** | 35.2 tok/s both |
 | gemma-4-26B-A4B QAT | 9.24 GB RAM | **2.21 GB** | ~85 tok/s both |
 
-About **4x less RAM, same speed, ~15% less CPU per answer, ~0% CPU while idle.** On cards too small for gemma-4, its
-experts can stay in RAM: 45 / 36 / 31 tok/s with 8 / 13 / 18 layers' experts off the GPU (12 / 10 / 8 GB cards).
+## Learn more
 
-## Smart routing between local models (experimental, opt-in)
+[Website and leaderboard](https://phonology024.github.io/make-localllm-easier/) ·
+[FAQ](docs/faq.md) ·
+[How it works](docs/how-it-works.md) (doctor output, routing, RAM, where it's tested) ·
+[APIs and agents](docs/apis.md) ·
+[Benchmarks](docs/benchmarks.md) ·
+[Research](docs/research.md) ·
+[Roadmap](ROADMAP.md) ·
+[Stability](docs/stability.md) ·
+[Contributing](CONTRIBUTING.md)
 
-```
-localllm serve --models auto          # or --models qwen3.8-27b-q3,gemma4-26b-a4b-qat
-```
-
-Each message goes to the model with the best *measured* score for its language and task (math vs general). If all the
-models fit in VRAM together (24 GB+ cards for the pair below), they all stay loaded and routing is instant. Otherwise
-one model is on the GPU at a time and it only swaps when the other is at least 3 points better, because a swap costs
-seconds.
-Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).
-To keep one model for a whole conversation, type `/stay` in `localllm chat` (or send `X-Localllm-Stay: 1`). After 15
-minutes without a message the models are unloaded, so the GPU is free for games and other apps; the next message loads
-what it needs (`--idle-unload MIN`, 0 = never). Health checks, model lists and open browser tabs neither keep a model
-loaded nor load one: while unloaded, `/health` says so and `/v1/models` lists the pool's models.
-
-The task (general / math / code / translate) comes from keyword rules first, then a small multilingual embedding
-classifier (multilingual-e5-small, 126 MB, on the CPU in its own llama-server, ~10 ms per message). Without its files
-in `~/.localllm/models/` the keyword rules decide alone and the header says why (`tools/router/README.md`).
-
-What we measured on an RX 9070 XT (16 GB) with 32 GB RAM, and why this is **not the default**:
-
-| | Qwen3.8-27B Q3 | gemma-4-26B-A4B QAT |
-|---|---|---|
-| Knowledge, Chinese / Spanish / Japanese | **+5.5 / +3.7 / +2.4 pts** | |
-| Knowledge, English / Thai / Hindi / Arabic | within 2 pts | within 2 pts, **1.8x faster** |
-| Math (MGSM), English / Thai / Chinese | 94.4 / 87.2 / 84.4 | **96.8 / 89.6 / 88.8** |
-| Translation (FLORES chrF++), Thai / Chinese / Japanese / Hindi / Arabic | 54.1 / 49.1 / 46.4 / 58.1 / 59.0 | **55.6** / 47.7 / **48.0 / 62.8 / 61.9** |
-| Model swap (stop one, load the other) | 8.6 s (4.1 s with the page cache warm and 16 MiB upload buffers) | |
-
-Example: Chinese *knowledge* questions go to Qwen (+5.5); Chinese *math* (+4.4) and translation (within 1.4) stay
-on gemma. On a 16 GB card a
-second model only pays off for Chinese and Spanish (Japanese +2.4 is inside the benchmark margin), and every
-swap costs 4-9 s. Keeping both
-models on the card by letting Windows page VRAM made **both** 4-5x slower, so that's not an option. Faster switching
-is tracked in [#32](https://github.com/phonology024/make-localllm-easier/issues/32): LoRA adapters on one shared base, or
-specialists small enough to sit next to the main model.
-
-## Where it is tested
-
-We measure on one PC: Windows 11, AMD RX 9070 XT, Vulkan. Everything else depends on reports from people who ran
-`localllm report` on their own hardware. `localllm doctor` prints the line for your PC. Generated by
-`tools/build_leaderboard.py` from [reports/](reports/):
-
-<!-- platforms:start -->
-| | AMD | NVIDIA | Intel | Apple |
-|---|---|---|---|---|
-| Windows | tested by maintainers | untested | untested | - |
-| Linux | untested | untested | untested | - |
-| macOS | - | - | - | untested |
-<!-- platforms:end -->
-
-## Measured results (RX 9070 XT 16 GB, Windows 11, llama.cpp Vulkan)
-
-Accuracy (%) on multiple-choice exams, zero-shot. **global** = Global-MMLU-Lite: the same 400 questions translated, so
-languages compare like for like. **regional** = INCLUDE: real exams written in each country (ThaiExam for Thai).
-
-| | Qwen3.8-27B Q3 (12.2 GB) | gemma-4-26B-A4B QAT Q4 (13.3 GB) | Qwen3.8-27B 2-bit (7.8 GB) |
-|---|---|---|---|
-| English | 81.8 | 82.2 | 74.2 |
-| Chinese | 76.2 / 74.7 | 73.5 / 66.5 | 67.8 / 67.8 |
-| Spanish | 80.2 / 76.8 | 74.5 / 75.2 | 70.8 / 69.2 |
-| Japanese | 73.5 / 87.6 | 74.5 / 81.9 | 65.8 / 77.9 |
-| Arabic | 70.8 / 71.2 | 71.5 / 73.6 | 60.8 / 57.2 |
-| Hindi | 69.0 / 74.3 | 69.5 / 71.0 | 56.2 / 55.5 |
-| Thai | – / 67.1 | – / 65.7 | – / 54.2 |
-| **decode speed** | **50 tok/s** (MTP) | **85 tok/s** | 40 tok/s |
-
-Cells are global / regional. Margins are about ±4 (global) and ±5 (regional) points at 95%, so `localllm` treats gaps
-under 2 points as a tie and picks the faster model.
-
-## Findings worth knowing
-
-1. **2-bit costs 8-13 points, and lower-resource languages pay the most.** Hindi, Arabic and Thai lose 13; English,
-   Chinese and Spanish about 8-9. A 177B MoE squeezed to 1.6 bits scored *below* a 27B at 3 bits.
-2. **Build 2-bit files from the original weights, and don't expect a small calibration set to beat a good vendor
-   build.** Re-quantizing an 8-bit file down to 2 bits cost Thai about 9 points (45.0 vs 54.2 for the same recipe made
-   from BF16). A Thai or mixed-language importance matrix won most of that back (51-52 Thai) - but built from BF16, our
-   mixed matrix was *worse* than Unsloth's own UD-IQ2_S in 3 of 4 languages by KL divergence (table below), so we are not
-   publishing it. At ~3.5 bits the matrix made no difference (64.8 vs 64.6 Thai). Details in
-   [#24](https://github.com/phonology024/make-localllm-easier/issues/24).
-3. **AMD/Intel cards without Resizable BAR: the Vulkan fix is model-dependent - so measure.**
-   `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1` makes Qwen3.8-27B (hybrid DeltaNet, rewrites a 3 MB state per layer per token)
-   1.64x faster on an RX 9070 XT with ReBAR off, but gemma-4-26B-A4B 7-9% *slower*. `localllm` applies it per model,
-   and `localllm tune` measures it on your PC. Note: llama.cpp treats any value, even `0`, as on - unset it to turn it
-   off. See [llama.cpp#27097](https://github.com/ggml-org/llama.cpp/issues/27097).
-4. **Qwen3.8 GGUFs ship a multi-token-prediction head.** Drafting 2 tokens with it adds ~40% decode speed for free;
-   drafting 3 is slower.
-5. **The first run of a new llama.cpp build is slow** while the GPU driver compiles its shaders once (~15 s).
-
-### How much each quant changes the model, per language
-
-KL divergence from the Qwen3.8-27B Q8_0 reference (lower is better) and how often the most likely next token stays
-the same, on held-out Wikipedia text (8 x 512 tokens per language; `tools/kld_per_language.py`):
-
-| Quant | Size | Thai | Hindi | Arabic | English |
-|---|---|---|---|---|---|
-| UD-Q3_K_XL | 12.2 GB | 0.034 / 91.7% | 0.037 / 90.2% | 0.078 / 92.5% | 0.021 / 93.2% |
-| UD-IQ2_S (Unsloth) | 7.8 GB | 0.188 / 81.5% | 0.224 / 77.5% | 0.291 / 84.4% | 0.111 / 86.0% |
-| IQ2_S, our mixed imatrix, from BF16 | 7.8 GB | 0.210 / 81.8% | 0.215 / 77.1% | 0.365 / 82.1% | 0.137 / 83.6% |
-
-Going from 3 to 2 bits multiplies the KL divergence 4-6x in every language, and top-token agreement ends 2-9 points
-lower in Arabic, Thai and Hindi than in English - the same order as the benchmark losses.
-
-### Trimming the vocabulary to your languages (research)
-
-`tools/trim_vocab.py` drops the tokens of scripts you don't use, removes the BPE merges that build them (so other text
-still encodes, in smaller pieces) and slices every per-token tensor: embeddings, output layer, Gemma's per-layer
-embeddings. Text written in the kept scripts tokenizes exactly as before.
-
-```
-pip install gguf numpy
-python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en --dry-run     # what would go, sizes saved
-python tools/trim_vocab.py trim  MODEL.gguf OUT.gguf --langs th,en               # keep every Thai/Latin/symbol token
-python tools/trim_vocab.py check MODEL.gguf OUT.gguf --texts DIR --require th,en # same tokens, decodes back exactly
-python tools/trim_vocab.py agree MODEL.gguf OUT.gguf --texts DIR --require th,en # same next-token pick
-```
-
-Measured on real models with `--langs th,en` (GitHub CPU runner, 4 threads, llama.cpp b11487, Q8_0;
-[vocab-trim workflow](.github/workflows/vocab-trim.yml)). Texts: the same 1,000 news/Wikipedia sentences per language
-(UD PUD), 400 GSM8K problems, 400 KB of Python.
-
-| | Qwen3-0.6B | Qwen3.5-2B (Qwen3.8's 248k vocabulary) | Gemma 4 E2B |
-|---|---|---|---|
-| vocabulary kept | 106,149 of 151,936 (69.9%) | 148,738 of 248,320 (59.9%) | 162,451 of 262,144 (62.0%) |
-| file | 0.60 -> 0.55 GiB | 1.87 -> 1.67 GiB | 4.63 -> 3.59 GiB |
-| Thai, English, code, math tokens | identical | identical | identical |
-| same most likely next token as the original | 100% (2,040 positions each) | 100% | 100% |
-| probability the original gave dropped tokens, Thai text | 0.19% (p99 1.6%) | 0.88% (p99 4.2%) | 0.08% (p99 1.0%) |
-| decode speed, CPU | 51.5 -> 55.8 tok/s (+8%) | 17.0 -> 19.0 tok/s (+12%) | 12.9 -> 14.3 tok/s (+11%) |
-| with `--keep-top 64000` | 0.50 GiB, 59.7 tok/s | 1.49 GiB, 21.0 tok/s | 2.56 GiB, 15.5 tok/s |
-| ... same most likely next text, en / code / math / th | 90.7 / 92.8 / 96.7 / 97.5% | 92.7 / 90.4 / 96.9 / 97.5% | 81.6 / 85.1 / 87.9 / 96.8% |
-
-Prompt speed doesn't change. Two more runs on other runner CPUs gave +9.6 to +12.8% for the lossless trim, so read the
-speed-ups as +-5%.
-ASCII alone is 57-62% of these vocabularies, so the lossless trim saves about a third; on Gemma 4 E2B that is 1 GB,
-because its per-layer embeddings have a row per token too. `--keep-top N` goes further by dropping the rarest
-ASCII/symbol tokens (latest BPE merges first; the languages' own letters are never capped), which splits rare English
-words and code identifiers into more pieces: English +3.8-7.6% tokens, code +2.4-4.6%, math +1.5-3.0%, Thai <= +0.1%.
-That is not lossless: compared where both models' tokens line up, the most likely next text differs at 3-18% of
-positions (worst on Gemma 4 English), so the cap needs a benchmark before anyone uses it; the default trim doesn't.
-Text in a dropped script (Chinese, Hindi, Arabic, ...) still works and decodes back exactly, but takes 2.5-9x more
-tokens.
-
-Measured on the catalog models (RX 9070 XT 16 GB, Windows, llama.cpp Vulkan b11476, `--langs th,en`, same launch
-settings for both files; held-out Wikipedia texts for `check`):
-
-| | Qwen3.8-27B UD-Q3_K_XL | gemma-4-26B-A4B QAT UD-Q4_K_XL |
-|---|---|---|
-| vocabulary kept | 148,738 / 248,320 (59.9%) | 162,451 / 262,144 (62.0%) |
-| file | 12.24 -> 11.71 GiB | 13.27 -> 13.12 GiB |
-| `check`: English | identical | identical |
-| `check`: Thai | +0.5% tokens (Chinese/Japanese names inside the Thai text) | +0.4% tokens (same cause) |
-| `check`: Hindi / Arabic | ~5x tokens, decode back exactly | 3.5-7.7x tokens, decode back exactly |
-| llama-bench pp512 / tg128 | 881 -> 899 / 36.2 -> 36.5 tok/s | 993 -> 1012 / 108.9 -> 105.7 tok/s (within noise) |
-| decode in llama-server (real chats) | 53.1 -> 54.8 tok/s (+3%) | 122.9 -> 138.9 tok/s (+13%) |
-| VRAM | 12.83 -> 12.66 GB | 13.02 -> 13.12 GB |
-| llama-server process RAM | 1.08 -> **0.66 GB (-39%)** | 1.41 -> **0.99 GB (-30%)** |
-| eval th regional / th math / en global / en math | 66.4 / 87.2 / 81.8 / 94.4 -> **identical** | 65.7 / 89.6 / 82.2 / 96.8 -> **identical** |
-
-So on real weights the trim costs no accuracy in the kept languages and frees 30-39% of the server's system RAM.
-gemma-4's +13% in llama-server but not in llama-bench is probably sampling, which scans the whole vocabulary on the CPU
-for every token (llama-bench doesn't sample); not verified yet. Real Thai text often embeds Chinese or Japanese names, so
-East/Southeast Asian users may want `--langs th,en,zh,ja`: on Qwen3.8 that keeps 83.9% of the vocabulary (0.21 GiB
-smaller) and Thai then tokenizes identically, with the same top-1 next token at 100% of positions.
-
-Limitations: BPE vocabularies with merges only (Qwen, Llama 3, Gemma 4; SentencePiece/WordPiece files are refused). A
-trimmed file no longer shares token ids with separate draft models, LoRA adapters or anything else that stores ids.
-`--keep-top` caps are measured on CPU with Q8_0 files only.
-
-## How the benchmark works
-
-`localllm eval` asks each question with thinking off and reads the log-probability of every answer letter from the first
-generated token, then takes the most likely one. It's prompt processing only, so a language takes a few minutes, and the
-result is deterministic. Data is downloaded at eval time from the original Apache-2.0 datasets
-([Global-MMLU-Lite](https://huggingface.co/datasets/CohereLabs/Global-MMLU-Lite),
-[INCLUDE](https://huggingface.co/datasets/CohereLabs/include-lite-44),
-[ThaiExam](https://huggingface.co/datasets/typhoon-ai/thai_exam)) and never redistributed. It measures knowledge and
-reasoning in multiple choice, not writing quality.
-
-## Contributing
-
-The catalog only grows with measurements. Run `localllm tune` and `localllm eval --langs en,<yours>` on your GPU, then
-`localllm report`: it collects your GPU, RAM, OS, llama.cpp build, tuned settings and scores into one JSON (no user
-names, paths or keys) and opens a prefilled GitHub issue you can review before submitting. Other languages' local exams
-are very welcome. More in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Measured on contributors' PCs
-
-Generated from shared reports by `tools/merge_reports.py`:
-
-<!-- gpu-table:start -->
-| GPU | VRAM | RAM | OS | llama.cpp | model | decode tok/s | kept settings | scores |
-|---|---|---|---|---|---|---|---|---|
-<!-- gpu-table:end -->
- See [ROADMAP.md](ROADMAP.md)
-for what's next: using less system RAM (0.2), working alongside cloud provider APIs (0.3), a speed-only release (0.4), and per-language compression research (0.5).
-
-## Stability
-
-Commands, flags, API endpoints, `X-Localllm-*` headers, file locations and the report format that stay working, and
-how anything gets removed: [docs/stability.md](docs/stability.md).
+Have a GPU we haven't measured? `localllm tune`, `localllm eval --langs en,<yours>`, then `localllm report` opens a
+prefilled issue (no names, paths or keys) that adds it to the leaderboard.
 
 ## License
 

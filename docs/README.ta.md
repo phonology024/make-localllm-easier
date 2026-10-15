@@ -1,5 +1,9 @@
 [English](../README.md) | தமிழ்
 
+> This translation follows the older, longer README (before 2026-10-14). The English README is now one screen;
+> the rest moved to [faq.md](faq.md), [how-it-works.md](how-it-works.md), [benchmarks.md](benchmarks.md) and
+> [research.md](research.md). Numbers below may be older than those pages.
+
 # make-localllm-easier — உங்கள் GPU-வால் இயக்க முடிந்த சிறந்த local LLM-ஐ, ஒரே command-இல் இயக்குங்கள்
 
 **Local AI-ஐ இயக்க மிகவும் எளிய வழி: குறைந்த CPU, RAM மற்றும் GPU memory, சிறிய கோப்புகள், அளவிடப்பட்ட தரம்.**
