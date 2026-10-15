@@ -216,6 +216,20 @@ Requests without the right key get `401`. Requests from the desktop itself need 
 and the browser page keep working. On another device the chat page loads without the key, but its requests need it:
 enter the key in the page's settings (API key).
 
+**On a phone.** In a terminal, LAN mode also prints a QR code of the address (drawn by localllm itself, nothing is
+fetched). Scan it with the phone's camera, then type the key the terminal printed. The QR code does not contain the
+key unless you start with `--qr-key`: then the page takes the key from the link, keeps it for that browser tab and
+removes it from the address bar. But anyone who sees or photographs the code can use your PC, so use it only where
+nobody else can see the screen.
+
+**As an app.** The chat page has a web manifest and an icon. On this PC (`http://127.0.0.1`), Chrome and Edge offer
+*Install*. The installed app opens in its own window and still starts when localllm isn't running: it then says so.
+Only the page itself is kept for that, never chats, keys or answers. Browsers allow that offline part only on https
+or localhost, so on a phone over plain http the app is a home-screen shortcut: Safari's *Add to Home Screen*, or
+Chrome's *Add to home screen*.
+LAN mode is plain http: the key and your chats cross the network unencrypted, so use it on a network you trust,
+or put localllm behind an https reverse proxy or tunnel (below).
+
 Security notes:
 - `localllm` refuses to listen on a network address without a key. Keep the key secret: anyone who has it can use your
   GPU, and through your cloud key too if you turned cloud routing on.

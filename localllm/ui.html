@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>localllm</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#14774c">
 <style>
 :root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#5c6059;--line:#dcdcd4;--accent:#14774c;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
 @media (prefers-color-scheme:dark){:root{--bg:#141614;--panel:#1c1f1c;--text:#e6e8e3;--muted:#9aa096;--line:#2e332e;--accent:#3dbb84;--accent-ink:#0b130e;--me:#1d2b23;--code:#242824;--warn:#e0a060}}
@@ -132,6 +135,14 @@ async function loadStrings() {
     });
 }
 try { key = sessionStorage.getItem("localllm-key") || ""; } catch (e) {}
+(function keyFromLink() {      // a QR code made with --qr-key opens /?key=...: keep it for this tab, drop it from the URL
+  const k = new URLSearchParams(location.search).get("key");
+  if (!k) return;
+  key = k;
+  try { sessionStorage.setItem("localllm-key", k); } catch (e) {}
+  history.replaceState(null, "", location.pathname);
+})();
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 function headers(extra) {
   const h = Object.assign({"Content-Type": "application/json", "X-Localllm-UI": "1"}, extra || {});
@@ -290,7 +301,7 @@ async function status() {
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
       + (spill ? `<br><span class="warn">${esc(T("spilled", {gb: gb(d.spill_gb)}))}</span>` : "")
       + (d.savings ? `<br>${esc(d.savings)}` : "");
-  } catch (e) { $("status").textContent = T("status_unavailable"); }
+  } catch (e) { $("status").textContent = navigator.onLine === false || e instanceof TypeError ? T("offline") : T("status_unavailable"); }
 }
 
 // ---- Models tab (#107): what fits this PC, scores in its language, one-click download --------------------------------

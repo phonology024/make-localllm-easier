@@ -214,12 +214,14 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
 
 def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False, profile: str = "lean", ui: bool = False):
-    """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /."""
+           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False):
+    """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /.
+    qr_key: LAN mode's QR code carries the key too."""
     host, api_key, shown = _lan(host, api_key, require_local)
     trust = not require_local
     if shown != "127.0.0.1":
         _say(f"LAN mode: other devices use http://{shown}:{port} with the key; this PC needs none")
+        _print_qr(f"http://{shown}:{port}/" + (f"?key={api_key}" if qr_key and api_key else ""), qr_key)
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
     ram_free = runtime.ram_available_gb()
@@ -261,6 +263,21 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
                                   trust_loopback=trust, status=lambda: _status(proc, key),
                                   ui=_ui([key], False, dev, ram_free) if ui else None, meter=_meter())
     return proc, f"http://127.0.0.1:{port}"
+
+
+def _print_qr(url: str, with_key: bool = False) -> None:
+    """A QR code of the LAN address for a phone camera (#122). The key stays out unless --qr-key."""
+    if not sys.stdout.isatty():
+        return
+    from . import qr
+    try:
+        "█▀▄".encode(sys.stdout.encoding or "ascii")
+        plain = False
+    except (UnicodeEncodeError, LookupError):        # e.g. a Windows console on a legacy code page
+        plain = True
+    print(qr.terminal(qr.encode(url, "M"), plain=plain))
+    _say("scan it with the phone's camera" + (" - this code contains the key: anyone who sees it can use this PC"
+                                              if with_key else ", then type the key shown above"))
 
 
 def _meter():
@@ -352,7 +369,7 @@ def cmd_run(a) -> None:
     proc, url = _start(a.model, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
-                       ui=getattr(a, "ui", False))
+                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False))
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if not a.no_browser:
@@ -643,7 +660,10 @@ def build_parser() -> argparse.ArgumentParser:
                                      "generated and printed once)"}),
            (("--require-key-local",), {"action": "store_true",
                                        "help": "require the key from this PC too: use it behind a reverse proxy or "
-                                               "tunnel (nginx, Caddy, cloudflared, ngrok) on this machine"})]
+                                               "tunnel (nginx, Caddy, cloudflared, ngrok) on this machine"}),
+           (("--qr-key",), {"action": "store_true",
+                            "help": "LAN mode: put the key in the printed QR code too (anyone who sees it can use "
+                                    "this PC)"})]
     for flags, kw in lan:
         ap.add_argument(*flags, **kw)
     ap.add_argument("--vision", action="store_true", help=VISION_HELP)

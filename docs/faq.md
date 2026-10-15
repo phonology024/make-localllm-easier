@@ -75,6 +75,8 @@ config comes back when you quit). Start the server with `localllm serve --profil
 
 **Can I use my desktop's GPU from my laptop or phone?** Yes: `localllm serve --host 0.0.0.0` listens on your network
 and prints an API key once; other devices send it like any API key. It refuses to listen on the network without one.
+In a terminal it also prints a QR code of the address for the phone's camera (without the key unless `--qr-key`), and
+the page can be added to the phone's home screen.
 See [LAN mode](apis.md#use-it-from-another-device-on-your-network-lan-mode).
 
 **Can it fall back to my cloud API key?** Only if you turn it on. Routing is off by default; with your own key in an
