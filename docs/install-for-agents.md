@@ -101,9 +101,9 @@ if your tool allows it, or ask the user to run it in their own terminal.
 | tool | file |
 |---|---|
 | claude-code | `~/.claude/settings.json` |
-| codex | `~/.codex/config.toml` |
+| codex | `~/.codex/config.toml` and `~/.codex/localllm.config.toml` |
 | opencode | `~/.config/opencode/opencode.json` |
-| hermes | `~/.hermes/config.yaml` |
+| hermes | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) |
 | aider | `~/.aider.conf.yml` |
 | cline | none (prints settings to paste) |
 

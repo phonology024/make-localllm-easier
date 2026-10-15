@@ -54,10 +54,10 @@ connected with `localllm connect` stays connected.
 
 | tool | file | what is set | then run |
 |---|---|---|---|
-| Hermes Agent | `~/.hermes/config.yaml` | the `model:` block: `provider: custom`, `base_url`, `default`, `context_length` | `hermes` |
+| Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`; `$HERMES_HOME` wins) | the `model:` block: `provider: custom`, `base_url`, `default`, `context_length` | `hermes` |
 | OpenCode | `~/.config/opencode/opencode.json` | a `localllm` provider (`@ai-sdk/openai-compatible`) and `model` | `opencode` |
 | Claude Code | `~/.claude/settings.json` | `env`: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, the model names | `claude` |
-| Codex CLI | `~/.codex/config.toml` | a `localllm` provider (`wire_api = "responses"`) and a `localllm` profile; your default stays | `codex --profile localllm` |
+| Codex CLI (0.134+) | `~/.codex/config.toml` and `~/.codex/localllm.config.toml` | a `localllm` provider (`wire_api = "responses"`) in the first, the `localllm` profile in the second; your default stays | `codex --profile localllm` |
 | Aider | `~/.aider.conf.yml` | `openai-api-base`, `openai-api-key`, `model: openai/<id>` | `aider` |
 | Cline | (inside VS Code) | nothing is written; `connect cline` prints the four fields to fill in | |
 | Obsidian (Copilot plugin) | `<vault>/.obsidian/plugins/copilot/data.json` (`--path VAULT`) | a `3rd party (openai-format)` chat model, made the default | reload Obsidian |
@@ -114,8 +114,31 @@ PC (connecting it to an outside model, local or cloud, has moved to the paid Sma
 the text; tools that don't add them still work, with somewhat lower search quality. An Obsidian plugin of our own (#89, part B) comes only if this
 isn't enough.
 
-Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
-uses at 20k+ tokens. Both are open issues (#77, #96); please report what you see.
+### Live check: one task per tool (#109)
+
+Each tool connected with `localllm connect` (configs in a throwaway home) and given the same task: *create fib.py that
+prints the first 10 Fibonacci numbers, run it, say what it printed*. Pass means fib.py exists and prints `0 1 1 2 3 5 8
+13 21 34`. Setup: RX 9070 XT 16 GB, 32 GB RAM, Windows 11, `localllm serve --profile max` (gemma4-26b-a4b-qat, 77k
+context, llama.cpp b11476), with a fresh server for each tool. RAM is the peak working set of llama-server plus the
+localllm gateway. Context is the largest prompt the server held during the task.
+
+| tool | version | result | context | peak RAM | time |
+|---|---|---|---|---|---|
+| Claude Code | 2.1.299 | pass | 32.7k tokens | 3.08 GB | 186 s |
+| Hermes Agent | 0.19.0 | pass | 16.1k | 2.16 GB | 123 s |
+| OpenCode | 1.19.0 | pass | 7.5k | 2.38 GB | 50 s |
+| Aider | 0.86.2 | pass (aider writes the file; it doesn't run commands without asking) | 1.4k | 1.46 GB | 13 s |
+| Codex CLI | 0.162.1 | partial: config, model and tool calls work; `codex exec --sandbox workspace-write` on Windows rejected every command ("blocked by policy") until Codex's own Windows sandbox is set up, which is a machine-wide change we didn't make | 11.8k | 2.14 GB | 66 s |
+| Cline | | not tested: needs the VS Code UI | | | |
+
+The live run found three bugs in `connect`, all fixed:
+- Codex 0.134+ refuses a `[profiles.x]` table in `config.toml`. The profile now goes in `~/.codex/localllm.config.toml`.
+- On Windows the server reports the model as its GGUF path, and the backslashes broke Codex's TOML. Ids are now
+  written as quoted strings in every YAML/TOML config.
+- Hermes on Windows reads `%LOCALAPPDATA%\hermes`, so `~/.hermes` was never read there.
+
+Still open: a 30-turn tool session at 20k+ tokens (#77), and which agent loses the least quality on a local model (#96).
+Please report what you see.
 
 ## Tool / function calling
 
