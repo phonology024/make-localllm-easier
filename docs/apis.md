@@ -175,6 +175,13 @@ a rule says so:
 - the app asked for a cloud model by name (`gpt-...`, `claude-...`, `gemini-...`)
 - the prompt is longer than `max_local_prompt_tokens`
 - the local model's **measured** score in the message's language is below `language_floor`
+- `agent_hard_to_cloud`: a coding agent's *hard* call (starting a task, a new instruction with edit tools) - its
+  housekeeping (summaries, memory, titles, retries after a broken tool call, short lookups, steps after a tool result)
+  stays local (#97)
+- `escalate_failed_local`: a local answer to an agent call fails a check (server error, empty, tool-call arguments
+  that aren't JSON, cut off before answering) - the same request is sent to the cloud instead, and the header says why
+  and what it may cost (from `price_in`/`price_out`, or your `localllm savings --price`). Non-streaming calls only,
+  since a streamed answer is already on its way
 
 Each response carries an `X-Localllm-Route` header saying where it went and why. `localllm route` shows the config;
 `localllm route --test "your prompt"` sends the same prompt to the local model and to each configured provider and
@@ -191,7 +198,8 @@ config when you set them.
     "anthropic":  {"kind": "anthropic", "url": "https://api.anthropic.com", "key_env": "ANTHROPIC_API_KEY",
                    "model": "claude-sonnet-4-5"}
   },
-  "rules": {"max_local_prompt_tokens": 6000, "language_floor": 60, "cloud_model_names": true},
+  "rules": {"max_local_prompt_tokens": 6000, "language_floor": 60, "cloud_model_names": true,
+            "agent_hard_to_cloud": true, "escalate_failed_local": true},
   "local_model": "qwen3.8-27b-q3"
 }
 ```
