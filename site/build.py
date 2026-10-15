@@ -170,6 +170,37 @@ def page_head(kicker: str, h1: str, lead: str, crumbs: str = "") -> str:
 
 # ---- Home ------------------------------------------------------------------------------------------------------------
 
+DEMO = ROOT / "docs" / "img" / "demo.gif"                # recorded from a real run (#81, tools/record_demo.py)
+STILL = ROOT / "docs" / "img" / "models-tab.png"          # shown until the GIF exists
+MEDIA: list[Path] = []                                     # docs/img files the pages use, copied to /assets/
+
+
+def sixty_seconds() -> str:
+    """What happens in the first minute, next to the demo GIF (or the Models tab screenshot until it is recorded)."""
+    media = DEMO if DEMO.exists() else STILL
+    MEDIA.append(media)
+    alt = ("localllm in a terminal: it checks the GPU, picks a model for the language, and the chat answers"
+           if media == DEMO else "The Models tab: which models fit this PC, with scores in your language")
+    return f"""
+<section id="sixty-seconds"><div class="wrap two">
+<div>
+<h2>What it does, in 60 seconds</h2>
+<ol class="steps">
+<li><div><b>Install.</b> <code>pip install make-localllm-easier</code>, or the single file for Windows, macOS or
+Linux. Then run <code>localllm</code>.</div></li>
+<li><div><b>It reads your PC.</b> GPU, VRAM, RAM and your language. It shows what fits and asks before any big
+download.</div></li>
+<li><div><b>It picks by measurement.</b> The most accurate model we have tested <em>in your language</em> that fits
+your card, started with settings sized to your RAM.</div></li>
+<li><div><b>You chat.</b> A small starter model answers in about a minute while the best one downloads; it takes over
+between answers. Same port for apps: OpenAI, Anthropic, Ollama and Gemini APIs.</div></li>
+</ol>
+</div>
+<div><img class="shot" src="/assets/{media.name}" alt="{esc(alt)}" loading="lazy" width="1100"></div>
+</div></section>
+"""
+
+
 def home() -> None:
     langs = sorted({k.split("/")[0] for m in M.values() for k in m["scores"]})
     body = f"""
@@ -182,12 +213,13 @@ language that fits the card, and runs it on llama.cpp with settings we profiled.
 download, nothing leaves your PC.</p>
 {INSTALL}
 {cta()}
-<p class="small muted">Needs Python 3.9+. The models we ship today want a GPU with 10 GB of VRAM or more;
-<code>localllm doctor</code> tells you what fits on yours.</p>
+<p class="small muted">Python 3.9+, or <a href="{GH}/releases/latest">the single file</a> for Windows, macOS or
+Linux. Models from 2.7 GB (4-6 GB cards) up to 13 GB; <code>localllm doctor</code> tells you what fits on yours.</p>
 </div>
 <div>{doctor_sample()}</div>
 </div></section>
 
+{sixty_seconds()}
 <div class="trust"><div class="wrap">
 <span>AMD · NVIDIA · Intel · Apple</span><span>Picks from measured benchmarks</span><span>Offline and private</span>
 <span>Open source (MIT)</span><span>Downloads checked (SHA-256)</span>
@@ -1224,6 +1256,8 @@ def write() -> None:
         shutil.rmtree(old) if old.is_dir() else old.unlink()
     (OUT / "assets").mkdir()
     for f in (SITE / "assets").iterdir():
+        shutil.copy2(f, OUT / "assets" / f.name)
+    for f in MEDIA:                                    # screenshots / the demo GIF from docs/img
         shutil.copy2(f, OUT / "assets" / f.name)
     for path, text in pages.items():
         dest = OUT / "404.html" if path == "/404/" else OUT / path.strip("/") / "index.html"
