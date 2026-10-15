@@ -21,7 +21,7 @@ Written by `localllm/report.py`, saved as `~/.localllm/report-<date>.json`.
 | `pick` | str or null | the catalog model `localllm` would pick here |
 | `tune` | object | `{model file: {llama.cpp build: {gpu, env, mtp, tok_s}}}` from `localllm tune` |
 | `host` | str, optional | `cloud` or `cloud:<provider>` for a rented machine (`LOCALLLM_REPORT_HOST`, set by `tools/cloud_lab.sh`); absent for your own PC |
-| `results` | object | `{run name: {"lang/suite": {acc, ...}, "_meta": {...}}}` from `localllm eval` |
+| `results` | object | `{run name: {"lang/suite": {acc, ...}, "_meta": {...}}}` from `localllm eval`. Your local `results.json` and the measurement runner's lines also keep `outcomes` (per item, `"1"`/`"0"`) and `items_sha` for right/wrong suites, for `tools/paired.py`; shared reports leave them out |
 
 No user names, home folders, paths or keys: `report.scrub` removes them before anything is printed or saved.
 
