@@ -194,3 +194,4 @@ footer h4 { margin: 0 0 6px; color: var(--fg); font-size: .9rem; }
 .trust span::before { content: "\2713"; color: var(--accent); margin-right: 6px; }
 .nav .nav-cta { color: var(--accent-fg); padding: 6px 14px; font-size: .9rem; }
 .nav .nav-cta:hover { color: var(--accent-fg); }
+.shot{max-width:100%;height:auto;border-radius:12px;border:1px solid var(--line)}

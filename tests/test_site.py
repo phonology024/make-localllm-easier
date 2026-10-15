@@ -76,3 +76,20 @@ def test_report_fields_are_escaped_on_static_pages(monkeypatch):
             build.language_page(data, bad)
         build.gpu_page(data, evil)
         assert bad not in build.pages[f"/leaderboard/gpu/{build.slug(evil)}/"]
+
+
+def test_home_shows_the_first_minute_with_the_demo_gif_once_it_exists(tmp_path, monkeypatch):
+    _build("https://example.org")
+    home = (OUT / "index.html").read_text(encoding="utf-8")
+    assert 'id="sixty-seconds"' in home and "What it does, in 60 seconds" in home
+    shown = "demo.gif" if (ROOT / "docs" / "img" / "demo.gif").exists() else "models-tab.png"
+    assert f'src="/assets/{shown}"' in home and (OUT / "assets" / shown).exists()
+    assert "10 GB of VRAM or more" not in home and "releases/latest" in home        # small models + binaries exist now
+    spec = importlib.util.spec_from_file_location("site_build_demo", ROOT / "site" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    gif = tmp_path / "demo.gif"
+    gif.write_bytes(b"GIF89a")
+    monkeypatch.setattr(build, "DEMO", gif)
+    html = build.sixty_seconds()
+    assert 'src="/assets/demo.gif"' in html and build.MEDIA[-1] == gif           # the recorded GIF wins when present
