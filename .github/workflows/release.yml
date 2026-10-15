@@ -62,15 +62,15 @@ jobs:
         with:
           path: assets
           merge-multiple: true
-      - name: sdist (the file Homebrew installs from PyPI)
-        run: python -m pip install build && python -m build --sdist --outdir assets
       - name: Checksums, winget manifests, Homebrew formula
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [ "$GITHUB_REF_TYPE" = tag ] || VERSION=$(python -c "import localllm; print(localllm.__version__)")
           (cd assets && sha256sum localllm-* > SHA256SUMS && cat SHA256SUMS)
-          python packaging/manifests.py "$VERSION" --exe assets/localllm-windows-x64.exe \
-            --sdist "assets/make_localllm_easier-$VERSION.tar.gz" --out manifests
+          # the formula's hash is the one PyPI serves (publish.yml uploads it from the same tag; wait for it)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then WAIT=900; else WAIT=0; fi
+          python packaging/manifests.py "$VERSION" --exe assets/localllm-windows-x64.exe --pypi-wait "$WAIT" --out manifests \
+            || [ "$GITHUB_REF_TYPE" != tag ]   # a test run of an unpublished version: winget only
       - uses: actions/upload-artifact@v4
         with:
           name: manifests
