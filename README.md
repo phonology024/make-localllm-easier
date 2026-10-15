@@ -62,10 +62,10 @@ Same 30-turn chat, RX 9070 XT, 32 GB RAM:
 ## Privacy
 
 Chats, files and settings stay on your PC. localllm only goes online to download llama.cpp and models (each checked
-against a pinned SHA-256) and, once a day, to read the public model list for update notices ("localllm 0.8 is out",
-"a better model for Thai now fits your PC"). That request sends nothing about you or your PC and never installs
-anything; turn it off with `localllm updates off` or `LOCALLLM_NO_UPDATE_CHECK=1`. Cloud routing with your own key is
-off unless you turn it on.
+against a pinned SHA-256) and for update notices ("localllm 0.8 is out", "a better model for Thai now fits your PC"):
+two small requests a day to the project website, nothing about you is sent, and nothing is installed. Turn them off
+with `localllm updates off` or `LOCALLLM_NO_UPDATE_CHECK=1`. Cloud routing with your own key is off unless you turn it
+on.
 
 ## Learn more
 

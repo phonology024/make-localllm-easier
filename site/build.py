@@ -1269,9 +1269,8 @@ def write() -> None:
     (OUT / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {URL}/sitemap.xml\n", encoding="utf-8",
                                     newline="\n")
     shutil.copy2(ROOT / "llms.txt", OUT / "llms.txt")
-    # what `localllm` reads once a day for update notices (localllm/updates.py): version + every measured model
-    (OUT / "catalog.json").write_text(json.dumps({"version": __version__, "models": catalog.MODELS}, ensure_ascii=False),
-                                      encoding="utf-8", newline="\n")
+    # update notices (localllm/updates.py) read two files once a day: this one (the version on main) and catalog/v1
+    (OUT / "latest.json").write_text(json.dumps({"version": __version__}), encoding="utf-8", newline="\n")
     shutil.copytree(ROOT / "data" / "catalog", OUT / "catalog")   # measured catalog JSON + schema (#164)
     for f in (SITE / "static").glob("*") if (SITE / "static").exists() else []:   # e.g. a Search Console file
         shutil.copy2(f, OUT / f.name)
