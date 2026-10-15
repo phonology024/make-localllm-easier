@@ -90,7 +90,7 @@ fast and RAM stays small; `--profile max` also takes MoE models that run with so
 loaded at a time, so each gets the whole GPU and the free RAM).
 
 Each message goes to the model with the best *measured* score for its language and task (math vs general). If all the
-models fit in VRAM together (24 GB+ cards for the pair below), they all stay loaded and routing is instant. Otherwise
+models fit in VRAM together (the pair below needs ~27 GB at 8k, so 32 GB cards), they all stay loaded and routing is instant. Otherwise
 one model is on the GPU at a time and it only swaps when the other is at least 3 points better, because a swap costs
 seconds.
 Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).

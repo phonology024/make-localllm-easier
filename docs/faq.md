@@ -15,7 +15,7 @@ Hindi, Arabic and Thai lose the most (13 points).
 **Can it use a different local model for each message?** Yes, opt-in: `localllm serve --models auto` routes each
 message to the model with the best measured score for its language and task (e.g. Chinese knowledge to Qwen3.8,
 Chinese math to gemma-4) and says which model answered. On a 16 GB card a swap costs 4-9 s, so it only switches for a
-gain of 3+ points; on 24 GB+ cards both models stay loaded and routing is instant.
+gain of 3+ points; on 32 GB cards both models stay loaded and routing is instant.
 
 **Which local model is better at math?** On MGSM (the same 250 word problems in 11 languages), gemma-4-26B-A4B QAT
 scores 96.8 / 89.6 / 88.8 in English / Thai / Chinese vs 94.4 / 87.2 / 84.4 for Qwen3.8-27B Q3, at 1.8x the speed.
