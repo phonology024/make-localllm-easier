@@ -40,6 +40,7 @@ PASSTHROUGH = ("/v1/chat/completions", "/v1/completions", "/v1/models", "/v1/emb
 HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
+PUBLIC_UI = ("/manifest.webmanifest", "/sw.js", "/icon.svg")   # the app files (#122): public like the page
 UI_HEADER = "X-Localllm-UI"        # sent by ui.html on requests that change something (cross-site request guard)
 MODEL_DOWNLOAD = re.compile(r"^/localllm/models/([a-z0-9][a-z0-9.-]{0,63})/download$")   # Models tab (#107)
 KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
@@ -523,10 +524,23 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; "
-                             "style-src 'unsafe-inline'; img-src 'self' data:")     # nothing loads from elsewhere
+                             "style-src 'unsafe-inline'; img-src 'self' data:; worker-src 'self'; "
+                             "manifest-src 'self'")                                  # nothing loads from elsewhere
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(html)
+
+        def _static(self, path: str):
+            """The app files (pwa.py): manifest, icon, service worker. Public like the page; nothing personal."""
+            from .pwa import FILES
+            ctype, text = FILES[path]
+            body = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", f"{ctype}; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
 
         def _sessions(self, method: str):
             """/localllm/sessions[/<id>] for the workspace page."""
@@ -546,7 +560,7 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(400, {"error": str(e)})
 
         def do_GET(self):
-            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n")    # the page and its words need no key
+            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n", *PUBLIC_UI)   # the page, its words, the app
             if not self._authorized() and (not public or getattr(self, "bad_host", False)):
                 return self._deny()                             # ... but still the Host check (DNS rebinding)
             if ui and self.path.split("?", 1)[0] == "/localllm/i18n":
@@ -556,6 +570,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(200, i18n.table(i18n.ui_lang(browser)))
             if ui and self.path == "/":
                 return self._page()
+            if ui and self.path in PUBLIC_UI:
+                return self._static(self.path)
             if ui and self.path == "/localllm/catalog":
                 return self._json(200, ui["catalog"])
             if ui and self.path == "/localllm/models" and "models" in ui:
