@@ -146,3 +146,72 @@ def test_status_endpoint_carries_the_download_for_the_page(monkeypatch):
     monkeypatch.setattr(downloads, "state", lambda: st)
     d = cli._status(None, None)
     assert d["download_state"] == st and d["download"].startswith("downloading big")   # page: i18n; chat: text
+
+
+class _Proc:
+    def wait(self):
+        pass
+
+    def terminate(self):
+        pass
+
+
+def _run_first(monkeypatch, answer, tty=True):
+    started, background = [], []
+    monkeypatch.setattr(cli, "first_run", lambda: False)
+    monkeypatch.setattr(cli, "_starter_plan", lambda a: ("small", "big"))
+    monkeypatch.setitem(catalog.MODELS, "small", {"gb": 2.7})
+    monkeypatch.setitem(catalog.MODELS, "big", {"gb": 13.3})
+    monkeypatch.setattr(cli, "_start", lambda key, *a, **k: (started.append(key), (_Proc(), "http://x"))[1])
+    monkeypatch.setattr(cli, "_background", background.append)
+    monkeypatch.setattr(cli, "ASSUME_YES", False)
+    monkeypatch.delenv("LOCALLLM_YES", raising=False)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: tty, raising=False)
+    monkeypatch.setattr("builtins.input", lambda q: answer)
+    monkeypatch.setattr(cli, "CONSENTED", set())
+    monkeypatch.setattr(cli, "NO_THINK", set())
+    from types import SimpleNamespace
+    a = SimpleNamespace(model=None, port=8080, ctx=None, host=None, api_key=None, no_browser=True)
+    try:
+        cli.cmd_run(a)
+    except SystemExit as e:
+        return started, background, str(e)
+    return started, background, None
+
+
+def test_first_run_asks_once_before_downloading_both(monkeypatch):
+    started, background, _ = _run_first(monkeypatch, "")
+    assert started == ["small"] and background == ["big"]
+    assert cli.CONSENTED == {"small", "big"} and cli.NO_THINK == {"small"}
+
+
+def test_no_background_download_without_consent(monkeypatch):
+    started, background, _ = _run_first(monkeypatch, "s")
+    assert started == ["small"] and background == [] and cli.CONSENTED == {"small"} and not cli.NO_THINK
+    started, background, msg = _run_first(monkeypatch, "n")
+    assert started == [] and background == [] and "nothing downloaded" in msg
+
+
+def test_scripts_and_yes_mean_both(monkeypatch):
+    started, background, _ = _run_first(monkeypatch, "n", tty=False)
+    assert background == ["big"]
+
+
+def test_starter_runs_without_reasoning_only_while_the_best_downloads(monkeypatch):
+    monkeypatch.setattr(cli, "NO_THINK", {"qwen3.5-4b-q4"})
+    seen = {}
+
+    class P:
+        pid = 1
+
+        def poll(self):
+            return None
+    monkeypatch.setattr(cli, "_model_path", lambda k: cli.Path("m.gguf"))
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda args, **k: seen.setdefault("args", args) and P())
+    monkeypatch.setattr(cli, "_free_port", lambda: 1)
+    monkeypatch.setattr(cli.urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(SystemExit("stop")))
+    try:
+        cli._launch("qwen3.5-4b-q4", cli.Path("llama-server"), {"id": "Vulkan0", "total_gb": 16.0, "name": "x"}, 8192, 20.0)
+    except (SystemExit, Exception):
+        pass
+    assert "--reasoning-budget" in seen.get("args", [])

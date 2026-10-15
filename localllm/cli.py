@@ -178,6 +178,8 @@ def _hf_url(m: dict, name: str) -> str:
 
 
 ASSUME_YES = False   # --yes, or LOCALLLM_YES=1: never ask (scripts, installers)
+CONSENTED: set[str] = set()      # models the person already agreed to download this run (asked once, up front)
+NO_THINK: set[str] = set()       # models started with reasoning off (the first-run starter, #116)
 
 
 def confirm(question: str) -> bool:
@@ -214,7 +216,7 @@ def _model_path(key: str) -> Path:
         return found
     dest = runtime.HOME / "models" / m["file"]
     if not dest.exists():
-        if not confirm(i18n.t("cli_confirm_download", key=key, gb=m["gb"], dir=dest.parent)):
+        if key not in CONSENTED and not confirm(i18n.t("cli_confirm_download", key=key, gb=m["gb"], dir=dest.parent)):
             sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks another.")
         _say(f"downloading {key} ({m['gb']} GB, one time) ...")
         _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"))
@@ -411,6 +413,8 @@ def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: boo
     mtp = (tuned["mtp"] if tuned else catalog.MODELS[key]["mtp"]) if catalog.MODELS[key]["mtp"] else False
     inner = _free_port()   # llama-server listens privately; the gateway on `port` speaks OpenAI/Anthropic/Ollama/Gemini
     args = runtime.server_args(model, dev["id"] if dev else None, inner, ctx, mtp, cpu_moe=cpu_moe, profile=profile)
+    if key in NO_THINK:          # first-run starter: answer right away instead of reasoning first (#116)
+        args += ["--reasoning-budget", "0"]
     if profile == "max":
         _say(f"profile max: {ctx // 1000}k-token context, larger prompt cache in RAM")
     if vision:
@@ -463,6 +467,20 @@ def _starter_plan(a) -> tuple[str | None, str | None]:
     return start, best
 
 
+def _ask_first_run(start: str, later: str) -> str:
+    """One question before a first run downloads anything: 'both', 'starter' or 'none'. --yes, LOCALLLM_YES and scripts
+    (no terminal) mean both, like every other download."""
+    s, b = catalog.MODELS[start], catalog.MODELS[later]
+    if ASSUME_YES or os.environ.get("LOCALLLM_YES") or not sys.stdin.isatty():
+        return "both"
+    q = i18n.t("cli_first_run_ask", start=start, sgb=s["gb"], best=later, bgb=b["gb"]) + " [Y/n/s] "
+    try:
+        ans = input(f"[localllm] {q}").strip().lower()
+    except EOFError:
+        return "both"
+    return "starter" if ans in ("s", "starter") else "none" if ans in ("n", "no") else "both"
+
+
 def cmd_run(a) -> None:
     if first_run() and not a.model and sys.stdin.isatty():
         _say(i18n.t("cli_first_run"))
@@ -470,9 +488,19 @@ def cmd_run(a) -> None:
         print()
     key, later = _starter_plan(a)
     if later:
-        s, b = catalog.MODELS[key], catalog.MODELS[later]
-        _say(f"starting with {key} ({s['gb']} GB) so you can chat in about a minute; {later} ({b['gb']} GB), the best "
-             "model for this PC, downloads in the background (`/status` in chat shows how far)")
+        choice = _ask_first_run(key, later)
+        if choice == "none":
+            sys.exit("[localllm] nothing downloaded. `localllm list` shows the models; `--model KEY` picks one.")
+        CONSENTED.add(key)
+        if choice == "starter":
+            _say(i18n.t("cli_starter_only", start=key, best=later))
+            later = None
+        else:
+            CONSENTED.add(later)
+            NO_THINK.add(key)                  # quick first answers until the best model is in
+            s, b = catalog.MODELS[key], catalog.MODELS[later]
+            _say(f"starting with {key} ({s['gb']} GB) so you can chat in about a minute; {later} ({b['gb']} GB), the "
+                 "best model for this PC, downloads in the background (`/status` in chat shows how far)")
     proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
