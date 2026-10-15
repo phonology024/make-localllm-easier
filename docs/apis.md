@@ -108,8 +108,9 @@ localllm serve --embeddings
 ```
 
 In Copilot: Settings > QA > Embedding model > add a custom model, provider "3rd party (openai-format)", base URL
-`http://127.0.0.1:8080/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
-way through its "custom local (OpenAI format)" option. e5 models were trained with `query: ` / `passage: ` in front of
+`http://127.0.0.1:8080/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections needs none of
+this: its free core plugin embeds with a model it ships and runs inside Obsidian, so vault search already stays on the
+PC (connecting it to an outside model, local or cloud, has moved to the paid Smart Chat Pro). e5 models were trained with `query: ` / `passage: ` in front of
 the text; tools that don't add them still work, with somewhat lower search quality. An Obsidian plugin of our own (#89, part B) comes only if this
 isn't enough.
 
