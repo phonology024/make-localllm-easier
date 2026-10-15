@@ -1,0 +1,33 @@
+name: routing-examples
+# A "Routing examples" issue is checked (#40) and gets one comment, edited on each re-check: what is accepted, what to
+# fix. The issue body is passed through an environment variable and only parsed as text, never run.
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions: {}
+
+jobs:
+  check:
+    if: contains(github.event.issue.labels.*.name, 'routing-examples')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the examples
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$BODY" > "$RUNNER_TEMP/body.md"
+          { echo "**Routing examples check** (\`tools/router/add_human_examples.py --check\`)"; echo;
+            python tools/router/add_human_examples.py "$RUNNER_TEMP/body.md" --check || true; } > "$RUNNER_TEMP/result.md"
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/result.md" --edit-last --create-if-none
