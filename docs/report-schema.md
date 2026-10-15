@@ -47,3 +47,37 @@ Written by `tools/build_leaderboard.py` from the catalog and `reports/`.
  "platforms": {"Windows/AMD": {"maintainers": true, "community_reports": 0}, ...}
 }
 ```
+
+## `data/catalog/v1/catalog.json` (catalog version 1)
+
+The measured catalog (`localllm/catalog.py`) as JSON for other tools, written by `tools/build_catalog.py` and checked
+against the JSON Schema [data/catalog/v1/schema.json](../data/catalog/v1/schema.json) in the tests. The website serves
+both at `https://phonology024.github.io/make-localllm-easier/catalog/v1/catalog.json` and `.../catalog/v1/schema.json`.
+License: MIT, the same as the code.
+
+```
+{
+ "catalog_version": 1,
+ "catalog_rev": "ae434cf45eaea48d",   // changes whenever any model entry changes
+ "license": "MIT",
+ "hardware": [{"id": "rx9070xt-windows-vulkan", "gpu": "AMD Radeon RX 9070 XT", "vram_gb": 15.9, ...}],
+ "models": [{
+   "id": "gemma4-26b-a4b-qat", "format": "gguf",
+   "hf_repo": "...", "file": "...gguf", "rev": "<40-hex commit>", "sha256": "<64 hex>",
+   "bits_per_weight": 4.2, "qat": true, "max_ctx": 262144,
+   "moe": {"layers": 30, "expert_gib_per_layer": 0.4} | null,
+   "memory": {"weights_gib": 13.3, "kv_kib_per_token_q8": 10.9, "fixed_cache_gib": 0.11, "checkpoint_gib": 0.11,
+              "cpu_mapped_gib": 0.51 | null},
+   "vision": {"mmproj_file": "...", "mmproj_gib": 1.11, "mmproj_sha256": "..."} | null,
+   "speed": [{"hardware": "rx9070xt-windows-vulkan", "llama_cpp": "b11476", "decode_tok_s": 90,
+              "confidence": "measured" | "estimated", "mtp_draft_tokens": 0,
+              "moe_offload": [{"layers_in_ram": 8, "decode_tok_s": 45}, ...]}],
+   "scores": {"th/regional": 65.7, ...},  // accuracy %, chrF++ for */translate and */summarize
+   "note": "..."
+ }]
+}
+```
+
+Version 1 only gains optional fields. Renaming, removing or retyping a field means a new `v2/` folder next to `v1/`,
+and `v1/` keeps being published.
+

@@ -25,8 +25,8 @@ but we already treat it that way and `tests/test_stability.py` fails if any of i
 `results.json`, `route.json`, `connect.json`, `report-<date>.json`. Variables: `LOCALLLM_HOME`, `LOCALLLM_MODELS`,
 `LOCALLLM_LLAMA_SERVER`, `LOCALLLM_LLAMA_BUILD`, `LOCALLLM_API_KEY`.
 
-**Data formats.** The `localllm report` JSON and `data/leaderboard.json`, both versioned by their `schema` field
-([report-schema.md](report-schema.md)). Catalog keys (`qwen3.8-27b-q3`, `gemma4-26b-a4b-qat`, ...) stay valid names
+**Data formats.** The `localllm report` JSON and `data/leaderboard.json`, both versioned by their `schema` field,
+and the published catalog `catalog/v1/catalog.json`, versioned by its folder ([report-schema.md](report-schema.md)). Catalog keys (`qwen3.8-27b-q3`, `gemma4-26b-a4b-qat`, ...) stay valid names
 for `--model`; a model we drop from the catalog keeps its key as an alias for one minor release with a warning.
 
 ## Not covered
