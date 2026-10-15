@@ -9,7 +9,9 @@ Read this in: English | [தமிழ்](docs/README.ta.md)
 **`localllm` checks your GPU, picks the most accurate AI model that fits it *in your language*, downloads it and starts
 a private chat. Offline and free.**
 
-<!-- demo GIF goes here (#81): tools/record_demo.py records it from a real run -->
+![localllm doctor, then a streamed answer at 122 tok/s, recorded on an RX 9070 XT](docs/img/demo.gif)
+
+<sub>Recorded from a real run with `tools/record_demo.py`: the text is the commands' own output and the answer streams at the speed llama-server produced it.</sub>
 
 ## Install
 
