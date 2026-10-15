@@ -18,8 +18,10 @@ pip install make-localllm-easier
 localllm
 ```
 
-That's it: the first run shows what your PC can run and asks before it downloads the model. No Python yet? Single-file
-downloads for Windows, macOS and Linux are coming with the next release ([packaging/README.md](packaging/README.md)).
+That's it: the first run shows what your PC can run and asks before it downloads the model. No Python? Download the
+single `localllm` file for Windows, macOS or Linux (or the AppImage) from the [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest) and run it
+from a terminal; `SHA256SUMS` there lets you check it. winget and Homebrew follow
+([packaging/README.md](packaging/README.md)).
 
 ## The commands you'll use
 
