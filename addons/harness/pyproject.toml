@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localllm-harness"
+version = "0.0.1"
+description = "Experimental add-on for make-localllm-easier: a plan / tool / verify / retry loop for small local models (#88)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = ["make-localllm-easier>=0.7.1"]
+
+[project.scripts]
+localllm-agent = "localllm_harness.agent:main"
+
+[tool.setuptools]
+packages = ["localllm_harness"]
