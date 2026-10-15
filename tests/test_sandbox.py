@@ -42,6 +42,14 @@ def test_sandbox_refuses_without_docker(monkeypatch):
     assert calls == []                                       # nothing was started, on the host or anywhere else
 
 
+def test_sandbox_finds_docker_exe_on_windows(monkeypatch):
+    asked = []
+    monkeypatch.setattr(sandbox.os, "name", "nt")
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: asked.append(name))
+    sandbox.docker()
+    assert asked == ["docker.exe"]                           # not the extensionless WSL script next to it
+
+
 def test_sandbox_needs_a_linux_container_engine(monkeypatch):
     monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/docker")
     for os_type, ok in (("windows\n", False), ("linux\n", True)):
