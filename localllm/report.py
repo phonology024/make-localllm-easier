@@ -149,6 +149,15 @@ def installed_server() -> Path | None:
     return found[-1] if found else None
 
 
+PER_ITEM = ("outcomes", "items_sha")   # bench.paired(): kept locally and in runner lines, too long for a shared link
+
+
+def lean_results(results: dict) -> dict:
+    return {name: {k: ({f: x for f, x in v.items() if f not in PER_ITEM} if isinstance(v, dict) else v)
+                   for k, v in res.items()} if isinstance(res, dict) else res
+            for name, res in results.items()}
+
+
 def collect(server: Path | None = None, devs: list[dict] | None = None, ram_gb: float | None = None,
             lang: str | None = None) -> dict:
     from .bench import system_language
@@ -170,7 +179,7 @@ def collect(server: Path | None = None, devs: list[dict] | None = None, ram_gb: 
         "gpu": dev["name"] if dev else None, "vram_gb": round(dev["total_gb"], 1) if dev else 0.0,
         "driver": driver() if dev else None,
         "devices": [{"name": d["name"], "vram_gb": round(d["total_gb"], 1)} for d in devs],
-        "pick": pick, "tune": tune, "results": _read(runtime.HOME / "results.json"),
+        "pick": pick, "tune": tune, "results": lean_results(_read(runtime.HOME / "results.json")),
     }
     host = os.environ.get("LOCALLLM_REPORT_HOST", "")
     if re.fullmatch(r"cloud(:[a-z0-9-]{1,30})?", host):          # e.g. cloud:runpod (tools/cloud_lab.sh sets it)

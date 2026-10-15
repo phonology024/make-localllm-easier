@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import hashlib
 import json
 import locale
 import time
@@ -525,6 +526,13 @@ def _save(name: str, res: dict) -> None:
     out.write_text(json.dumps(allres, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def paired(items: list, ok: list[bool]) -> dict:
+    """Per-item right/wrong ("1"/"0" in item order) and a hash of the items, so two runs on the same items can be
+    compared pairwise (McNemar, tools/paired.py) instead of only by their totals."""
+    sha = hashlib.sha256(json.dumps(items, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    return {"outcomes": "".join("1" if x else "0" for x in ok), "items_sha": sha}
+
+
 def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str, ...] = ("global", "regional")) -> dict:
     """Scores are saved after every test, so an interrupted run keeps what it finished."""
     res, t0 = {}, time.time()
@@ -580,16 +588,18 @@ def run(url: str, name: str, langs: list[str], limit: int = 0, suites: tuple[str
                     print(f"  {lang:3} {suite:9} generated {len(programs)} programs; start Docker (Linux containers) "
                           f"and rerun to test them (saved in {gen})", flush=True)
                     continue
-                ok = sum(r["ok"] for r in sandbox.run(programs, CODEGEN_TIMEOUT))
+                passed = [bool(r["ok"]) for r in sandbox.run(programs, CODEGEN_TIMEOUT)]
+                ok = sum(passed)
                 acc = round(100 * ok / len(items), 1)
-                res[f"{lang}/{suite}"] = {"acc": acc, "correct": ok, "n": len(items)}
+                res[f"{lang}/{suite}"] = {"acc": acc, "correct": ok, "n": len(items), **paired(items, passed)}
                 print(f"  {lang:3} {suite:9} {acc:5.1f}%  ({ok}/{len(items)} pass the EvalPlus tests)", flush=True)
                 _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})
                 continue
             check = {"math": ask_math, "code": ask_code, "vision": ask_vision}.get(suite)
-            ok = sum(check(url, it) if check else ask(url, it) == it["ans"] for it in items)
+            right = [bool(check(url, it) if check else ask(url, it) == it["ans"]) for it in items]
+            ok = sum(right)
             acc = round(100 * ok / len(items), 1)
-            res[f"{lang}/{suite}"] = {"acc": acc, "correct": ok, "n": len(items)}
+            res[f"{lang}/{suite}"] = {"acc": acc, "correct": ok, "n": len(items), **paired(items, right)}
             margin = round(196 * (acc / 100 * (1 - acc / 100) / len(items)) ** 0.5, 1)
             print(f"  {lang:3} {suite:9} {acc:5.1f}%  ±{margin}  ({ok}/{len(items)})", flush=True)
             _save(name, {**res, "_meta": {"model": name, "seconds": round(time.time() - t0), "limit": limit}})

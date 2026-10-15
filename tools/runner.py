@@ -17,7 +17,9 @@ Manifest (see tools/runner_example.json):
 Each finished job is one line in tools/runner_results.jsonl, written right away. A line is a valid `localllm report`
 (schema 1: gpu, vram_gb, ram_gb, os, llama_cpp, tune, results) plus the job and the machine state before it started
 (free VRAM, free RAM, driver), so tools/build_leaderboard.py can read it. A job that fails is recorded with the error
-and retried on the next run.
+and retried on the next run. Status: "ok" when every requested suite scored, "partial" (with `missing`) when some did not,
+"error" when none did, e.g. codegen without Docker (#168); only "ok" counts as done. Right/wrong suites also carry
+per-item `outcomes` and `items_sha` for paired comparisons: python tools/paired.py JOB_A JOB_B.
 """
 from __future__ import annotations
 
@@ -74,11 +76,29 @@ def state(server: Path) -> dict:
             "driver": report.driver() if dev else None}
 
 
-def launch_args(job: dict, model: Path, dev_id: str | None) -> list[str]:
+def job_mtp(job: dict):
     key = job.get("model")
     mtp = catalog.MODELS[key]["mtp"] if key in catalog.MODELS else False
-    mtp = job.get("mtp", mtp)                                    # 0 = off, N = draft N tokens (models with an MTP head)
-    args = runtime.server_args(model, dev_id, PORT, job.get("ctx", 8192), mtp)
+    return job.get("mtp", mtp)                                   # 0 = off, N = draft N tokens (models with an MTP head)
+
+
+def outcome(job: dict, scores: dict) -> dict:
+    """"ok" only when every suite the job asked for produced a score (#168): a suite bench.run skips (codegen without
+    Docker, a dataset that failed to load) used to leave empty results under status "ok"."""
+    if not job.get("suites"):
+        return {"status": "ok"}
+    want = [f"{lang}/{s}" for lang in job.get("langs", "en").split(",")
+            for s in bench.available(lang, tuple(job["suites"].split(",")))]
+    if not want:
+        return {"status": "error", "error": f"no {job['suites']} benchmark for {job.get('langs', 'en')}"}
+    missing = [k for k in want if k not in scores]
+    if len(missing) == len(want):
+        return {"status": "error", "error": "no suite produced a score", "missing": missing}
+    return {"status": "partial", "missing": missing} if missing else {"status": "ok"}
+
+
+def launch_args(job: dict, model: Path, dev_id: str | None) -> list[str]:
+    args = runtime.server_args(model, dev_id, PORT, job.get("ctx", 8192), job_mtp(job))
     for flag in job.get("drop_args", []):                         # a flag an older build doesn't know, with its value
         if flag in args:
             i = args.index(flag)
@@ -153,10 +173,11 @@ def run_job(job: dict, build: str, server: Path, model_path, popen=subprocess.Po
         "os": f"{platform.system()} {platform.release()}", "arch": platform.machine(),
         "ram_gb": before["ram_gb"], "llama_cpp": build, "gpu": before["gpu"], "vram_gb": before["vram_gb"],
         "driver": before["driver"],
-        "tune": {model.name: {build: {"gpu": before["gpu"], "env": job.get("env", {}), "mtp": 0, "tok_s": tok_s}}}
+        "tune": {model.name: {build: {"gpu": before["gpu"], "env": job.get("env", {}),
+                                      "mtp": runtime.mtp_draft(job_mtp(job)), "tok_s": tok_s}}}
         if tok_s else {},
         "results": {job["id"]: scores} if scores else {},
-        "job": {**job, "status": "ok", "args_full": report.scrub(args), "state_before": before,
+        "job": {**job, **outcome(job, scores), "args_full": report.scrub(args), "state_before": before,
                 **({"memory": memory} if memory else {}), **({"notes": notes} if notes else {})},
     }
 

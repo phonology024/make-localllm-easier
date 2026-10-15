@@ -203,6 +203,13 @@ def ram_profile(ram_total_gb: float, profile: str = "lean") -> tuple[int, int] |
     return None
 
 
+def mtp_draft(mtp) -> int:
+    """Tokens the MTP head drafts for a catalog/job `mtp` value: 0 = off; True (or 1) = the default 2."""
+    if not mtp:
+        return 0
+    return mtp if mtp is not True and mtp > 1 else 2
+
+
 def server_args(model: Path, device: str | None, port: int, ctx: int, mtp: bool,
                 ram_total_gb: float | None = None, cpu_moe: int = 0, profile: str = "lean") -> list[str]:
     args = ["-m", str(model), "--host", "127.0.0.1", "--port", str(port), "-c", str(ctx), "-ngl", "999",
@@ -216,7 +223,7 @@ def server_args(model: Path, device: str | None, port: int, ctx: int, mtp: bool,
     if device:
         args += ["-dev", device]
     if mtp:
-        args += ["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp if mtp is not True and mtp > 1 else 2)]
+        args += ["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp_draft(mtp))]
     return args
 
 
