@@ -4,13 +4,14 @@ and apply the safe fixes when you agree.
   no-gpu         no GPU device: the Vulkan loader is missing, or the driver doesn't expose the card -> CPU only, slow
   small-bar      Resizable BAR is off (AMD/Intel): llama.cpp's Vulkan buffers land in system RAM -> `localllm tune`
   vram-busy      other apps hold the VRAM the model needs, so it would spill -> name them; or a model that fits
-  ram-low        not enough free RAM for the model's working set -> lean profile, smaller model
+  ram-low        not enough free RAM for the model's working set -> close apps, keep the lean profile (advice only)
   port-busy      something already listens on the port -> name it; or another port
   garbled        a running localllm answers with chat-template tokens or loops -> llama.cpp build / template
 A fix that is applied writes ~/.localllm/defaults.json (model, port, profile), which `localllm` reads when the flag is
 not given on the command line; `localllm doctor --reset` removes it, and plain `doctor` says when it is in use. Only
 lasting conditions are saved: VRAM taken by a game or a browser is temporary, so vram-busy only suggests a model for
-this run instead of making a worse model the default. Nothing else on the PC is changed.
+this run instead of making a worse model the default, and the small model no-gpu saves is dropped again as soon
+as a GPU is seen. Nothing else on the PC is changed.
 """
 from __future__ import annotations
 
@@ -41,23 +42,60 @@ class Problem:
     run: list | None = None        # or a localllm command to run with consent
 
 
-def load_defaults() -> dict:
+def _read() -> dict:
     try:
         d = json.loads(DEFAULTS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return {k: v for k, v in d.items() if k in SETTABLE}
+    return d if isinstance(d, dict) else {}
 
 
-def save_defaults(changes: dict) -> dict:
-    d = {**load_defaults(), **{k: v for k, v in changes.items() if k in SETTABLE}}
+def load_defaults() -> dict:
+    return {k: v for k, v in _read().items() if k in SETTABLE}
+
+
+def _write(values: dict, why: dict) -> None:
     DEFAULTS.parent.mkdir(parents=True, exist_ok=True)
-    DEFAULTS.write_text(json.dumps(d, indent=1), encoding="utf-8")
+    DEFAULTS.write_text(json.dumps({**values, **({"why": why} if why else {})}, indent=1), encoding="utf-8")
+
+
+def save_defaults(changes: dict, why: str | None = None) -> dict:
+    """Merge `changes` into defaults.json. `why` (the problem id) is kept per key, so a fix can be taken back once its
+    cause is gone (forget_cpu_fallback)."""
+    changes = {k: v for k, v in changes.items() if k in SETTABLE}
+    d = {**load_defaults(), **changes}
+    reasons = {k: r for k, r in (_read().get("why") or {}).items() if k in d and k not in changes}
+    reasons.update({k: why for k in changes} if why else {})
+    _write(d, reasons)
     return d
 
 
-def apply_defaults(args, given: set[str]) -> None:
+def _gpu_present() -> bool:
+    try:
+        return bool(runtime.devices(runtime.find_server()))
+    except (OSError, RuntimeError, SystemExit):       # llama.cpp missing or broken: keep the fallback, start anyway
+        return False
+
+
+def forget_cpu_fallback(gpu_present=_gpu_present) -> str | None:
+    """The no-gpu fix saves the smallest model so the CPU fallback stays usable. Once llama.cpp sees a GPU again (driver
+    updated), that default would keep a 16 GB card on the smallest model, so drop it and say so. The GPU is probed only
+    when such a default exists."""
+    d, reasons = load_defaults(), dict(_read().get("why") or {})
+    if reasons.get("model") != "no-gpu" or "model" not in d or not gpu_present():
+        return None
+    small = d.pop("model")
+    reasons.pop("model")
+    _write(d, reasons)
+    return f"a GPU is visible again: dropped the CPU-fallback default model={small} from {DEFAULTS}"
+
+
+def apply_defaults(args, given: set[str], gpu_present=_gpu_present) -> None:
     """Fill flags the user didn't type from defaults.json (the command line always wins)."""
+    if "model" not in given:
+        note = forget_cpu_fallback(gpu_present)
+        if note:
+            print(f"[localllm] {note}", file=sys.stderr)
     for k, v in load_defaults().items():
         if k not in given and hasattr(args, k) and getattr(args, k) == SETTABLE[k]:
             setattr(args, k, v)
@@ -128,8 +166,8 @@ def check_ram(key: str | None, ram_free: float, need_gb: float) -> Problem | Non
         return None
     return Problem("ram-low", f"Only {ram_free:.1f} GB of system RAM is free; {key} needs about {need_gb:.1f} GB next "
                    "to the GPU (caches, CPU-mapped weights), so Windows would page to disk.",
-                   "Close memory-heavy apps (browsers with many tabs, games), or keep the lean profile, which uses "
-                   "the least RAM.", apply={"profile": "lean"})
+                   "Close memory-heavy apps (browsers with many tabs, games), and keep the lean profile (the "
+                   "default; leave out --profile max), which uses the least RAM.")
 
 
 def port_owner(port: int) -> str | None:
