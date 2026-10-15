@@ -46,6 +46,7 @@ What it can do here:
   holds ~78k tokens at once (~130 pages of text) next to the model
   uses ~2.2 GB of system RAM: ~0.3 GB embeddings/CPU-mapped + ~1.0 GB prompt cache + ~0.4 GB ctx checkpoints + ~0.5 GB host (est.)
   leaves ~15 GB of RAM free for other apps (est.)
+  with --embeddings: + ~0.2 GB RAM for multilingual-e5-small on the CPU, no VRAM (est.)
   answers at ~90 tok/s
   speed settings not tuned for this PC yet: `localllm tune` measures them once (a few minutes)
 
@@ -89,7 +90,7 @@ fast and RAM stays small; `--profile max` also takes MoE models that run with so
 loaded at a time, so each gets the whole GPU and the free RAM).
 
 Each message goes to the model with the best *measured* score for its language and task (math vs general). If all the
-models fit in VRAM together (24 GB+ cards for the pair below), they all stay loaded and routing is instant. Otherwise
+models fit in VRAM together (the pair below needs ~27 GB at 8k, so 32 GB cards), they all stay loaded and routing is instant. Otherwise
 one model is on the GPU at a time and it only swaps when the other is at least 3 points better, because a swap costs
 seconds.
 Every answer says which model wrote it and why (`X-Localllm-Model` header; shown under each answer in `localllm chat`).

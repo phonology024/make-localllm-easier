@@ -295,9 +295,10 @@ def _lan(host: str | None, api_key: str | None, require_local: bool = False) -> 
 
 def _start(key: str | None, port: int, ctx: int | None, models: str | None = None, host: str | None = None,
            api_key: str | None = None, require_local: bool = False, idle_min: float | None = None,
-           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False):
+           vision: bool = False, profile: str = "lean", ui: bool = False, qr_key: bool = False,
+           swappable: bool = False, embeddings: bool = False):
     """ctx None = the profile's context (8k lean; what fits the GPU in max). ui: serve the chat workspace at /.
-    qr_key: LAN mode's QR code carries the key too."""
+    qr_key: LAN mode's QR code carries the key too. embeddings: answer /v1/embeddings with multilingual-e5-small."""
     host, api_key, shown = _lan(host, api_key, require_local)
     trust = not require_local
     if shown != "127.0.0.1":
@@ -305,7 +306,13 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
         _print_qr(f"http://{shown}:{port}/" + (f"?key={api_key}" if qr_key and api_key else ""), qr_key)
     server, _devs, dev, _ram = _machine()
     from .bench import system_language
+    from . import taskclf
     ram_free = runtime.ram_available_gb()
+    clf = taskclf.Classifier(server) if (models or embeddings) else None   # the router's e5 server, shared (#158)
+    emb = clf.embeddings_url if embeddings else None
+    if embeddings:
+        _say(f"embeddings: POST /v1/embeddings answers with {taskclf.EMBED_MODEL} on the CPU (no VRAM, "
+             f"~{taskclf.EMBED_RAM_GB:g} GB RAM est.); it starts on the first request")
     if models:
         if not dev:
             sys.exit("[localllm] --models needs a GPU")
@@ -323,8 +330,7 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
         resident = need <= dev["total_gb"]
         _say(f"all {len(keys)} models fit in VRAM together ({need:.1f} GB): no swaps" if resident else
              f"they need {need:.1f} GB together: one at a time, swapped only when another is clearly better")
-        from . import taskclf
-        clf = taskclf.Classifier(server)    # math/code/translate in any language; its server starts on the 1st message
+        # clf: math/code/translate in any language; its server starts on the 1st message
         p = pool.Pool(keys, lambda k: _launch(k, server, dev, ctxs[k], ram_free, vision, profile), dev["total_gb"],
                       ram_free, first,
                       resident, files=None if resident else {k: _model_path(k) for k in keys}, classifier=clf,
@@ -332,16 +338,25 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
         return (_PoolProc(p, gateway.serve(p, host=host, port=port, model_name="localllm-auto", api_key=api_key,
                                             trust_loopback=trust, status=lambda: _status(p.proc, p.current),
                                             ui=_ui(keys, True, dev, ram_free) if ui else None,
-                                            meter=_meter())),
+                                            meter=_meter(), embeddings=emb)),
                 f"http://127.0.0.1:{port}")
     key = key or (catalog.pick(dev["total_gb"], system_language(), ram_free) if dev else None)
     if not key:
         sys.exit("[localllm] no measured model fits this GPU yet (need >= 10 GB VRAM). See `localllm list`.")
+    if swappable:                   # the first run's starter: it moves to the best model when that is downloaded (#128)
+        from . import gateway, hotswap
+        sw = hotswap.Switchable(key, lambda k: _launch(k, server, dev, ctx if k == key else None, ram_free, vision,
+                                                         profile))
+        gw = gateway.serve(sw, host=host, port=port, model_name=key, api_key=api_key, trust_loopback=trust,
+                           status=lambda: _status(sw.proc, sw.key), ui=_ui([key], False, dev, ram_free) if ui else None,
+                           meter=_meter(), embeddings=emb)
+        return _PoolProc(sw, gw), f"http://127.0.0.1:{port}"
     proc, url = _launch(key, server, dev, ctx, ram_free, vision, profile)
     from . import gateway
     proc.gateway = gateway.serve(url, host=host, port=port, model_name=key, api_key=api_key,
                                   trust_loopback=trust, status=lambda: _status(proc, key),
-                                  ui=_ui([key], False, dev, ram_free) if ui else None, meter=_meter())
+                                  ui=_ui([key], False, dev, ram_free) if ui else None, meter=_meter(),
+                                  embeddings=emb)
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -503,11 +518,13 @@ def cmd_run(a) -> None:
     proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
-                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False))
+                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False), swappable=bool(later),
+                       embeddings=getattr(a, "embeddings", False))
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
     if later:
-        _background(later)
+        sw = getattr(proc, "pool", None)          # the hot-switchable starter (#128), if _start made one
+        _background(later, sw) if sw is not None else _background(later)
     if not a.no_browser:
         webbrowser.open(url)
     try:
@@ -516,15 +533,33 @@ def cmd_run(a) -> None:
         proc.terminate()
 
 
-def _background(key: str):
-    """Download `key` behind the running starter model; say once when it is ready."""
+def _background(key: str, switchable=None):
+    """Download `key` behind the running starter model. With `switchable` (hotswap.Switchable) the server moves to it
+    as soon as it is in place, between answers (#128); without, say once that a restart switches."""
     from . import downloads
     m = catalog.MODELS[key]
     dest = runtime.HOME / "models" / m["file"]
+    done = (lambda k: _switch_to(switchable, k)) if switchable is not None else \
+        (lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
+                        "again to switch to it."))
     return downloads.start(
         key, lambda progress: _fetch(_hf_url(m, m["file"]), dest, m["file"], m.get("sha256"), progress=progress),
-        on_done=lambda k: _say(f"{k} is downloaded - the best model for this PC. Press Ctrl+C and run `localllm` "
-                               "again to switch to it."))
+        on_done=done)
+
+
+def _switch_to(sw, key: str) -> dict:
+    """The download is done: move the running server to `key` after the answer in progress, and say how it went."""
+    from . import downloads
+    downloads.mark(status="switching")
+    _say(f"{key} is downloaded - switching to it after the answer in progress")
+    r = sw.switch(key)
+    if "error" in r:
+        downloads.mark(status="switch_failed", error=r["error"])
+        _say(f"{key} didn't start ({r['error']}); still on {r['from']} - restart localllm to try again")
+    else:
+        downloads.mark(status="switched", switch_s=r["seconds"])
+        _say(f"now running {key}, the best model for this PC (switched in {r['seconds']:g} s)")
+    return r
 
 
 def cmd_chat(a) -> None:
@@ -662,6 +697,8 @@ def cmd_doctor(_a) -> None:
           f" + ~{ram_est['prompt_cache_gb']:.1f} GB prompt cache + ~{ram_est['checkpoints_gb']:.1f} GB ctx checkpoints"
           f" + ~{ram_est['host_gb']:.1f} GB host (est.)")
     print(f"  leaves ~{ram_free:.0f} GB of RAM free for other apps (est.)")
+    from .taskclf import EMBED_MODEL, EMBED_RAM_GB
+    print(f"  with --embeddings: + ~{EMBED_RAM_GB:g} GB RAM for {EMBED_MODEL} on the CPU, no VRAM (est.)")
     same = bw == sizing.BANDWIDTH["rx 9070 xt"]
     est = m["tok_s_9070xt"] if same else (int(m["tok_s_9070xt"] * bw / 640) if bw else None)
     from . import tune
@@ -781,6 +818,8 @@ UI_HELP = ("our chat workspace at / instead of llama-server's page: saved chats 
            "a model picker with --models, live VRAM/RAM; on the LAN it asks for the key")
 PROFILE_HELP = ("lean (default): least RAM and VRAM, 8k context. max: use what this PC has - a context that fills the "
                 "GPU and a bigger prompt cache for agents (`localllm doctor` shows both)")
+EMBED_HELP = ("also answer /v1/embeddings (OpenAI format) with multilingual-e5-small on the CPU, for Obsidian "
+              "vault search and RAG; downloaded once, SHA-256 checked")
 VISION_HELP = ("load the model's vision projector so apps can send images (+0.9-1.1 GB of VRAM; off by default so "
                "text-only use doesn't pay for it)")
 
@@ -815,6 +854,7 @@ def build_parser() -> argparse.ArgumentParser:
         ap.add_argument(*flags, **kw)
     ap.add_argument("--vision", action="store_true", help=VISION_HELP)
     ap.add_argument("--ui", action="store_true", help=UI_HELP)
+    ap.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
@@ -846,6 +886,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--idle-unload", **idle)
     s.add_argument("--vision", action="store_true", help=VISION_HELP)
     s.add_argument("--ui", action="store_true", help=UI_HELP)
+    s.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     for flags, kw in lan:
         s.add_argument(*flags, **kw)
     s.set_defaults(fn=cmd_serve)

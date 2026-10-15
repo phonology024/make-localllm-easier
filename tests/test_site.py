@@ -93,3 +93,10 @@ def test_home_shows_the_first_minute_with_the_demo_gif_once_it_exists(tmp_path, 
     monkeypatch.setattr(build, "DEMO", gif)
     html = build.sixty_seconds()
     assert 'src="/assets/demo.gif"' in html and build.MEDIA[-1] == gif           # the recorded GIF wins when present
+
+
+def test_compare_page_names_its_sources():
+    _build("https://example.org")
+    page = (OUT / "compare" / "index.html").read_text(encoding="utf-8")
+    assert "<th>Jan</th>" in page and "<h2>Sources</h2>" in page
+    assert page.count('rel="nofollow"') >= 8 and "docs.ollama.com/gpu" in page and "lmstudio.ai/docs" in page

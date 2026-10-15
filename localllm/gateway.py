@@ -326,7 +326,7 @@ METERED = ("/v1/chat/completions", "/v1/completions", "/v1/messages", "/v1/respo
 
 
 def make_handler(upstream, model_name: str, api_key: str | None = None, trust_loopback: bool = True, status=None,
-                 bind_host: str | None = None,
+                 bind_host: str | None = None, embeddings=None,
                  ui=None, meter=None):
     """`upstream` is a llama-server URL, or a pool.Pool that picks (and lazy-loads) a model per request.
     With `api_key`, every request from another machine must carry it (loopback clients too unless trust_loopback).
@@ -339,6 +339,19 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 meter.add(usage)
             except OSError:
                 pass                                    # a full disk must not break an answer
+    def estimate(req: dict, cloud) -> str:
+        """'; est. up to $0.012 at your prices': the provider's price_in/price_out in route.json, else the savings
+        meter's prices; '' when neither is set (no made-up numbers)."""
+        conf = (router.load_config().get("providers") or {}).get(cloud.name) or {}
+        price = ({"input_per_m": conf["price_in"], "output_per_m": conf["price_out"]}
+                 if "price_in" in conf and "price_out" in conf else (meter.load().get("price") if meter else None)) or {}
+        if not price:
+            return ""
+        tokens_in = len(json.dumps(req.get("messages", ""), ensure_ascii=False)) // 3
+        tokens_out = req.get("max_tokens") or req.get("max_completion_tokens") or 1024
+        usd = (tokens_in * price["input_per_m"] + tokens_out * price["output_per_m"]) / 1e6
+        return f"; est. up to ${usd:.3f} at your prices"
+
     def local(body: dict, stay: bool = False):
         return nullcontext((upstream, None)) if isinstance(upstream, str) else upstream.use(body, stay=stay)
 
@@ -452,6 +465,13 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
 
         def _proxy(self, method: str):
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0)) if method == "POST" else None
+            if method == "POST" and self.path == "/v1/embeddings" and embeddings is not None:
+                from .taskclf import EMBED_MODEL, Unavailable          # serve --embeddings (#158)
+                try:
+                    url = embeddings()
+                except Unavailable as e:
+                    return self._json(503, {"error": {"message": f"embeddings unavailable: {e}", "type": "unavailable"}})
+                return self._send(method, url, body, {}, f"local (embeddings: {EMBED_MODEL})", EMBED_MODEL)
             route_hdr, hdrs, cloud = "local", {}, None
             if method == "POST" and self.path in ("/v1/chat/completions", "/v1/messages"):
                 d = router.decide(json.loads(body or b"{}"), self.path)
@@ -464,6 +484,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                     if has_image(req) and not vision_ok(url):
                         api = "anthropic" if self.path == "/v1/messages" else "openai"
                         return self._json(400, error_body(api, NO_VISION))
+                    if d.escalate and not req.get("stream"):
+                        return self._local_or_cloud(url, body, req, route_hdr, model_hdr, d.escalate)
                     return self._send(method, url, body, hdrs, route_hdr, model_hdr)
             url = base_url(method)
             if url is None:
@@ -474,6 +496,37 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 if method != "GET" or isinstance(upstream, str) or upstream.peek_url() == url:
                     raise
                 self._idle()                            # unloaded between the look and the request
+
+        def _local_or_cloud(self, url: str, body: bytes, req: dict, route_hdr: str, model_hdr: str | None, cloud):
+            """#97 escalation (opt-in, non-streaming agent calls): ask the local model; if its answer fails the check
+            (error, empty, broken tool-call JSON, cut off), send the same request to the user's own cloud key and say
+            why, with the estimated cost, in X-Localllm-Route."""
+            from . import agentcall
+            api = "anthropic" if self.path == "/v1/messages" else "openai"
+            r = urllib.request.Request(url.rstrip("/") + self.path, data=body, method="POST",
+                                       headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(r, timeout=3600) as resp:
+                    status, headers, payload = resp.status, resp.headers, resp.read()
+            except urllib.error.HTTPError as e:
+                status, headers, payload = e.code, e.headers, e.read()
+            why = agentcall.failed_check(api, status, payload)
+            if why is None:
+                if meter and status == 200:
+                    from .meter import parse_usage
+                    count(parse_usage(payload))
+                self.send_response(status)
+                for k, v in headers.items():
+                    if k.lower() not in ("transfer-encoding", "connection", "content-length"):
+                        self.send_header(k, v)
+                self.send_header("X-Localllm-Route", route_hdr)
+                if model_hdr:
+                    self.send_header("X-Localllm-Model", model_hdr)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                return self.wfile.write(payload)
+            label = f"cloud:{cloud.name} (escalated: local answer failed the check - {why}{estimate(req, cloud)})"
+            return self._send("POST", cloud.url_base, cloud.adapt(body, self.path), cloud.headers(self.path), label, None)
 
         def _idle(self):
             """A GET while the pool has unloaded its model(s): answer here instead of loading one."""
@@ -715,12 +768,13 @@ class _Server(ThreadingHTTPServer):
 
 
 def serve(upstream, host: str = "127.0.0.1", port: int = 8080, model_name: str = "local", api_key: str | None = None,
-          trust_loopback: bool = True, status=None, ui=None, meter=None) -> ThreadingHTTPServer:
-    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status)."""
+          trust_loopback: bool = True, status=None, ui=None, meter=None, embeddings=None) -> ThreadingHTTPServer:
+    """status: optional callable -> dict for GET /localllm/status (memory, spill; see cli._status).
+    embeddings: optional callable -> URL of the embeddings server for POST /v1/embeddings (serve --embeddings, #158)."""
     if not api_key and (not is_loopback(host) or not trust_loopback):
         raise ValueError(f"refusing to listen on {host} without an API key: anyone on the network could use this PC"
                          if not is_loopback(host) else "a key is required for local clients but none was given")
     srv = _Server((host, port), make_handler(upstream, model_name, api_key, trust_loopback, status, bind_host=host,
-                                             ui=ui, meter=meter))
+                                             embeddings=embeddings, ui=ui, meter=meter))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv

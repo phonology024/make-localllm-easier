@@ -39,6 +39,8 @@ TIMEOUT_S = 3.0             # per embedding request; one takes ~10 ms on a CPU
 MAX_FAILS = 3               # failed embeddings in a row before the server is given up for the session
 RETRY_S = 300               # a failed download or a slow start is tried again after this long
 DOWNLOAD_TIMEOUT_S = 30     # per connect/read, so a stalled download fails instead of hanging
+EMBED_MODEL = "multilingual-e5-small"   # what `serve --embeddings` answers /v1/embeddings with (#158)
+EMBED_RAM_GB = 0.2          # its CPU llama-server: 126 MB of weights + the process (est.; no VRAM)
 
 
 class Unavailable(Exception):
@@ -215,6 +217,20 @@ class Classifier:
             if self.thread is None:         # finished with a failure that is retried later
                 raise Unavailable(_reason(f"{self.last}; retry in {RETRY_S} s"))
             raise Unavailable(f"{self.status} (not ready yet)")
+
+    def embeddings_url(self, wait: float = 300.0, poll: float = 0.25) -> str:
+        """The server's URL for /v1/embeddings (#158): starts it (downloading the model once, SHA-256 checked) and waits
+        up to `wait` seconds, unlike classify(), which never holds a chat message up. Raises Unavailable."""
+        deadline = time.time() + wait
+        while True:
+            try:
+                return self._ready()
+            except Unavailable:
+                with self.lock:
+                    final = self.error or (self.thread is None and time.time() < self.retry_at)
+                if final or time.time() >= deadline:
+                    raise
+            time.sleep(poll)
 
     def classify(self, text: str) -> tuple[str, float]:
         url = self._ready()

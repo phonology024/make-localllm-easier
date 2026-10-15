@@ -9,7 +9,9 @@ Read this in: English | [தமிழ்](docs/README.ta.md)
 **`localllm` checks your GPU, picks the most accurate AI model that fits it *in your language*, downloads it and starts
 a private chat. Offline and free.**
 
-<!-- demo GIF goes here (#81): tools/record_demo.py records it from a real run -->
+![localllm doctor, then a streamed answer at 122 tok/s, recorded on an RX 9070 XT](docs/img/demo.gif)
+
+<sub>Recorded from a real run with `tools/record_demo.py`: the text is the commands' own output and the answer streams at the speed llama-server produced it.</sub>
 
 ## Install
 
@@ -22,6 +24,11 @@ That's it: the first run shows what your PC can run and asks before it downloads
 single `localllm` file for Windows, macOS or Linux (or the AppImage) from the [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest) and run it
 from a terminal; `SHA256SUMS` there lets you check it. winget and Homebrew follow
 ([packaging/README.md](packaging/README.md)).
+
+Or ask your coding agent (Claude Code, Cursor, Codex): paste
+`Install localllm: https://raw.githubusercontent.com/phonology024/make-localllm-easier/main/docs/install-for-agents.md`.
+It checks your PC first without changing anything, and asks before each install or download
+([what it may and may not do](docs/install-for-agents.md)).
 
 ## The commands you'll use
 

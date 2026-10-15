@@ -99,16 +99,19 @@ makes it the default chat model. Your other models stay in the list. It then tel
 service: a cloud embedding model for vault search (indexing sends note chunks to it) and any cloud chat model still
 enabled in the menu. Turn those off in Copilot's settings if nothing should leave the PC.
 
-Vault search needs an embedding model. A small local one: the multilingual e5 model `localllm` already downloads for
-its task router (`~/.localllm/models/multilingual-e5-small-Q8_0.gguf`, 126 MB, ~100 languages):
+Vault search needs an embedding model. `localllm serve --embeddings` answers `POST /v1/embeddings` on the same port
+with multilingual-e5-small (MIT, 126 MB, ~100 languages), the model `localllm` already uses for its task router: it
+runs on the CPU (no VRAM, about 0.2 GB RAM), is downloaded once and SHA-256 checked, and starts on the first request.
 
 ```
-llama-server -m ~/.localllm/models/multilingual-e5-small-Q8_0.gguf --embedding --pooling mean --port 8081
+localllm serve --embeddings
 ```
 
 In Copilot: Settings > QA > Embedding model > add a custom model, provider "3rd party (openai-format)", base URL
-`http://127.0.0.1:8081/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections works the same
-way through its "custom local (OpenAI format)" option. An Obsidian plugin of our own (#89, part B) comes only if this
+`http://127.0.0.1:8080/v1`, model `multilingual-e5-small`, then rebuild the index. Smart Connections needs none of
+this: its free core plugin embeds with a model it ships and runs inside Obsidian, so vault search already stays on the
+PC (connecting it to an outside model, local or cloud, has moved to the paid Smart Chat Pro). e5 models were trained with `query: ` / `passage: ` in front of
+the text; tools that don't add them still work, with somewhat lower search quality. An Obsidian plugin of our own (#89, part B) comes only if this
 isn't enough.
 
 Not measured yet: how well each agent works with our models over long sessions, and how much RAM a 30-turn tool session
@@ -172,6 +175,13 @@ a rule says so:
 - the app asked for a cloud model by name (`gpt-...`, `claude-...`, `gemini-...`)
 - the prompt is longer than `max_local_prompt_tokens`
 - the local model's **measured** score in the message's language is below `language_floor`
+- `agent_hard_to_cloud`: a coding agent's *hard* call (starting a task, a new instruction with edit tools) - its
+  housekeeping (summaries, memory, titles, retries after a broken tool call, short lookups, steps after a tool result)
+  stays local (#97)
+- `escalate_failed_local`: a local answer to an agent call fails a check (server error, empty, tool-call arguments
+  that aren't JSON, cut off before answering) - the same request is sent to the cloud instead, and the header says why
+  and what it may cost (from `price_in`/`price_out`, or your `localllm savings --price`). Non-streaming calls only,
+  since a streamed answer is already on its way
 
 Each response carries an `X-Localllm-Route` header saying where it went and why. `localllm route` shows the config;
 `localllm route --test "your prompt"` sends the same prompt to the local model and to each configured provider and
@@ -188,7 +198,8 @@ config when you set them.
     "anthropic":  {"kind": "anthropic", "url": "https://api.anthropic.com", "key_env": "ANTHROPIC_API_KEY",
                    "model": "claude-sonnet-4-5"}
   },
-  "rules": {"max_local_prompt_tokens": 6000, "language_floor": 60, "cloud_model_names": true},
+  "rules": {"max_local_prompt_tokens": 6000, "language_floor": 60, "cloud_model_names": true,
+            "agent_hard_to_cloud": true, "escalate_failed_local": true},
   "local_model": "qwen3.8-27b-q3"
 }
 ```
