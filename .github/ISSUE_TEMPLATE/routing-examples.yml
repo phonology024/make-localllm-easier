@@ -1,0 +1,47 @@
+name: Routing examples in your language
+description: Real requests, written the way you type, that teach localllm to tell math, code and translation from the rest (#40).
+title: "Routing examples: "
+labels: [routing-examples]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        localllm sends each message to the model that measures best for its **task**. Its task router was tested on
+        AI-written requests; this collects real ones. Write them yourself, the way you would actually type them:
+        slang, typos and mixed languages are welcome. Don't paste other people's messages or private chats.
+
+        One per line: `label | text`. Labels:
+        - `general` - questions, advice, chat, writing
+        - `math` - calculate or solve something
+        - `code` - write, fix or explain code, SQL, scripts
+        - `translate` - translate, or how to say something in another language
+
+        A bot checks the lines within a minute and says what is accepted (no links, e-mails or long numbers).
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: ISO code of the language you wrote in, e.g. th, hi, ar, id, vi, ja, es, pt
+      placeholder: th
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: "One per line: label | text. Ten or more is great; a mix of all four labels is best."
+      placeholder: |
+        math | ถ้าซื้อของ 3 ชิ้น ชิ้นละ 45 บาท ลด 10% ต้องจ่ายเท่าไหร่
+        code | เขียน python อ่านไฟล์ csv แล้วหาค่าเฉลี่ยคอลัมน์ราคาให้หน่อย
+        translate | "ขอบคุณที่รอ" ภาษาญี่ปุ่นพูดว่าไง
+        general | แนะนำหนังสือสำหรับคนเริ่มลงทุนหน่อย
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Publishing
+      options:
+        - label: I wrote these myself, they contain nothing private, and they may be published in the repo (CC0).
+          required: true
