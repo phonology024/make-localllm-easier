@@ -207,7 +207,13 @@ def test_starter_runs_without_reasoning_only_while_the_best_downloads(monkeypatc
         def poll(self):
             return None
     monkeypatch.setattr(cli, "_model_path", lambda k: cli.Path("m.gguf"))
-    monkeypatch.setattr(cli.subprocess, "Popen", lambda args, **k: seen.setdefault("args", args) and P())
+    monkeypatch.setattr(cli.runtime, "ram_gb", lambda: 32.0)          # macOS asks sysctl through subprocess too
+
+    def popen(args, **k):
+        if str(args[0]).endswith("llama-server"):                    # only the server launch, not other probes
+            seen["args"] = args
+        return P()
+    monkeypatch.setattr(cli.subprocess, "Popen", popen)
     monkeypatch.setattr(cli, "_free_port", lambda: 1)
     monkeypatch.setattr(cli.urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(SystemExit("stop")))
     try:
