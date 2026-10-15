@@ -63,7 +63,7 @@ a GPU specialist of up to ~8 GB to stay resident (the generalist then wouldn't b
 the gate has to show is worth it).
 
 *Finding while writing this:* `docs/how-it-works.md` says both chat models stay loaded on "24 GB+ cards"; by the CLI's
-own formula the pair needs ~27.1 GB at 8k, so on a 24 GB card it runs one at a time. That sentence should say 32 GB.
+own formula the pair needs ~27.1 GB at 8k, so on a 24 GB card it runs one at a time. Fixed in the same change (it and the FAQ now say 32 GB).
 
 ## Speech (babelscribe)
 
