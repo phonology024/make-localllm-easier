@@ -189,3 +189,13 @@ def test_models_tab_is_keyboard_reachable():
     page = workspace.PAGE.read_text(encoding="utf-8")
     assert 'role="tablist"' in page and 'id="tab-models" role="tab"' in page and "ArrowRight" in page
     assert ":focus-visible" in page and 'data-dl="' in page and "<button" in page.split("function modelCard", 1)[1]
+
+
+def test_page_accessibility_basics():
+    """The parts of #121 that don't need a browser; tools/a11y_check.mjs runs axe-core on the page in CI (a11y.yml)."""
+    page = workspace.PAGE.read_text(encoding="utf-8")
+    assert 'role="log" aria-live="polite" aria-busy="false"' in page                  # streamed answers read once done
+    assert 'setAttribute("aria-busy", "true")' in page and 'setAttribute("aria-busy", "false")' in page
+    assert 'role="dialog" aria-modal="true" aria-labelledby="login-title"' in page
+    assert "prefers-reduced-motion:reduce" in page and 'aria-label="Message"' in page
+    assert 'class="sess-open"' in page and ".sess-del:focus-visible" in page            # chats open with the keyboard

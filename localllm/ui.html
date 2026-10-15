@@ -6,7 +6,7 @@
 <title>localllm</title>
 <link rel="icon" href="data:,">
 <style>
-:root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#6b6f68;--line:#dcdcd4;--accent:#1a8a5a;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
+:root{--bg:#fbfbf9;--panel:#f1f1ec;--text:#1d1f1c;--muted:#5c6059;--line:#dcdcd4;--accent:#14774c;--accent-ink:#fff;--me:#e7f2ec;--code:#eceee8;--warn:#a5520a}
 @media (prefers-color-scheme:dark){:root{--bg:#141614;--panel:#1c1f1c;--text:#e6e8e3;--muted:#9aa096;--line:#2e332e;--accent:#3dbb84;--accent-ink:#0b130e;--me:#1d2b23;--code:#242824;--warn:#e0a060}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -18,9 +18,9 @@ aside header b{flex:1}
 #sessions{flex:1;overflow:auto;padding:0 8px 8px}
 .sess{display:flex;align-items:center;gap:4px;border-radius:8px;padding:6px 8px;cursor:pointer}
 .sess:hover,.sess.on{background:var(--bg)}
-.sess span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sess button{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted)}
-.sess:hover button{opacity:1}
+.sess-open{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:none;text-align:start;padding:0;cursor:pointer}
+.sess-del{opacity:0;border:0;background:none;cursor:pointer;color:var(--muted)}
+.sess:hover .sess-del,.sess-del:focus-visible,.sess.on .sess-del{opacity:1}
 #status{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:pre-line}
 main{flex:1;display:flex;flex-direction:column;min-width:0}
 .top{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
@@ -53,13 +53,15 @@ select{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background
 .tab{border:1px solid transparent;background:none;border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--muted)}
 .tab[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 #chatview{flex:1;min-height:0;display:flex;flex-direction:column}
 #models{flex:1;overflow:auto;padding:16px;display:none}
 #models .intro{max-width:900px;margin:0 auto 12px;color:var(--muted)}
 .mlist{max-width:900px;margin:0 auto;display:grid;gap:10px}
 .mcard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:6px 12px}
-.mcard.no{opacity:.65}
-.mcard h3{margin:0;font-size:15px}
+.mcard.no{border-style:dashed}
+.mcard h2{margin:0;font-size:15px}
 .mcard .facts{font-size:13px;color:var(--muted)}
 .mcard .act{grid-row:1/span 3;grid-column:2;align-self:center;text-align:end}
 .badges{display:flex;flex-wrap:wrap;gap:6px}
@@ -73,12 +75,13 @@ progress{width:120px}
 </style>
 </head>
 <body>
-<aside id="side">
-<header><b>localllm</b><button class="btn" id="new" type="button" data-i18n="new_chat">New chat</button></header>
-<div id="sessions"></div>
-<div id="status" data-i18n="status_loading">status: loading...</div>
+<aside id="side" aria-labelledby="side-title">
+<header><b id="side-title">localllm</b><button class="btn" id="new" type="button" data-i18n="new_chat">New chat</button></header>
+<nav id="sessions" aria-label="Chats" data-i18n-aria="chats"></nav>
+<div id="status" role="status" aria-live="polite" data-i18n="status_loading">status: loading...</div>
 </aside>
 <main>
+<h1 class="sr-only">localllm</h1>
 <div class="top">
 <button class="btn menu" id="menu" type="button" aria-label="Chats" data-i18n-aria="chats">&#9776;</button>
 <div class="tabs" role="tablist" aria-label="View" data-i18n-aria="view">
@@ -89,15 +92,15 @@ progress{width:120px}
 <label><input type="checkbox" id="think"> <span data-i18n="thinking">thinking</span></label>
 </div>
 <div id="chatview" role="tabpanel" aria-labelledby="tab-chat">
-<div id="log"></div>
+<div id="log" role="log" aria-live="polite" aria-busy="false" tabindex="0" aria-label="Chat" data-i18n-aria="tab_chat"></div>
 <form id="form"><div class="box">
-<textarea id="input" rows="1" placeholder="Message" title="Enter sends, Shift+Enter adds a line" data-i18n-placeholder="message" data-i18n-title="enter_hint"></textarea>
+<textarea id="input" rows="1" aria-label="Message" data-i18n-aria="message" placeholder="Message" title="Enter sends, Shift+Enter adds a line" data-i18n-placeholder="message" data-i18n-title="enter_hint"></textarea>
 <button class="btn primary" id="send" type="submit" data-i18n="send">Send</button>
 </div></form>
 </div>
 <section id="models" role="tabpanel" aria-labelledby="tab-models" aria-live="polite"></section>
 </main>
-<div id="login"><div><b data-i18n="key_title">This localllm asks for its key</b>
+<div id="login" role="dialog" aria-modal="true" aria-labelledby="login-title"><div><b id="login-title" data-i18n="key_title">This localllm asks for its key</b>
 <p class="small" data-i18n="key_body">You are on another device. Use the key printed in the terminal of the PC running localllm.</p>
 <input id="key" type="password" autocomplete="current-password" aria-label="API key" data-i18n-aria="api_key">
 <button class="btn primary" id="keyok" type="button" data-i18n="unlock">Unlock</button></div></div>
@@ -141,10 +144,11 @@ async function api(path, opts) {
   return r;
 }
 function askKey() { $("login").style.display = "flex"; $("key").focus(); }
+$("key").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("keyok").click(); });
 $("keyok").onclick = () => {
   key = $("key").value.trim();
   try { sessionStorage.setItem("localllm-key", key); } catch (e) {}
-  $("login").style.display = "none"; boot();
+  $("login").style.display = "none"; $("input").focus(); boot();
 };
 
 function esc(s) { return s.replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]); }
@@ -184,9 +188,10 @@ async function listSessions() {
   items.forEach((s) => {
     const d = document.createElement("div");
     d.className = "sess" + (s.id === S.id ? " on" : "");
-    d.innerHTML = `<span title="${esc(s.title)}">${esc(s.title || T("untitled"))}</span><button type="button" aria-label="${esc(T("delete"))}">&times;</button>`;
-    d.querySelector("span").onclick = () => open(s.id);
-    d.querySelector("button").onclick = async () => {
+    d.innerHTML = `<button type="button" class="sess-open" title="${esc(s.title)}"${s.id === S.id ? ' aria-current="true"' : ""}>`
+      + `${esc(s.title || T("untitled"))}</button><button type="button" class="sess-del" aria-label="${esc(T("delete"))}: ${esc(s.title || T("untitled"))}">&times;</button>`;
+    d.querySelector(".sess-open").onclick = () => open(s.id);
+    d.querySelector(".sess-del").onclick = async () => {
       if (!confirm(T("delete_q"))) return;
       await api("/localllm/sessions/" + s.id, {method: "DELETE"});
       if (s.id === S.id) fresh();
@@ -219,6 +224,7 @@ async function send(text) {
   const body = {messages: S.messages.slice(0, -1).map((m) => ({role: m.role, content: m.content})), stream: true};
   if ($("model").value) body.model = $("model").value;
   ctrl = new AbortController();
+  $("log").setAttribute("aria-busy", "true");
   $("send").textContent = T("stop");
   const t0 = performance.now();
   try {
@@ -252,6 +258,7 @@ async function send(text) {
     else reply.meta = T("error", {msg: e.message});
   } finally {
     ctrl = null; $("send").textContent = T("send");
+    $("log").setAttribute("aria-busy", "false");
     draw(); save();
   }
 }
@@ -326,7 +333,7 @@ function modelCard(m, info) {
   else if (m.fit === "no") act = "";
   else act = `<button class="btn" type="button" data-dl="${esc(m.key)}">${esc(T("download_btn", {gb: m.gb}))}</button>`
     + (m.download && m.download.state === "error" ? `<br><span class="warn">${esc(m.download.error)}</span>` : "");
-  d.innerHTML = `<h3>${esc(m.key)} ${m.key === info.best ? `<span class="best">${esc(T("best"))}</span>` : ""}</h3>`
+  d.innerHTML = `<h2>${esc(m.key)} ${m.key === info.best ? `<span class="best">${esc(T("best"))}</span>` : ""}</h2>`
     + `<div class="act">${act}</div>`
     + `<div><span class="fit ${m.fit}">${esc(T("fit_" + m.fit))}</span> <span class="facts">${esc(facts)}</span></div>`
     + `<div class="badges">${m.score != null ? `<span class="badge"><b>${esc(T("score_in", {score: m.score, lang: langName(info.lang)}))}</b></span>` : `<span class="badge">${esc(T("not_measured", {lang: langName(info.lang)}))}</span>`}${badges}</div>`
