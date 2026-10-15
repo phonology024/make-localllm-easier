@@ -139,3 +139,10 @@ def test_one_writer_per_model_file_across_processes(tmp_path, monkeypatch):
     (tmp_path / "m.gguf.part.lock").write_text(str(other.pid))    # its process is gone now: a stale lock
     lock = cli._take_lock(dest)
     assert lock and lock.read_text() == str(os.getpid())
+
+
+def test_status_endpoint_carries_the_download_for_the_page(monkeypatch):
+    st = {"key": "big", "total_gb": 13.3, "done_gb": 1.3, "eta_s": 300, "status": "downloading"}
+    monkeypatch.setattr(downloads, "state", lambda: st)
+    d = cli._status(None, None)
+    assert d["download_state"] == st and d["download"].startswith("downloading big")   # page: i18n; chat: text
