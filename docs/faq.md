@@ -102,7 +102,7 @@ Silicon and Intel) and Linux (x64), plus an AppImage, with `SHA256SUMS` to check
 are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.9+,
 `pip install make-localllm-easier` does the same.
 
-**Does it work offline?** After the first download, yes. Nothing leaves your PC.
+**Does it work offline?** After the first download, yes. Your chats never leave your PC. The only other request is the once-a-day update check, which sends nothing about you and is off with `localllm updates off`.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
 file (llama.cpp, models, vision projectors, the task router) is downloaded from a pinned commit and checked against a

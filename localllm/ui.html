@@ -301,7 +301,8 @@ async function status() {
     $("status").innerHTML = esc(`${d.running}\nVRAM ${gb(d.vram_gb)} · RAM ${gb(d.ram_gb)}`)
       + (spill ? `<br><span class="warn">${esc(T("spilled", {gb: gb(d.spill_gb)}))}</span>` : "")
       + (d.savings ? `<br>${esc(d.savings)}` : "")
-      + downloadLine(d.download_state);
+      + downloadLine(d.download_state)
+      + (d.notice ? `<br>${esc(d.notice)}` : "");                         // update notice (#120)
   } catch (e) { $("status").textContent = navigator.onLine === false || e instanceof TypeError ? T("offline") : T("status_unavailable"); }
 }
 

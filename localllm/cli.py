@@ -309,6 +309,7 @@ def _start(key: str | None, port: int, ctx: int | None, models: str | None = Non
     from .bench import system_language
     from . import taskclf
     ram_free = runtime.ram_available_gb()
+    _update_notice(dev, ram_free)
     clf = taskclf.Classifier(server) if (models or embeddings) else None   # the router's e5 server, shared (#158)
     emb = clf.embeddings_url if embeddings else None
     if embeddings:
@@ -401,10 +402,38 @@ def _status(proc, key: str | None) -> dict:
     st = downloads.state()
     dl = downloads.line(st)
     extra = {"download": dl, "download_state": st} if dl else {}   # text for `localllm chat`, state for the page
+    if NOTICE[0]:
+        extra["notice"] = NOTICE[0]                                   # update notice (#120)
     if proc is None:
         return {"loaded": False, "savings": saved, **extra}
     return {"loaded": True, "running": key, "spill_warn_gb": runtime.SPILL_WARN_GB, "savings": saved, **extra,
             **runtime.process_memory(proc.pid)}
+
+
+NOTICE: list[str | None] = [None]     # the update notice shown in the chat page's status box
+
+
+def _update_notice(dev: dict | None, ram_free: float) -> None:
+    """Show the saved update notice, if any, and refresh it in the background (at most once a day; #120)."""
+    from . import updates
+    from .bench import system_language
+    try:
+        NOTICE[0] = updates.notice(dev["total_gb"] if dev else 0.0, system_language(), ram_free)
+        if NOTICE[0]:
+            _say(NOTICE[0] + "   (off: localllm updates off)")
+        updates.fetch_in_background()
+    except Exception:  # noqa: BLE001 - a notice must never stop localllm from starting
+        pass
+
+
+def cmd_updates(a) -> None:
+    from . import updates
+    if a.action == "check":
+        if updates.enabled():
+            updates.fetch(force=True)
+        print(updates.notice() or ("no update notices are on" if not updates.enabled() else "up to date"))
+        return
+    print(updates.set_enabled(a.action == "on"))
 
 
 def _warn_spill(pid: int) -> None:
@@ -957,6 +986,9 @@ def build_parser() -> argparse.ArgumentParser:
     bg = sub.add_parser("bugreport", help="doctor, versions, recent logs and settings in one zip, secrets taken out")
     bg.add_argument("--show", action="store_true", help="print every file before asking")
     bg.set_defaults(fn=cmd_bugreport)
+    up = sub.add_parser("updates", help="update notices: on, off, or check now (one request a day when on)")
+    up.add_argument("action", choices=["on", "off", "check"])
+    up.set_defaults(fn=cmd_updates)
     t = sub.add_parser("tune", help="measure the fastest settings for this PC once and remember them")
     t.add_argument("model", nargs="?", choices=list(catalog.MODELS)); t.set_defaults(fn=cmd_tune)
     t.add_argument("--prefer-energy", action="store_true",
