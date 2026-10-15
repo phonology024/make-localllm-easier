@@ -50,6 +50,30 @@ under 2 points as a tie and picks the faster model.
    experts of 31 of 36 layers in RAM it answers at 9.1 tok/s, with all of them in RAM 5.0 tok/s; at 28 the card spills
    ([#82](https://github.com/phonology024/make-localllm-easier/issues/82)).
 
+## Smaller cards and CPU-only PCs (#38)
+
+Same tests as the catalog models, full sets, llama.cpp b11476. Quality doesn't depend on the GPU, so it was measured on
+the RX 9070 XT; *CPU tok/s* is decode speed with no GPU at all (`-ngl 0`, 20 threads, DDR5) on the same PC.
+
+| model | GB | EN know. | TH exams | TH math | HI know. | AR know. | ZH know. | JA exams | ES know. | GPU tok/s | CPU tok/s |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3.5-9B UD-Q4_K_XL | 5.6 | 80.5 | 61.1 | 83.2 | 61.0 | 65.8 | 74.5 | 82.3 | 76.0 | 42 | 7.3 |
+| gemma-4-12B QAT UD-Q4_K_XL | 6.3 | 74.8 | 59.6 | 90.8 | 62.2 | 66.5 | 66.5 | 79.5 | 73.2 | not measured | 6.2 |
+| gemma-4-E4B UD-Q4_K_XL | 4.8 | 71.5 | 52.9 | 87.6 | 57.8 | 62.5 | 63.5 | 69.5 | 66.2 | ~105 | 12.5 |
+| Qwen3.5-4B UD-Q4_K_XL | 2.7 | 75.5 | 51.2 | 81.2 | 54.2 | 63.0 | 69.0 | 70.7 | 70.5 | 78 | 12.8 |
+| gemma-4-E2B UD-Q4_K_XL | 3.0 | 63.8 | 38.4 | 72.4 | 48.2 | 48.5 | 54.5 | 55.4 | 56.5 | ~160 | 23.7 |
+
+For reference, gemma-4-26B-A4B on the same tests: 82.2 / 65.7 / 89.6 / 69.5 / 71.5 / 73.5 / 81.9 / 74.5.
+
+- **8-12 GB cards: Qwen3.5-9B at 4 bit beats Qwen3.8-27B at 2 bit** in every language measured (Thai exams 61.1 vs
+  54.2, Hindi 61.0 vs 56.2) and is the pick there now. gemma-4-12B QAT is the stronger one at math (Thai 90.8%).
+- **Thai drops fastest as models shrink**: exams 61 (9B) -> 51-53 (4B) -> 38 (E2B), while English stays at 64-80.
+- **CPU only works, slowly**: 23.7 tok/s for E2B, 12-13 for the 4B class, 6-7 for 9-12B. Enough to chat, not for agents.
+- The ~ GPU speeds for gemma E2B/E4B were taken while ~2-2.5 GB of their per-layer embeddings sat in system RAM,
+  which these models do by design.
+- Raw rows: `tools/runner_results.jsonl` (ids `38-*`). gemma-4-12B's Spanish math/translation and its speeds are missing
+  (its run was cut short); it joins the catalog once they are measured.
+
 ## How much each quant changes the model, per language
 
 KL divergence from the Qwen3.8-27B Q8_0 reference (lower is better) and how often the most likely next token stays

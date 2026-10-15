@@ -5,7 +5,7 @@ import urllib.request
 
 import pytest
 
-from localllm import gateway, pool, router, workspace
+from localllm import catalog, gateway, pool, router, workspace
 from test_gateway import _up
 from test_pool import FakeProc, G, Q, ZH
 
@@ -98,12 +98,14 @@ def test_fit_says_what_runs_on_this_pc():
 
 def test_browser_lists_runnable_models_first_with_scores_in_the_users_language():
     info = workspace.browser_info(12.0, 20.0, "th", active=[IQ2], have=lambda k: k == IQ2)
-    assert [(m["key"], m["fit"]) for m in info["models"]] == [(IQ2, "fits"), (G, "spill"), (Q, "no")]
-    iq2, g, q = info["models"]
+    old = [m for m in info["models"] if m["key"] in (IQ2, G, Q)]       # the #38 small models are listed too
+    assert [(m["key"], m["fit"]) for m in old] == [(IQ2, "fits"), (G, "spill"), (Q, "no")]
+    assert [m["fit"] for m in info["models"]].index("spill") > [m["fit"] for m in info["models"]].index("fits")
+    iq2, g, q = old
     assert iq2["active"] and iq2["downloaded"] and not g["downloaded"] and q["tok_s"] is None
     assert set(q["badges"]) == {"regional", "math", "translate"}       # every th/ score, translation included
     assert q["score"] == round((q["badges"]["regional"] + q["badges"]["math"]) / 2, 1)   # chrF++ left out of the %
-    assert g["tok_s"] < 85 and info["best"] in (IQ2, G) and info["lang"] == "th"
+    assert g["tok_s"] < 85 and info["best"] in (IQ2, G, "qwen3.5-9b-q4") and info["lang"] == "th"
     sw = workspace.browser_info(15.9, 20.0, "sw", active=[], have=lambda k: False)
     assert all(m["score"] is None and m["badges"] == {} for m in sw["models"])   # not measured: said, not invented
 
@@ -149,7 +151,7 @@ def test_models_endpoints_and_lan_key(ui, tmp_path):
             _req(base + ("" if method == "GET" else f"/{Q}/download"), method, {} if method == "POST" else None)
         assert e.value.code == 401
     info = json.load(_req(base, key="k"))
-    assert {m["key"] for m in info["models"]} == {G, Q, IQ2} and info["active"] == [G]
+    assert {m["key"] for m in info["models"]} == set(catalog.MODELS) and info["active"] == [G]
     r = _req(f"{base}/{Q}/download", "POST", {}, key="k")
     assert r.status == 202 and json.load(r)["state"] in ("downloading", "done")
     with pytest.raises(urllib.error.HTTPError) as e:
