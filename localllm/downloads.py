@@ -39,12 +39,24 @@ def line(st: dict | None) -> str | None:
         return None
     if st["status"] == "done":
         return f"{st['key']} is downloaded: restart localllm to switch to it (the best model for this PC)"
+    if st["status"] == "switching":
+        return f"{st['key']} is downloaded: switching to it after the answer in progress (the best model for this PC)"
+    if st["status"] == "switched":
+        return f"now running {st['key']}, the best model for this PC (switched in {st.get('switch_s', 0):g} s)"
+    if st["status"] == "switch_failed":
+        return (f"{st['key']} is downloaded but didn't start ({st.get('error')}); still on the starter model, "
+                "restart localllm to try again")
     if st["status"] == "failed":
         return f"downloading {st['key']} stopped ({st.get('error')}); run localllm again to resume it"
     pct = 100 * st["done_gb"] / st["total_gb"] if st.get("total_gb") else 0
     left = eta(st.get("eta_s"))
     return (f"downloading {st['key']} in the background: {pct:.0f}% of {st.get('total_gb', 0):.1f} GB"
             + (f", {left} left" if left else ""))
+
+
+def mark(**kw) -> None:
+    """Record what happened after the download (#128: switching / switched / switch_failed)."""
+    _set(**kw)
 
 
 def start(key: str, fetch, on_done=None) -> threading.Thread:
