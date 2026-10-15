@@ -215,6 +215,17 @@ def test_lan_key_accepted_and_denied_on_all_four_apis(monkeypatch):
         g.shutdown(); up.shutdown()
 
 
+def test_a_refused_request_with_a_body_gets_its_401_not_a_reset():
+    """The body is read before the refusal, so the client always gets the answer (it was a Windows-only flake)."""
+    up, uurl = _up(); g, gurl = _keyed_gw(uurl)
+    big = {"messages": [{"role": "user", "content": "x" * 200_000}]}
+    try:
+        for _ in range(20):
+            assert _status(gurl + "/v1/chat/completions", big) == 401
+    finally:
+        g.shutdown(); up.shutdown()
+
+
 def test_lan_key_never_reaches_llama_server_or_cloud(monkeypatch):
     up, uurl = _up(); cloud, curl = _up(); g, gurl = _keyed_gw(uurl)
     monkeypatch.setattr(router, "load_config", lambda: {"enabled": False})
