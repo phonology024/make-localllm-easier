@@ -1,5 +1,6 @@
 """`localllm connect` writes agent configs, keeps everything else, and undoes cleanly (#75)."""
 import json
+import os
 
 import pytest
 
@@ -11,12 +12,13 @@ BASE = "http://127.0.0.1:8080"
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALLLM_CONNECT_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("HERMES_HOME", raising=False)
     monkeypatch.setattr(runtime, "HOME", tmp_path / "localllm")
     return tmp_path / "home"
 
 
 def test_hermes_replaces_only_the_model_block(home):
-    cfg = home / ".hermes" / "config.yaml"
+    cfg = connect.TOOLS["hermes"][0](home)
     cfg.parent.mkdir(parents=True)
     old = "model:\n  default: claude-sonnet\n  provider: anthropic\n\nterminal:\n  backend: local\n"
     cfg.write_text(old)
@@ -26,6 +28,14 @@ def test_hermes_replaces_only_the_model_block(home):
     assert "anthropic" not in new and new.endswith("terminal:\n  backend: local\n")
     assert f"context_length: {connect.AGENT_CTX}" in new
     assert "restored" in connect.undo("hermes") and cfg.read_text() == old
+
+
+def test_hermes_config_is_where_hermes_reads_it(home, monkeypatch, tmp_path):
+    """#109: native-Windows Hermes reads %LOCALAPPDATA%/hermes, so ~/.hermes there was a file it never opened."""
+    want = ("AppData", "Local", "hermes", "config.yaml") if os.name == "nt" else (".hermes", "config.yaml")
+    assert connect.TOOLS["hermes"][0](home) == home.joinpath(*want)       # LOCALAPPDATA is taken under the test home
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hh"))
+    assert connect.TOOLS["hermes"][0](home) == tmp_path / "hh" / "config.yaml"
 
 
 def test_opencode_keeps_other_providers(home):
@@ -56,10 +66,23 @@ def test_codex_adds_a_profile_and_stays_valid_toml(home):
     text = cfg.read_text()
     d = tomllib.loads(text)
     assert d["model"] == "gpt-5" and d["mcp_servers"]["x"]["command"] == "y"
-    assert d["profiles"]["localllm"]["model"] == "m2" and d["model_providers"]["localllm"]["wire_api"] == "responses"
+    assert d["model_providers"]["localllm"]["wire_api"] == "responses" and "profiles" not in d
     assert text.count(connect.MARK_START) == 1
+    # codex 0.134+ refuses [profiles.x] in config.toml (#109): `--profile localllm` reads localllm.config.toml
+    profile = tomllib.loads((cfg.parent / "localllm.config.toml").read_text())
+    assert profile == {"model_provider": "localllm", "model": "m2"}
     connect.undo("codex")
     assert cfg.read_text() == 'model = "gpt-5"\n\n[mcp_servers.x]\ncommand = "y"\n'   # the first original
+    assert not (cfg.parent / "localllm.config.toml").exists()
+
+
+def test_codex_reconnect_drops_the_old_profiles_table(home):
+    tomllib = pytest.importorskip("tomllib")
+    cfg = home / ".codex" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(f'model = "gpt-5"\n\n{connect.MARK_START}\n[profiles.localllm]\nmodel = "old"\n{connect.MARK_END}\n')
+    connect.connect("codex", BASE, "m")
+    assert "profiles" not in tomllib.loads(cfg.read_text())
 
 
 def test_aider_flat_keys(home):
@@ -67,13 +90,29 @@ def test_aider_flat_keys(home):
     home.mkdir()
     cfg.write_text("model: gpt-4o\ndark-mode: true\n")
     connect.connect("aider", BASE, "m")
-    assert cfg.read_text() == ("model: openai/m\ndark-mode: true\nopenai-api-base: http://127.0.0.1:8080/v1\n"
+    assert cfg.read_text() == ('model: "openai/m"\ndark-mode: true\nopenai-api-base: http://127.0.0.1:8080/v1\n'
                                "openai-api-key: local\n")
+
+
+WIN_ID = r"C:\Users\me\.localllm\models\gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"   # what llama-server reports on Windows
+
+
+def test_a_windows_path_model_id_reads_back_unchanged(home):
+    """#109 live run: codex refused `model = "C:\\Users\\..."` (\\U is a TOML escape); YAML double quotes have the same
+    escapes, so hermes and aider were at risk too."""
+    tomllib = pytest.importorskip("tomllib")
+    connect.connect("codex", BASE, WIN_ID)
+    assert tomllib.loads((home / ".codex" / "localllm.config.toml").read_text())["model"] == WIN_ID
+    yaml = pytest.importorskip("yaml")
+    connect.connect("hermes", BASE, WIN_ID)
+    assert yaml.safe_load(connect.TOOLS["hermes"][0](home).read_text())["model"]["default"] == WIN_ID
+    connect.connect("aider", BASE, WIN_ID)
+    assert yaml.safe_load((home / ".aider.conf.yml").read_text())["model"] == "openai/" + WIN_ID
 
 
 def test_dry_run_and_cline_write_nothing(home):
     out = connect.connect("hermes", BASE, "m", dry_run=True)
-    assert out.startswith("would write") and not (home / ".hermes").exists()
+    assert out.startswith("would write") and not connect.TOOLS["hermes"][0](home).parent.exists()
     assert "OpenAI Compatible" in connect.connect("cline", BASE, "m")
     assert connect.undo("opencode").startswith("nothing to undo")
 

@@ -27,6 +27,17 @@ def _home() -> Path:
     return Path(os.environ.get("LOCALLLM_CONNECT_HOME") or Path.home())
 
 
+def _hermes_config(h: Path) -> Path:
+    """Where Hermes reads config.yaml: $HERMES_HOME, else %LOCALAPPDATA%\\hermes on native Windows (#109: ~/.hermes there
+    was never read), else ~/.hermes. With LOCALLLM_CONNECT_HOME set, LOCALAPPDATA is taken under that home."""
+    if os.environ.get("HERMES_HOME"):
+        return Path(os.environ["HERMES_HOME"]) / "config.yaml"
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA") if not os.environ.get("LOCALLLM_CONNECT_HOME") else None
+        return (Path(local) if local else h / "AppData" / "Local") / "hermes" / "config.yaml"
+    return h / ".hermes" / "config.yaml"
+
+
 def model_id(url: str) -> str:
     """The id the running server reports in /v1/models, so tools that check it (Hermes) match; 'localllm' if none."""
     import urllib.request
@@ -74,10 +85,16 @@ def _marked(text: str, block: str) -> str:
     return text + ("\n" if text and not text.endswith("\n\n") else "") + new
 
 
+def _q(value: str) -> str:
+    """A quoted string that YAML (double-quoted) and TOML (basic string) both read back as-is. On Windows llama-server
+    reports the model id as the GGUF path, and its backslashes are escapes in both (#109: codex refused the config)."""
+    return json.dumps(value, ensure_ascii=False)
+
+
 # ---- one function per tool: (path, old text or None) -> new text ----------------------------------------------------
 
 def _hermes(old: str | None, base: str, model: str) -> str:
-    block = (f'model:\n  default: "{model}"\n  provider: "custom"\n  base_url: "{base}/v1"\n'
+    block = (f'model:\n  default: {_q(model)}\n  provider: "custom"\n  base_url: {_q(base + "/v1")}\n'
              f'  api_key: "local"\n  context_length: {AGENT_CTX}\n')
     return _yaml_set_block(old or "", "model", block)
 
@@ -102,15 +119,27 @@ def _claude_code(old: str | None, base: str, model: str) -> str:
 
 
 def _codex(old: str | None, base: str, model: str) -> str:
-    # a profile, so the user's default provider stays as it is: `codex --profile localllm`
-    block = (f'[model_providers.localllm]\nname = "localllm (this PC)"\nbase_url = "{base}/v1"\n'
-             f'wire_api = "responses"\n\n[profiles.localllm]\nmodel_provider = "localllm"\nmodel = "{model}"\n')
+    # the provider goes in config.toml; the profile that picks it is its own file (below), so the user's default
+    # provider stays as it is: `codex --profile localllm`. Replacing the marked block also drops the
+    # [profiles.localllm] table older versions wrote there, which codex 0.134+ refuses to start with.
+    block = (f'[model_providers.localllm]\nname = "localllm (this PC)"\nbase_url = {_q(base + "/v1")}\n'
+             f'wire_api = "responses"\n')
     return _marked(old or "", block)
+
+
+def _codex_profile(config: Path) -> Path:
+    """Codex 0.134+ reads `--profile NAME` from NAME.config.toml next to config.toml, as top-level keys."""
+    return config.with_name("localllm.config.toml")
+
+
+def _codex_profile_text(model: str) -> str:
+    return (f"# written by `localllm connect codex`; `localllm connect codex --undo` removes it\n"
+            f'model_provider = "localllm"\nmodel = {_q(model)}\n')
 
 
 def _aider(old: str | None, base: str, model: str) -> str:
     return _yaml_set_keys(old or "", {"openai-api-base": f"{base}/v1", "openai-api-key": "local",
-                                      "model": f"openai/{model}"})
+                                      "model": _q(f"openai/{model}")})
 
 
 # Copilot for Obsidian (logancyang/obsidian-copilot) keeps its settings in <vault>/.obsidian/plugins/copilot/data.json.
@@ -159,7 +188,7 @@ def _obsidian_file(path: Path) -> Path:
 
 
 TOOLS = {
-    "hermes": (lambda h: h / ".hermes" / "config.yaml", _hermes, "hermes"),
+    "hermes": (_hermes_config, _hermes, "hermes"),
     "opencode": (lambda h: h / ".config" / "opencode" / "opencode.json", _opencode, "opencode"),
     "claude-code": (lambda h: h / ".claude" / "settings.json", _claude_code, "claude"),
     "codex": (lambda h: h / ".codex" / "config.toml", _codex, "codex --profile localllm"),
@@ -190,6 +219,36 @@ def _save_state(s: dict) -> None:
     _state_file().write_text(json.dumps(s, indent=1), encoding="utf-8")
 
 
+def _write(path: Path, new: str, tool: str) -> str:
+    """Write one config file; the first time, keep the original (or remember there was none) for --undo."""
+    old_exists = path.exists()
+    backup = path.with_name(path.name + ".localllm-backup")
+    state = _state()
+    if str(path) not in state:                         # first connect: remember the original, keep it forever
+        if old_exists:
+            shutil.copy2(path, backup)
+        state[str(path)] = {"tool": tool, "backup": str(backup) if old_exists else None}
+        _save_state(state)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8", newline="")
+    return f" (old file: {backup.name})" if state[str(path)]["backup"] else ""
+
+
+def _restore(path: Path) -> str:
+    state = _state()
+    entry = state.pop(str(path), None)
+    if not entry:
+        return f"nothing to undo for {path}"
+    if entry["backup"]:
+        shutil.move(entry["backup"], path)
+        msg = f"restored {path}"
+    else:
+        path.unlink(missing_ok=True)
+        msg = f"removed {path} (it didn't exist before)"
+    _save_state(state)
+    return msg
+
+
 def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run: bool = False) -> str:
     """Write the config; returns what to tell the user."""
     if tool == "cline":
@@ -202,20 +261,14 @@ def connect(tool: str, base: str, model: str, path: Path | None = None, dry_run:
     path = path or where(_home())
     old = path.read_text(encoding="utf-8") if path.exists() else None
     new = edit(old, base, model)
+    extra = {_codex_profile(path): _codex_profile_text(model)} if tool == "codex" else {}
     warn = "".join(f"\nstill cloud: {w}" for w in obsidian_cloud_left(new)) if tool == "obsidian" else ""
     if dry_run:
-        return f"would write {path}:\n{new}{warn}"
-    backup = path.with_name(path.name + ".localllm-backup")
-    state = _state()
-    if str(path) not in state:                         # first connect: remember the original, keep it forever
-        if old is not None:
-            shutil.copy2(path, backup)
-        state[str(path)] = {"tool": tool, "backup": str(backup) if old is not None else None}
-        _save_state(state)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new, encoding="utf-8", newline="")
-    saved = f" (old file: {backup.name})" if state[str(path)]["backup"] else ""
-    return (f"wrote {path}{saved}\n"
+        return "\n".join(f"would write {p}:\n{t}" for p, t in {path: new, **extra}.items()) + warn
+    saved = _write(path, new, tool)
+    for p, t in extra.items():
+        _write(p, t, tool)
+    return (f"wrote {', '.join(str(p) for p in (path, *extra))}{saved}\n"
             f"start the model with room for agent sessions:  localllm serve --profile max\n"
             f"then run:  {run}\n"
             f"undo:  localllm connect {tool} --undo" + (" --path VAULT" if tool == "obsidian" else "") + warn)
@@ -236,15 +289,7 @@ def undo(tool: str, path: Path | None = None) -> str:
             return "give the vault: localllm connect obsidian --undo --path PATH/TO/VAULT"
         path = path if path.name == "data.json" else path / ".obsidian" / "plugins" / "copilot" / "data.json"
     path = path or TOOLS[tool][0](_home())
-    state = _state()
-    entry = state.pop(str(path), None)
-    if not entry:
-        return f"nothing to undo for {path}"
-    if entry["backup"]:
-        shutil.move(entry["backup"], path)
-        msg = f"restored {path}"
-    else:
-        path.unlink(missing_ok=True)
-        msg = f"removed {path} (it didn't exist before)"
-    _save_state(state)
+    msg = _restore(path)
+    if tool == "codex" and str(_codex_profile(path)) in _state():
+        msg += "\n" + _restore(_codex_profile(path))
     return msg
