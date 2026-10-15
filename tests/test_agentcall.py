@@ -58,6 +58,16 @@ def test_decide_hard_to_cloud_only_when_asked(monkeypatch):
     cheap = _body(("user", "a"), ("assistant", "b"), ("user", "Summarize the conversation so far"))
     d = router.decide(hard, "/v1/chat/completions", _cfg("http://x"))
     assert d.provider is None and d.label.startswith("local (agent call, hard")         # off by default
+    cheap_cont = _body(("user", "task"), ("assistant", "x"), ("tool", "file"), tools=TOOLS)
+    assert router.decide(cheap_cont, "/v1/chat/completions", _cfg("http://x")).escalate is None   # no escalation
+    off = {**_cfg("http://x", agent_hard_to_cloud=True, escalate_failed_local=True), "enabled": False}
+    for body in (hard, cheap_cont):                      # routing not enabled in route.json: never the cloud at all
+        d = router.decide(body, "/v1/chat/completions", off)
+        assert d.provider is None and d.escalate is None and d.label == "local"
+    monkeypatch.delenv("TEST_CLOUD_KEY")                 # enabled, but no key in the environment: nothing to send to
+    d = router.decide(cheap_cont, "/v1/chat/completions", _cfg("http://x", escalate_failed_local=True))
+    assert d.provider is None and d.escalate is None
+    monkeypatch.setenv("TEST_CLOUD_KEY", "sk-test")
     d = router.decide(hard, "/v1/chat/completions", _cfg("http://x", agent_hard_to_cloud=True))
     assert d.provider.name == "c" and "agent call, hard: starts a task" in d.label
     d = router.decide(cheap, "/v1/chat/completions", _cfg("http://x", agent_hard_to_cloud=True, escalate_failed_local=True))
