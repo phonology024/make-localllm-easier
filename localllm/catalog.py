@@ -208,6 +208,17 @@ def speed(key: str, vram_gb: float, ram_free_gb: float = 0.0) -> float:
     return m["tok_s_9070xt"] * OFFLOAD_SPEED
 
 
+def auto_pool(vram_gb: float, ram_free_gb: float, profile: str = "lean") -> list[str]:
+    """The models `--models auto` routes between (#112), above the quality floor either way.
+    lean: only models that fit the GPU whole - every swap stays fast and RAM stays small.
+    max:  also MoE models that run with some experts in system RAM: one model is loaded at a time, so each one gets the
+          whole GPU and the free RAM, and the router can reach the bigger models when they score better."""
+    def ok(k: str) -> bool:
+        n = cpu_moe_layers(k, vram_gb, ram_free_gb)
+        return n is not None and (n == 0 or profile == "max") and not below_floor(k)
+    return [k for k in MODELS if ok(k)]
+
+
 def pick(vram_gb: float, lang: str | None = None, ram_free_gb: float = 0.0, candidates=None,
          task: str = "general") -> str | None:
     """Most accurate model (for `lang` when measured) that runs on this PC - whole on the GPU, or a MoE with some
