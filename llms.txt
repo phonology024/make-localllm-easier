@@ -5,7 +5,7 @@
 ## Use
 - `localllm`: detect GPU/RAM, pick model, download llama.cpp + model, start an OpenAI-compatible server at http://127.0.0.1:8080/v1, open chat page
 - `localllm doctor`: which model sizes (4B-120B MoE) fit this GPU, at which quantization, estimated speed, context capacity
-- `localllm chat`: chat in the terminal with streaming and history
+- `localllm chat`: chat in the terminal with streaming and history; `/attach FILE|FOLDER` answers from PDF, DOCX, TXT or MD files with the passages listed as sources (indexed on the PC, CPU-only embeddings)
 - `localllm eval --langs en,ja`: multiple-choice accuracy of any OpenAI-compatible server (Global-MMLU-Lite 23 languages, INCLUDE 44 countries, ThaiExam); `--suites math` adds MGSM math word problems in 11 languages; `--suites translate` adds FLORES-101 translation (chrF++) in 101 languages
 - `localllm --ui`: local chat page with saved chats, model picker, live VRAM/RAM; nothing loaded from the internet
 - `--profile lean|max`: lean (default) = 8k context, ~2 GB RAM; max = context that fills the GPU (~78k on 16 GB) for agents

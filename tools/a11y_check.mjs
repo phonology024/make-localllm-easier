@@ -23,8 +23,10 @@ const MODELS = {lang: "th", vram_gb: 12, ram_free_gb: 20, best: "gemma4-26b-a4b-
    download: {state: "downloading", error: null, pct: 37.5}},
   {key: "qwen3.8-27b-q3", gb: 12.2, note: "dense 27B", fit: "no", experts_in_ram: 0, tok_s: null, score: 77.2,
    badges: {regional: 67.1}, below_floor: false, qat: false, downloaded: false, active: false, download: null}]};
-const CHAT = {id: "c1", title: "Hello", messages: [{role: "user", content: "What is `localllm`?"},
-  {role: "assistant", content: "A launcher.\n```\nlocalllm doctor\n```", meta: "qwen3.8-27b-iq2 · 40.0 tok/s · 1.2 s"}]};
+const CHAT = {id: "c1", title: "Hello", files: [{id: "0123456789abcdef", name: "warranty.pdf", chunks: 3}],   // #113
+  messages: [{role: "user", content: "What is `localllm`?"},
+  {role: "assistant", content: "A launcher.\n```\nlocalllm doctor\n```", meta: "qwen3.8-27b-iq2 · 40.0 tok/s · 1.2 s",
+   sources: [{n: 1, name: "warranty.pdf", loc: "p.2", text: "The battery is covered for 24 months."}]}]};
 
 function mock(lang, locked) {
   const routes = {"/localllm/i18n": STRINGS[lang], "/localllm/models": MODELS, "/localllm/sessions/c1": CHAT,

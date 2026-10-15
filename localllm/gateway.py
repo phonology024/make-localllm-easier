@@ -612,6 +612,41 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 self.close_connection = True
                 return self._json(400, {"error": str(e)})
 
+        def _docs(self, method: str):
+            """/localllm/docs for chat with your files (#113): list, upload + index (raw body, ?name=), search, forget.
+            Anything that indexes, returns passages or deletes must come from our page."""
+            from urllib.parse import parse_qs, urlsplit
+            from . import docs
+            lib, parts = ui["docs"], urlsplit(self.path)
+            sub, query = parts.path[len("/localllm/docs"):].strip("/"), parse_qs(parts.query)
+            if method == "GET" and not sub:
+                return self._json(200, {"files": lib.list(), "pdf_ready": docs.pdf_support_ready(),
+                                        "kinds": list(docs.KINDS), "max_mb": docs.MAX_FILE_BYTES // 2**20})
+            if not self._from_our_page():
+                return self._forbid()
+            try:
+                if method == "POST" and not sub:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if n > docs.MAX_FILE_BYTES:
+                        self.close_connection = True
+                        return self._json(413, {"error": f"files up to {docs.MAX_FILE_BYTES // 2**20} MB are indexed"})
+                    name = (query.get("name") or ["file.txt"])[0]
+                    return self._json(200, lib.add(name, self.rfile.read(n),
+                                                   allow_download=(query.get("download") or ["0"])[0] == "1"))
+                if method == "POST" and sub == "search":
+                    req = self._body()
+                    q, ids = str(req.get("q") or ""), [str(i) for i in req.get("ids") or []]
+                    hits = lib.search(q, ids, int(req.get("k") or docs.TOP_K))
+                    return self._json(200, {"hits": hits, "message": docs.ask_with(q, hits),
+                                            "sources": docs.sources_line(hits)})
+                if method == "DELETE" and sub:
+                    return self._json(200 if lib.remove(sub) else 404, {"deleted": sub})
+            except docs.NeedsPdfSupport as e:
+                return self._json(409, {"error": str(e), "need": "pdf"})
+            except docs.DocError as e:
+                return self._json(400, {"error": str(e)})
+            return self._json(405, {"error": "no"})
+
         def do_GET(self):
             public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n", *PUBLIC_UI)   # the page, its words, the app
             if not self._authorized() and (not public or getattr(self, "bad_host", False)):
@@ -631,6 +666,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(200, ui["models"]())
             if ui and self.path.startswith("/localllm/sessions"):
                 return self._sessions("GET")
+            if ui and "docs" in ui and self.path.split("?", 1)[0] == "/localllm/docs":
+                return self._docs("GET")
             if self.path == "/v1/models" and not isinstance(upstream, str):   # the pool's names, without waking it
                 return self._json(200, {"object": "list", "data": [
                     {"id": k, "object": "model", "owned_by": "localllm"} for k in upstream.keys]})
@@ -659,6 +696,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._deny()
             if ui and self.path.startswith("/localllm/sessions/"):
                 return self._sessions("DELETE") if self._from_our_page() else self._forbid()
+            if ui and "docs" in ui and self.path.startswith("/localllm/docs/"):
+                return self._docs("DELETE")
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_POST(self):
@@ -672,6 +711,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                     return self._json(202, ui["downloads"].start(m.group(1)))
                 except ValueError as e:
                     return self._json(404, {"error": str(e)})
+            if ui and "docs" in ui and self.path.split("?", 1)[0] in ("/localllm/docs", "/localllm/docs/search"):
+                return self._docs("POST")
             if self.path in ("/api/chat", "/api/generate"):
                 return self._ollama(self.path == "/api/chat")
             m = GEMINI.match(self.path)

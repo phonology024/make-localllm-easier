@@ -23,6 +23,10 @@ def main() -> None:
             "--specpath", str(ROOT / "build"), "--paths", str(ROOT)]
     for d in DATA:
         args += ["--add-data", f"{ROOT / d}{SEP}localllm"]
+    sys.path.insert(0, str(ROOT))
+    from localllm.docs import PYPDF_STDLIB      # pypdf is imported from its wheel at run time (#113): bundle what it needs
+    for mod in PYPDF_STDLIB:
+        args += ["--hidden-import", mod]
     subprocess.run(args + [str(ROOT / "packaging" / "entry.py")], check=True)
     exe = ROOT / "dist" / ("localllm.exe" if os.name == "nt" else "localllm")
     for cmd in (["--version"], ["list"], ["connect", "cline"]):          # no GPU or network needed
