@@ -95,6 +95,11 @@ and your home folder taken out. The log can hold text from your recent prompts, 
 first; `--show` prints all of it. Nothing is sent:
 attach the zip to a [bug report](https://github.com/phonology024/make-localllm-easier/issues/new?template=bug.yml).
 
+**Do I need Python?** No. Every release since 0.7.1 has a single `localllm` file for Windows (x64), macOS (Apple
+Silicon and Intel) and Linux (x64), plus an AppImage, with `SHA256SUMS` to check them: [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest). They
+are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.9+,
+`pip install make-localllm-easier` does the same.
+
 **Does it work offline?** After the first download, yes. Nothing leaves your PC.
 
 **Are the downloads checked?** Yes. llama.cpp comes from the build our numbers were measured on (b11476), and every
