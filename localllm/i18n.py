@@ -219,8 +219,8 @@ def ui_lang(browser: str | None = None) -> str:
     return pick(os.environ.get("LOCALLLM_LANG"), browser, system_language())
 
 
-def t(key: str, lang: str | None = None, **kw) -> str:
-    entry = STRINGS[key]
+def t(name: str, lang: str | None = None, /, **kw) -> str:          # positional: {key} is a placeholder
+    entry = STRINGS[name]
     text = entry.get(lang or ui_lang()) or entry["en"]
     return text.format(**kw) if kw else text
 
