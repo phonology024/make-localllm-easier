@@ -504,32 +504,44 @@ and <code>doctor</code> tells you what would fit, but no small model has been me
 
 def compare() -> None:
     rows = [
-        ("Choosing a model", "Picked for you from measured scores in your language, with the reason shown",
-         "You pick from a large library", "You pick from a model browser", "You find and download GGUF files"),
-        ("Model library", "Small: 3 measured models today", "Large", "Large (GGUF and MLX)", "Any GGUF"),
-        ("Per-language scores", "Yes, for 7 languages; measure others with <code>eval</code>", "No", "No", "No"),
+        ("Choosing a model", "Picked for you from measured scores in your language, with the reason shown; the Models "
+         "tab shows what fits your PC", "You pick from its library", "You pick from a model browser",
+         "You pick from its model hub", "You find and download GGUF files"),
+        ("Model library", f"Small: {len(M)} measured models today, 2.7-13.3 GB", "Large", "Large (GGUF, and MLX on "
+         "Apple Silicon)", "GGUF models, plus cloud providers", "Any GGUF"),
+        ("Per-language scores", "Yes, for 7+ languages; measure others with <code>eval</code>", "No", "No", "No", "No"),
         ("Launch settings", "Profiled per model; <code>tune</code> measures them on your PC",
-         "Ollama's defaults", "Settings in the app", "Every flag is yours"),
+         "Ollama's defaults", "Settings in the app", "Settings in the app", "Every flag is yours"),
         ("System RAM in a long chat", f"~{RAM_G['localllm_gb']:.1f} GB (measured)", "Not measured by us",
-         "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
-        ("Interface", "Browser chat page with saved chats (<code>--ui</code>), terminal chat, API",
-         "CLI, API, desktop app", "Desktop app with a GUI",
-         "CLI, server, simple web page"),
-        ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own API plus OpenAI-compatible",
-         "Its own API plus OpenAI-compatible", "OpenAI-compatible, Anthropic Messages"),
-        ("GPUs", "Vulkan (AMD, NVIDIA, Intel), Metal", "CUDA, ROCm, Metal, Vulkan", "CUDA, Vulkan, Metal",
-         "All backends"),
-        ("Open source", "Yes, MIT", "Yes, MIT", "No (free app)", "Yes, MIT"),
+         "Not measured by us", "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
+        ("Interface", "Browser chat page in 7 languages (<code>--ui</code>), terminal chat, API",
+         "CLI, API, desktop app", "Desktop app", "Desktop app", "CLI, server, simple web page"),
+        ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own, OpenAI-compatible, Anthropic Messages "
+         "(a subset)", "Its own REST, OpenAI-compatible, Anthropic-compatible", "OpenAI-compatible",
+         "OpenAI-compatible, Anthropic Messages"),
+        ("GPUs", "Vulkan (AMD, NVIDIA, Intel), Metal", "NVIDIA, AMD (ROCm), Metal, Vulkan", "llama.cpp backends; "
+         "MLX on Apple Silicon", "llama.cpp backends", "All backends"),
+        ("Open source", "Yes, MIT", "Yes, MIT", "No (free app, also for work)", "Yes, Apache 2.0", "Yes, MIT"),
     ]
     trs = "".join(f"<tr><td><b>{r[0]}</b></td>" + "".join(f"<td>{c}</td>" for c in r[1:]) + "</tr>" for r in rows)
-    body = page_head("Compare", "localllm, Ollama, LM Studio, or llama.cpp yourself",
-                     "They all run local models, and three of them run on llama.cpp. The difference is who chooses "
+    sources = [("Ollama: GPU support", "https://docs.ollama.com/gpu"),
+               ("Ollama: Anthropic compatibility", "https://docs.ollama.com/api/anthropic-compatibility"),
+               ("Ollama: license", "https://github.com/ollama/ollama/blob/main/LICENSE"),
+               ("LM Studio: developer docs (API formats)", "https://lmstudio.ai/docs/developer"),
+               ("LM Studio: app docs (llama.cpp, MLX)", "https://lmstudio.ai/docs/app"),
+               ("LM Studio: free for work (July 2025)", "https://lmstudio.ai/blog/free-for-work"),
+               ("Jan: desktop docs", "https://www.jan.ai/docs/desktop"),
+               ("Jan: license", "https://github.com/janhq/jan/blob/main/LICENSE"),
+               ("llama.cpp: license", "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE")]
+    cited = "".join(f'<li><a href="{u}" rel="nofollow">{esc(t)}</a></li>' for t, u in sources)
+    body = page_head("Compare", "localllm, Ollama, LM Studio, Jan, or llama.cpp yourself",
+                     "They all run local models, and most of them run on llama.cpp. The difference is who chooses "
                      "the model and the settings, and how much you can see of why.") + f"""
 <section><div class="wrap">
-<div class="tbl"><table><thead><tr><th></th><th>localllm</th><th>Ollama</th><th>LM Studio</th><th>llama.cpp
+<div class="tbl"><table><thead><tr><th></th><th>localllm</th><th>Ollama</th><th>LM Studio</th><th>Jan</th><th>llama.cpp
 yourself</th></tr></thead><tbody>{trs}</tbody></table></div>
-<p class="small muted" style="margin-top:10px">Other tools' features change often; this table reflects October 2026.
-RAM numbers are only given where we measured them. Corrections are welcome as an
+<p class="small muted" style="margin-top:10px">Other tools change often; this table reflects their own documentation in
+October 2026 (sources below). RAM numbers are only given where we measured them. Corrections are welcome as an
 <a href="{ISSUES}">issue</a>.</p>
 </div></section>
 
@@ -540,9 +552,13 @@ RAM numbers are only given where we measured them. Corrections are welcome as an
 fewer models, but each one measured per language, and the choice made for your card. If you already like Ollama's
 workflow, keep it; localllm's endpoint also speaks the Ollama API, so apps built for Ollama work against it.</p>
 <h2>vs LM Studio</h2>
-<p>LM Studio has a good desktop interface for browsing, downloading and chatting. localllm has no desktop app. It is
-for people who would rather have the answer to "which model and which settings" than a list to choose from, and who
-are fine with a browser page or a terminal.</p>
+<p>LM Studio has a polished desktop app for browsing, downloading and chatting, and runs MLX models on Apple Silicon.
+It is free, also for work, but not open source. localllm is open source and has no desktop app: a browser page, a
+terminal chat and the API, with the model and settings chosen from measurements.</p>
+<h2>vs Jan</h2>
+<p>Jan is an open-source desktop app (Apache 2.0) that mixes local models with cloud providers in one window. localllm
+stays local unless you add your own key on purpose, and answers "which model is best in my language on this card"
+from its measurements instead of a list.</p>
 </div>
 <div class="prose">
 <h2>vs running llama.cpp yourself</h2>
@@ -552,18 +568,20 @@ quantization holds up in your language. You can read every flag it passes in
 <a href="{GH}/blob/main/localllm/runtime.py">runtime.py</a>.</p>
 <h2>When to pick something else</h2>
 <ul>
-<li>You want a polished desktop app: LM Studio.</li>
-<li>You want a model we don't have in the catalog: Ollama, LM Studio or llama.cpp.</li>
+<li>You want a desktop app with a model browser: LM Studio or Jan.</li>
+<li>You want a model we don't have in the catalog: Ollama, LM Studio, Jan or llama.cpp.</li>
+<li>You want MLX on a Mac today: LM Studio.</li>
 <li>You want full control of every setting: llama.cpp.</li>
-<li>Your GPU has less than ~10 GB: any of the others, for now.</li>
 </ul>
+<h2>Sources</h2>
+<ul class="small">{cited}</ul>
 </div>
 </div></section>
 {end_cta("Want the measured choice?", ("See the features", "/features/"))}
 """
-    layout("/compare/", "localllm vs Ollama vs LM Studio vs llama.cpp",
-           "An honest comparison: who picks the model and the settings, per-language scores, RAM use, interfaces and "
-           "APIs. Where to use localllm and where another tool is the better fit.", body)
+    layout("/compare/", "localllm vs Ollama vs LM Studio vs Jan vs llama.cpp",
+           "A sourced comparison: who picks the model and the settings, per-language scores, RAM use, interfaces, "
+           "APIs and licenses. Where to use localllm and where another tool is the better fit.", body)
 
 
 # ---- Get started -----------------------------------------------------------------------------------------------------

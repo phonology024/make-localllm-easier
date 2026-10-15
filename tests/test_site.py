@@ -76,3 +76,10 @@ def test_report_fields_are_escaped_on_static_pages(monkeypatch):
             build.language_page(data, bad)
         build.gpu_page(data, evil)
         assert bad not in build.pages[f"/leaderboard/gpu/{build.slug(evil)}/"]
+
+
+def test_compare_page_names_its_sources():
+    _build("https://example.org")
+    page = (OUT / "compare" / "index.html").read_text(encoding="utf-8")
+    assert "<th>Jan</th>" in page and "<h2>Sources</h2>" in page
+    assert page.count('rel="nofollow"') >= 8 and "docs.ollama.com/gpu" in page and "lmstudio.ai/docs" in page
