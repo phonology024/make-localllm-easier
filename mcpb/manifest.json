@@ -1,0 +1,68 @@
+{
+  "manifest_version": "0.4",
+  "name": "localllm",
+  "display_name": "localllm — the AI on your own computer",
+  "version": "0.8.0",
+  "description": "Hand private or bulk work to the AI model on your own computer: ask it, translate, summarize. Nothing leaves your computer.",
+  "long_description": "Ask Claude to keep a document private: localllm runs an open model on your own graphics card (AMD, NVIDIA, Intel, Apple) and Claude sends it the text through four small tools (ask, translate, summarize, status). Nothing is uploaded and there is no account or telemetry. This extension needs localllm itself set up once: install it (pip install make-localllm-easier) and run `localllm` in a terminal, which picks the best model for your PC and asks before downloading it. The local model is smaller than Claude, so check its answers on anything that matters.",
+  "author": {
+    "name": "phonology024",
+    "url": "https://github.com/phonology024"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phonology024/make-localllm-easier"
+  },
+  "homepage": "https://github.com/phonology024/make-localllm-easier",
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": [
+    "local-llm",
+    "privacy",
+    "offline",
+    "translate",
+    "summarize",
+    "gpu"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "src/server.py"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "ask_local_model",
+      "description": "Ask the model on this computer one question; the text never leaves it"
+    },
+    {
+      "name": "translate",
+      "description": "Translate text into another language on this computer"
+    },
+    {
+      "name": "summarize",
+      "description": "Summarize text on this computer"
+    },
+    {
+      "name": "status",
+      "description": "Is the local model running, its memory use and speed"
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ]
+  }
+}

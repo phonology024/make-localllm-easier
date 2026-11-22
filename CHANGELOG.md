@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `localllm mcp`: an MCP server (stdio) so Claude, Cursor, Codex, VS Code and Gemini CLI can hand private or bulk work to
+  the model on this PC: `ask_local_model`, `translate`, `summarize`, `status`. Localhost only (a server on your
+  network needs `LOCALLLM_MCP_ALLOW_REMOTE=1` in its environment, never a tool argument), no telemetry, progress
+  notifications on long answers. It starts `localllm serve` itself only for `--model KEY` that is already downloaded and
+  never downloads anything. Install with `pip install "make-localllm-easier[mcp]"` (Python 3.10+). `server.json` for the
+  MCP Registry, a `.mcpb` for Claude Desktop, [docs/mcp.md](docs/mcp.md) (#183)
+
 ## 0.7.1 (2026-10-14)
 
 - Release build: the Linux AppImage step installs `desktop-file-utils`, so 0.7.1 is the first release with the

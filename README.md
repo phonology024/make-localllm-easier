@@ -1,4 +1,5 @@
 # make-localllm-easier — run the best local LLM your GPU can handle, in one command
+<!-- mcp-name: io.github.phonology024/make-localllm-easier -->
 
 [![PyPI](https://img.shields.io/pypi/v/make-localllm-easier)](https://pypi.org/project/make-localllm-easier/)
 [![tests](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml/badge.svg)](https://github.com/phonology024/make-localllm-easier/actions/workflows/tests.yml)
@@ -45,6 +46,10 @@ More: `localllm list` (every measured model), `localllm connect hermes` (point a
 **Chat with your files.** In `localllm chat` type `/attach report.pdf` (or a folder); in the `--ui` page, drop a file on
 the chat. Each answer comes from the passages that match your question and lists them as sources (file and page),
 all on this PC. PDF, DOCX, TXT and MD.
+
+**Use it from Claude, Cursor or Codex.** `localllm mcp` is an [MCP](https://modelcontextprotocol.io) server: the app
+hands private or bulk work (translate, summarize, ask) to the model on your PC, and the text never leaves it. One line
+per app in [docs/mcp.md](docs/mcp.md).
 
 ## Why it's different
 
