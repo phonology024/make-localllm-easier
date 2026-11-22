@@ -8,6 +8,12 @@
   notifications on long answers. It starts `localllm serve` itself only for `--model KEY` that is already downloaded and
   never downloads anything. Install with `pip install "make-localllm-easier[mcp]"` (Python 3.10+). `server.json` for the
   MCP Registry, a `.mcpb` for Claude Desktop, [docs/mcp.md](docs/mcp.md) (#183)
+- An answer that comes back empty (the model ends its turn after a few characters of "thinking"; seen on the 2-bit
+  qwen3.8-27b-iq2 in Thai) is now asked again up to twice with a new seed and no prompt cache, then reported as an error;
+  an empty answer that ran out of `max_tokens` is not retried. The MCP progress note no longer shows the time twice (#183)
+- `localllm serve` no longer leaves llama-server running (and holding VRAM) when it is killed outright, and
+  `localllm mcp --model KEY` stops the server it started together with llama-server when the client closes it. Windows:
+  llama-server runs in a job object that ends with its parent; elsewhere the group gets SIGTERM (#183)
 
 ## 0.7.1 (2026-10-14)
 
