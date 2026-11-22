@@ -929,6 +929,11 @@ def cmd_launch(a) -> None:
                         start_server=lambda: _start(a.model, a.port, None, profile="max")))
 
 
+def cmd_mcp(a) -> None:
+    from . import mcp_server
+    mcp_server.main(a.model, a.port, a.url)
+
+
 def cmd_eval(a) -> None:
     from . import bench
     langs = a.langs.split(",") if a.langs else sorted({"en", bench.system_language()})
@@ -1043,6 +1048,15 @@ def build_parser() -> argparse.ArgumentParser:
     la.add_argument("--port", type=int, default=8080)
     la.add_argument("--model", help="catalog model to start (default: the best for this PC)")
     la.set_defaults(fn=cmd_launch, args=[])     # arguments for the tool go after --, see parse_args
+    mc = sub.add_parser("mcp", help="MCP server (stdio): Claude, Cursor, Codex... hand private or bulk work to this "
+                                    "computer's model; needs `pip install \"make-localllm-easier[mcp]\"`")
+    mc.add_argument("--model", choices=list(catalog.MODELS),
+                    help="if no localllm is running, start this model (only if it is already downloaded; nothing is "
+                         "ever downloaded from here)")
+    mc.add_argument("--port", type=int, default=8080)
+    mc.add_argument("--url", help="localllm server to use (default http://127.0.0.1:PORT, or $LOCALLLM_URL); a "
+                                  "non-local address also needs LOCALLLM_MCP_ALLOW_REMOTE=1")
+    mc.set_defaults(fn=cmd_mcp)
     e = sub.add_parser("eval"); e.add_argument("--url", default="http://127.0.0.1:8080")
     e.add_argument("--name", default="model"); e.add_argument("--limit", type=int, default=0)
     e.add_argument("--langs", help="comma-separated ISO codes, default: en + this PC's language")

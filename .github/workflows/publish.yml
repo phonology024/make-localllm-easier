@@ -1,22 +1,82 @@
 name: publish
-# PyPI Trusted Publishing (configured on pypi.org: owner phonology024, repo make-localllm-easier, workflow publish.yml,
-# environment pypi). Runs on every v* tag; can also be started from the Actions tab. No API token is stored anywhere.
+# On a version tag: upload the package to PyPI, then publish server.json to the MCP Registry (#183). The registry
+# rejects a version that is not on PyPI yet, so the second job waits for it.
+#   pypi      PyPI Trusted Publishing (configured on pypi.org: owner phonology024, repo make-localllm-easier,
+#             workflow publish.yml, environment pypi). No API token is stored anywhere.
+#   registry  GitHub OIDC login (no secret). Re-runnable on its own: it skips a version the registry already lists.
+# Can also be started from the Actions tab (the registry job then only checks and waits).
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
 jobs:
   pypi:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: The tag, pyproject.toml, server.json and the .mcpb are one version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          got=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+          reg=$(python3 -c "import json; d=json.load(open('server.json')); print(d['version'], d['packages'][0]['version'])")
+          ext=$(python3 -c "import json; print(json.load(open('mcpb/manifest.json'))['version'])")
+          echo "tag $want, pyproject $got, server.json $reg, mcpb $ext"
+          test "$want" = "$got" && test "$reg" = "$want $want" && test "$ext" = "$want"
       - run: python -m pip install build && python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  registry:
+    needs: pypi
+    # also after a failed or skipped pypi job: what matters is whether the version is on PyPI (checked below)
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait until PyPI serves this version
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('server.json'))['version'])")
+          for i in $(seq 1 40); do
+            if curl -sf "https://pypi.org/pypi/make-localllm-easier/$version/json" >/dev/null; then
+              echo "make-localllm-easier $version is on PyPI"; exit 0
+            fi
+            echo "not on PyPI yet ($i/40)"; sleep 15
+          done
+          echo "::error::make-localllm-easier $version is not on PyPI after 10 minutes. Upload it, then re-run this job."
+          exit 1
+      - name: Already on the MCP Registry?
+        id: have
+        # the registry refuses a version twice; a re-run after a successful publish must not turn red
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('server.json'))['version'])")
+          name=$(python3 -c "import json; print(json.load(open('server.json'))['name'])")
+          if curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=${name#*/}" | python3 -c "
+          import json, sys
+          name, version = sys.argv[1:]
+          servers = [s.get('server', s) for s in json.load(sys.stdin).get('servers', [])]
+          sys.exit(0 if any(s.get('name') == name and s.get('version') == version for s in servers) else 1)
+          " "$name" "$version"; then
+            echo "$name $version is already on the MCP Registry"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install mcp-publisher
+        if: steps.have.outputs.skip != '1'
+        run: curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - name: Publish
+        if: steps.have.outputs.skip != '1'
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

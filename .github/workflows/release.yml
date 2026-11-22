@@ -62,11 +62,13 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - name: Claude Desktop extension (.mcpb, #183)
+        run: npx -y @anthropic-ai/mcpb pack mcpb assets/localllm.mcpb
       - name: Checksums, winget manifests, Homebrew formula
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [ "$GITHUB_REF_TYPE" = tag ] || VERSION=$(python -c "import localllm; print(localllm.__version__)")
-          (cd assets && sha256sum localllm-* > SHA256SUMS && cat SHA256SUMS)
+          (cd assets && sha256sum localllm-* localllm.mcpb > SHA256SUMS && cat SHA256SUMS)
           # the formula's hash is the one PyPI serves (publish.yml uploads it from the same tag; wait for it)
           if [ "$GITHUB_REF_TYPE" = tag ]; then WAIT=900; else WAIT=0; fi
           python packaging/manifests.py "$VERSION" --exe assets/localllm-windows-x64.exe --pypi-wait "$WAIT" --out manifests \
@@ -81,4 +83,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
-          gh release upload "$GITHUB_REF_NAME" assets/localllm-* assets/SHA256SUMS --clobber
+          gh release upload "$GITHUB_REF_NAME" assets/localllm-* assets/localllm.mcpb assets/SHA256SUMS --clobber

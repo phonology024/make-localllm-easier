@@ -16,6 +16,8 @@ classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :
 [project.optional-dependencies]
 pdf = ["pypdf==6.19.0"]        # chat with PDFs (#113); without it localllm asks and fetches this exact wheel, SHA-256 checked
 
+mcp = ["mcp>=2.3,<3; python_version>='3.10'", "anyio>=4; python_version>='3.10'"]   # `localllm mcp` (#183)
+
 [project.urls]
 Homepage = "https://github.com/phonology024/make-localllm-easier"
 
