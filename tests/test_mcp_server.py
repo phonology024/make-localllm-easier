@@ -510,3 +510,16 @@ def test_llama_server_is_started_inside_the_kill_with_parent_job(monkeypatch):
     with pytest.raises(SystemExit):
         cli._launch("qwen3.5-4b-q4", cli.Path("llama-server"), {"id": "Vulkan0", "total_gb": 16.0, "name": "x"}, 8192, 20.0)
     assert jobbed == [P]
+
+
+def test_release_files_pin_one_version_and_the_tools_that_publish_are_pinned():
+    import re
+    import localllm
+    reg = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1) == localllm.__version__ == reg["version"]
+    assert 'requires-python = ">=3.10"' in pyproject            # 3.9 cannot even import localllm.catalog
+    flows = {n: (ROOT / ".github" / "workflows" / f"{n}.yml").read_text(encoding="utf-8") for n in ("publish", "release")}
+    assert re.search(r"@anthropic-ai/mcpb@\d+\.\d+\.\d+ pack", flows["release"])
+    assert re.search(r"releases/download/v\d+\.\d+\.\d+/mcp-publisher", flows["publish"])
+    assert "releases/latest/download" not in flows["publish"]

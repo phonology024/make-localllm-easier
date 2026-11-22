@@ -36,7 +36,7 @@ Run only commands that read. Skip any that are missing; a missing command is a f
 
 ```
 localllm --version            # already installed?
-python3 --version             # or: python --version / py --version on Windows (3.9+ needed)
+python3 --version             # or: python --version / py --version on Windows (3.10+ needed)
 pipx --version                # preferred installer, optional
 nvidia-smi --query-gpu=name,memory.total --format=csv   # NVIDIA only
 ```
@@ -60,7 +60,7 @@ Pick the first route that fits:
 | route | when | command | writes |
 |---|---|---|---|
 | pipx | `pipx` is present | `pipx install make-localllm-easier` | its own venv under pipx's home; a `localllm` shim on PATH |
-| pip --user | Python 3.9+, no pipx | `python3 -m pip install --user make-localllm-easier` | the user site-packages; a `localllm` script in the user scripts dir |
+| pip --user | Python 3.10+, no pipx | `python3 -m pip install --user make-localllm-easier` | the user site-packages; a `localllm` script in the user scripts dir |
 | release binary | no Python, or the user prefers it | download `localllm` for this OS from the [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest), check it against `SHA256SUMS` there | one file, wherever the user chooses (not the project folder) |
 
 - The package has no dependencies, so this download is small.

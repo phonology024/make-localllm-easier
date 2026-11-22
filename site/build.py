@@ -213,7 +213,7 @@ language that fits the card, and runs it on llama.cpp with settings we profiled.
 download, and your chats never leave your PC.</p>
 {INSTALL}
 {cta()}
-<p class="small muted">Python 3.9+, or <a href="{GH}/releases/latest">the single file</a> for Windows, macOS or
+<p class="small muted">Python 3.10+, or <a href="{GH}/releases/latest">the single file</a> for Windows, macOS or
 Linux. Models from 2.7 GB (4-6 GB cards) up to 13 GB; <code>localllm doctor</code> tells you what fits on yours.</p>
 </div>
 <div>{doctor_sample()}</div>
@@ -630,7 +630,7 @@ def start() -> None:
                 "localllm --ui       <span class=\"p\"># chat page with saved chats</span>\n"
                 "localllm savings    <span class=\"p\"># tokens answered locally this month</span>")
     faq = [
-        ("<code>pip</code> is not found", "Install Python 3.9 or newer from python.org (on Windows, tick \"Add python.exe "
+        ("<code>pip</code> is not found", "Install Python 3.10 or newer from python.org (on Windows, tick \"Add python.exe "
          "to PATH\"), then use <code>python -m pip install make-localllm-easier</code>."),
         ("<code>localllm</code> is not found after installing", "pip put it in a folder that is not on your PATH. "
          "<code>python -m localllm</code> works the same."),
@@ -656,7 +656,7 @@ def start() -> None:
 <div class="prose">
 <h2>Install</h2>
 <ol class="steps">
-<li><div>Have Python 3.9 or newer (<code>python --version</code>).</div></li>
+<li><div>Have Python 3.10 or newer (<code>python --version</code>).</div></li>
 <li><div>Install: <code>pip install make-localllm-easier</code></div></li>
 <li><div>Run <code>localllm</code>. The chat page opens when the model is loaded.</div></li>
 </ol>
@@ -1148,7 +1148,7 @@ def thai() -> None:
 ข้อมูลไม่ออกจากเครื่อง</p>
 {INSTALL}
 <div class="btns"><a class="btn primary" href="/th/get-started/">เริ่มใช้งาน</a><a class="btn" href="{GH}">ดูบน GitHub</a></div>
-<p class="small muted">ต้องมี Python 3.9 ขึ้นไป โมเดลที่มีตอนนี้ต้องใช้การ์ดจอ VRAM 10 GB ขึ้นไป
+<p class="small muted">ต้องมี Python 3.10 ขึ้นไป โมเดลที่มีตอนนี้ต้องใช้การ์ดจอ VRAM 10 GB ขึ้นไป
 ถ้าไม่แน่ใจ ให้รัน <code>localllm doctor</code> ก่อน จะบอกว่าการ์ดของคุณรันอะไรได้บ้าง</p>
 </div>
 <div>{doctor_sample()}</div>
@@ -1199,7 +1199,7 @@ def thai_start() -> None:
 <div class="prose">
 <h2>ติดตั้ง</h2>
 <ol class="steps">
-<li><div>มี Python 3.9 ขึ้นไป (เช็กด้วย <code>python --version</code>) บน Windows ตอนติดตั้งให้ติ๊ก "Add python.exe to PATH"</div></li>
+<li><div>มี Python 3.10 ขึ้นไป (เช็กด้วย <code>python --version</code>) บน Windows ตอนติดตั้งให้ติ๊ก "Add python.exe to PATH"</div></li>
 <li><div>ติดตั้ง: <code>pip install make-localllm-easier</code></div></li>
 <li><div>พิมพ์ <code>localllm</code> หน้าแชทจะเปิดในเบราว์เซอร์เมื่อโมเดลโหลดเสร็จ</div></li>
 </ol>

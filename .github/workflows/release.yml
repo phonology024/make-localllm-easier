@@ -63,7 +63,7 @@ jobs:
           path: assets
           merge-multiple: true
       - name: Claude Desktop extension (.mcpb, #183)
-        run: npx -y @anthropic-ai/mcpb pack mcpb assets/localllm.mcpb
+        run: npx -y @anthropic-ai/mcpb@2.1.2 pack mcpb assets/localllm.mcpb
       - name: Checksums, winget manifests, Homebrew formula
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-11-23)
+
+- **Python 3.10 or newer is required** (`requires-python = ">=3.10"`). 0.7.1 already did not run on 3.9: importing
+  `localllm.catalog` fails there with a `TypeError` on `str | None`. `pip` now refuses to install on 3.9 instead of
+  installing a package that cannot start; the single-file downloads need no Python at all.
 
 - `localllm mcp`: an MCP server (stdio) so Claude, Cursor, Codex, VS Code and Gemini CLI can hand private or bulk work to
   the model on this PC: `ask_local_model`, `translate`, `summarize`, `status`. Localhost only (a server on your

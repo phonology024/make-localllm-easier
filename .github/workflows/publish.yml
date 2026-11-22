@@ -74,7 +74,8 @@ jobs:
           fi
       - name: Install mcp-publisher
         if: steps.have.outputs.skip != '1'
-        run: curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+        # an exact version: what publishes to the registry must not change between a test and the release
+        run: curl -sSfL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.7/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
       - name: Publish
         if: steps.have.outputs.skip != '1'
         run: |

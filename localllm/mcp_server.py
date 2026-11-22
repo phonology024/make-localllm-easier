@@ -44,8 +44,7 @@ def _guard_stdout():
 async def _report_progress(ctx, progress, total, message) -> None:
     """Send an MCP progress notification when a client request is in flight. Calling a tool directly (tests,
     scripts) has no request context: ctx.report_progress raises ValueError then, which must not abort the answer.
-    No `float | None` annotations at module level: this module must import on Python 3.9 so `localllm mcp` can print
-    the install hint."""
+    Annotations such as `float | None` stay out of module-level signatures: only `build` needs the SDK."""
     if ctx is None:
         return
     try:
