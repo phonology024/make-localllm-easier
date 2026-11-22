@@ -15,6 +15,7 @@ Needs Python 3.10+ (the mcp SDK): pip install "make-localllm-easier[mcp]"."""
 import io
 import json
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -24,6 +25,7 @@ import urllib.parse
 import urllib.request
 
 HEARTBEAT = 5          # seconds between progress notifications while the model is answering
+EMPTY_RETRIES = 2      # extra tries when the model ends its turn with no text at all
 START_WAIT = 300       # seconds to wait for an auto-started server (model load) before giving up
 DEFAULT_URL = "http://127.0.0.1:{port}"
 INSTALL_HINT = 'localllm mcp needs Python 3.10+ and the MCP SDK: pip install "make-localllm-easier[mcp]"'
@@ -99,12 +101,27 @@ def alive(url: str) -> bool:
         return False
 
 
+def _kill_tree(proc) -> None:
+    """Stop `proc` and everything it started. `localllm serve` runs llama-server as a child; killing only the parent
+    leaves the child alive and holding VRAM. Windows: taskkill /T. Elsewhere: the child leads its own session
+    (start_new_session), so the whole group gets SIGTERM."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=30)
+        return
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except OSError:
+        proc.terminate()
+
+
 class Backend:
     """The gateway the tools talk to, and (only if asked with --model) the `localllm serve` this process started."""
 
     def __init__(self, url: str, model: "str | None" = None, port: int = 8080, spawn=subprocess.Popen):
         self.url, self.model, self.port, self._spawn = check_url(url), model, port, spawn
         self.proc = None
+        self._job = None
         self.lock = threading.Lock()
         self.last = {}          # timings of the last answer, for status()
 
@@ -130,16 +147,19 @@ class Backend:
         with self.lock:            # one check inside the lock: a refused connection takes ~2 s on Windows
             if alive(self.url):
                 return
-            if urllib.parse.urlsplit(self.url).hostname not in ("127.0.0.1", "localhost", "::1"):
+            from .gateway import is_loopback
+            if not is_loopback(urllib.parse.urlsplit(self.url).hostname or ""):
                 raise NoModel(f"the localllm server at {self.url} is not answering")
             why = self._cannot_start()
             if why:
                 raise NoModel(why)
+            from . import runtime
             if self.proc is None or self.proc.poll() is not None:
-                kw = {"creationflags": 0x08000000} if os.name == "nt" else {}      # CREATE_NO_WINDOW
+                kw = {"creationflags": 0x08000000} if os.name == "nt" else {"start_new_session": True}   # NO_WINDOW
                 self.proc = self._spawn([sys.executable, "-m", "localllm", "serve", self.model, "--port",
                                          str(self.port)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL, **kw)
+                self._job = runtime.kill_with_parent(self.proc)
             t0 = time.time()
             while time.time() - t0 < START_WAIT:
                 if alive(self.url):
@@ -148,27 +168,52 @@ class Backend:
                     raise NoModel(f"`localllm serve {self.model}` exited with code {self.proc.returncode}; run it in "
                                   "a terminal to see why (`localllm doctor --fix` checks the usual causes)")
                 if on_wait:
-                    on_wait(f"starting {self.model} ({time.time() - t0:.0f} s)")
+                    on_wait(f"starting {self.model}")        # the heartbeat adds the elapsed time
                 time.sleep(1)
             raise NoModel(f"{self.model} did not answer within {START_WAIT} s; run `localllm serve {self.model}` "
                           "in a terminal to see what it is doing")
 
     def close(self) -> None:
+        """Stop the server this process started, llama-server included: terminate() alone would leave it running
+        (and holding VRAM) once its parent is gone, on Windows always."""
         if self.proc is not None and self.proc.poll() is None:
-            self.proc.terminate()
+            _kill_tree(self.proc)
             try:
                 self.proc.wait(10)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+        self._job = None
 
     # -- one completion -----------------------------------------------------------------------------------------
     def complete(self, messages: list, max_tokens: int, tick=None) -> dict:
-        """Stream one chat completion. tick(n_chunks) is called as text arrives (progress). Returns
-        {text, model, tokens, tok_s, truncated}."""
+        """One chat completion, streamed. tick(n_chunks) is called as text arrives (progress). Returns
+        {text, model, tokens, tok_s, truncated}.
+
+        A model sometimes stops at once with an empty answer (a few characters of "thinking", then the end token);
+        that is not a result. It is asked again, up to EMPTY_RETRIES times, with a new random seed and without the
+        prompt cache so the retry is not the same draw. An empty answer that ran out of max_tokens is not retried:
+        asking again would spend the same tokens thinking."""
+        for attempt in range(EMPTY_RETRIES + 1):
+            res = self._stream(messages, max_tokens, tick, retry=attempt)
+            if res["text"] or res["truncated"]:
+                break
+        if not res["text"]:
+            raise RuntimeError("the model returned no text" + (
+                f" within {max_tokens} tokens (it may have spent them thinking): ask again with a larger max_tokens"
+                if res["truncated"] else f" in {attempt + 1} tries: ask again, or try a different wording"))
+        if res["truncated"]:
+            res["note"] = f"stopped at max_tokens={max_tokens}; ask again with a larger max_tokens for the rest"
+        if attempt:
+            res["retries"] = attempt
+        return res
+
+    def _stream(self, messages: list, max_tokens: int, tick, retry: int = 0) -> dict:
         body = {"messages": messages, "max_tokens": max_tokens, "stream": True}
+        if retry:
+            body.update(seed=random.randrange(2**31), cache_prompt=False)
         req = urllib.request.Request(self.url + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers=_headers())
-        text, timings, finish, n = [], {}, None, 0
+        text, timings, finish, n, model = [], {}, None, 0, None
         try:
             with urllib.request.urlopen(req, timeout=3600) as r:
                 model = r.headers.get("X-Localllm-Model")
@@ -192,19 +237,12 @@ class Backend:
             raise RuntimeError(f"the local server refused the request (HTTP {e.code}): {detail}") from None
         except OSError as e:
             raise NoModel(f"lost the connection to the local server at {self.url}: {e}") from None
-        out = "".join(text).strip()
         tok_s = timings.get("predicted_per_second")
         if not tok_s and timings.get("predicted_ms"):
             tok_s = timings.get("predicted_n", 0) * 1000 / timings["predicted_ms"]
         self.last = {"model": model, "tok_s": round(tok_s, 1) if tok_s else None}
-        res = {"text": out, "model": model or self.model, "tokens": timings.get("predicted_n"),
-               "tok_s": self.last["tok_s"], "truncated": finish == "length"}
-        if not out:
-            raise RuntimeError("the model returned no text" + (f" within {max_tokens} tokens (it may have spent them "
-                               "thinking): ask again with a larger max_tokens" if res["truncated"] else ""))
-        if res["truncated"]:
-            res["note"] = f"stopped at max_tokens={max_tokens}; ask again with a larger max_tokens for the rest"
-        return res
+        return {"text": "".join(text).strip(), "model": model or self.model, "tokens": timings.get("predicted_n"),
+                "tok_s": self.last["tok_s"], "truncated": finish == "length"}
 
     # -- status -------------------------------------------------------------------------------------------------
     def status(self) -> dict:

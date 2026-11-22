@@ -1,6 +1,7 @@
 """`localllm mcp` (#183): tool list, a call against a stubbed server, no-model errors, localhost-only, progress."""
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -21,6 +22,8 @@ class Stub(BaseHTTPRequestHandler):
     slow = 0.0          # seconds between chunks
     finish_reason = "stop"
     reply = ["Hello ", "from ", "the local model"]
+    empties = 0         # the next N answers are empty: a few characters of "thinking", then the end token
+    empty_finish = "stop"
 
     def log_message(self, *a):
         pass
@@ -44,6 +47,12 @@ class Stub(BaseHTTPRequestHandler):
             return self._json(400, {"error": {"message": "prompt exceeds the context size"}})
         self.send_response(200); self.send_header("Content-Type", "text/event-stream")
         self.send_header("X-Localllm-Model", "qwen3.5-4b-q4"); self.end_headers()
+        if Stub.empties > 0:
+            Stub.empties -= 1
+            for c in ({"choices": [{"delta": {"reasoning_content": "Thinking\n\n"}}]},
+                      {"choices": [{"delta": {}, "finish_reason": Stub.empty_finish}], "timings": {"predicted_n": 3}}):
+                self.wfile.write(f"data: {json.dumps(c)}\n\n".encode())
+            return
         for piece in Stub.reply:
             time.sleep(Stub.slow)
             self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': piece}}]}, ensure_ascii=False)}\n\n".encode())
@@ -56,6 +65,7 @@ class Stub(BaseHTTPRequestHandler):
 @pytest.fixture
 def stub():
     Stub.seen, Stub.slow, Stub.finish_reason, Stub.reply = [], 0.0, "stop", ["Hello ", "from ", "the local model"]
+    Stub.empties, Stub.empty_finish = 0, "stop"
     s = ThreadingHTTPServer(("127.0.0.1", 0), Stub)
     threading.Thread(target=s.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{s.server_port}"
@@ -181,12 +191,14 @@ def test_model_flag_on_disk_starts_serve_with_no_stdin_and_stops_it_with_the_ser
 
     class Child:
         returncode = None
-        terminated = False
+        pid = 4242
         def poll(self): return None
-        def terminate(self): self.terminated = True
         def wait(self, t=None): return 0
 
     child = Child()
+    killed = []
+    monkeypatch.setattr(mcp_server, "_kill_tree", lambda proc: killed.append(proc.pid))
+    monkeypatch.setattr(runtime, "kill_with_parent", lambda proc: None)
 
     def spawn(cmd, **kw):
         calls.append((cmd, kw))
@@ -204,7 +216,7 @@ def test_model_flag_on_disk_starts_serve_with_no_stdin_and_stops_it_with_the_ser
     assert cmd[1:] == ["-m", "localllm", "serve", "qwen3.5-4b-q4", "--port", "8123"]
     assert kw["stdin"] == subprocess.DEVNULL and kw["stdout"] == subprocess.DEVNULL
     be.close()
-    assert child.terminated
+    assert killed == [4242]            # the whole tree, not just `localllm serve` (see the orphan tests below)
 
 
 def test_a_server_that_is_up_is_used_as_is_and_nothing_is_started(stub):
@@ -345,3 +357,156 @@ def test_the_docs_cover_every_client_the_issue_names():
     doc = (ROOT / "docs" / "mcp.md").read_text(encoding="utf-8")
     for client in ("Claude Desktop", "Claude Code", "Cursor", "VS Code", "Gemini CLI", "Codex", "tool_timeout_sec"):
         assert client in doc, client
+
+
+# --- an empty answer is retried, with a different draw (#183 release test: Thai translate on a 2-bit model) -------------
+
+def test_an_empty_answer_is_asked_again_with_a_new_seed_and_no_prompt_cache(stub):
+    Stub.empties = 1
+    out = data(call(mcp_server.Backend(stub), "translate", {"text": "Good morning", "target_lang": "Thai"}))
+    assert out["text"] == "Hello from the local model" and out["retries"] == 1
+    first, second = Stub.seen[-2][1], Stub.seen[-1][1]
+    assert "seed" not in first and "cache_prompt" not in first
+    assert isinstance(second["seed"], int) and second["cache_prompt"] is False
+    assert second["messages"] == first["messages"]
+
+
+def test_the_model_that_keeps_answering_nothing_gets_a_clear_error_after_three_tries(stub):
+    Stub.empties = 99
+    r = call(mcp_server.Backend(stub), "ask_local_model", {"prompt": "hi"})
+    assert r.is_error and "no text in 3 tries" in r.content[0].text
+    assert len(Stub.seen) == 1 + mcp_server.EMPTY_RETRIES
+
+
+def test_an_empty_answer_that_ran_out_of_tokens_is_not_asked_again(stub):
+    Stub.empties, Stub.empty_finish = 99, "length"
+    r = call(mcp_server.Backend(stub), "ask_local_model", {"prompt": "hi", "max_tokens": 5})
+    assert r.is_error and "larger max_tokens" in r.content[0].text
+    assert len(Stub.seen) == 1
+
+
+def test_a_good_first_answer_is_asked_once_and_reports_no_retries(stub):
+    out = data(call(mcp_server.Backend(stub), "ask_local_model", {"prompt": "hi"}))
+    assert "retries" not in out and len(Stub.seen) == 1
+
+
+def test_the_wait_note_does_not_repeat_the_time_the_heartbeat_adds(monkeypatch):
+    from localllm import runtime
+    monkeypatch.setattr(cli, "_have_model", lambda key: "/models/x.gguf")
+    monkeypatch.setattr(runtime, "installed_server", lambda: "/bin/llama-server")
+    monkeypatch.setattr(mcp_server.time, "sleep", lambda s: None)
+    monkeypatch.setattr(mcp_server, "START_WAIT", 0.05)
+    monkeypatch.setattr(runtime, "kill_with_parent", lambda proc: None)
+
+    class Child:
+        pid, returncode = 1, None
+        def poll(self): return None
+    notes = []
+    be = mcp_server.Backend(_free_url(), model="qwen3.5-4b-q4", spawn=lambda *a, **k: Child())
+    with pytest.raises(mcp_server.NoModel):
+        be.ensure(on_wait=notes.append)
+    assert notes and all(n == "starting qwen3.5-4b-q4" for n in notes)
+
+
+# --- no llama-server left behind (#183 release test: orphans kept VRAM after the MCP client closed) --------------------
+
+GRANDCHILD = ("import subprocess, sys, time\n"
+              "time.sleep(1)                # the job object is put on this process before it starts its own child\n"
+              "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+              "open(sys.argv[1], 'w').write(str(p.pid))\n"
+              "time.sleep(600)\n")
+
+
+def _pid_alive(pid):
+    if os.name == "nt":
+        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+        return str(pid) in out
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:
+        return os.waitpid(pid, os.WNOHANG) == (0, 0)       # a zombie is not running
+    except ChildProcessError:
+        return True
+
+
+def _wait_for(cond, timeout=20):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if cond():
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _force_kill(pid):
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+    elif _pid_alive(pid):
+        os.kill(pid, 9)
+
+
+def test_close_stops_the_server_and_the_llama_server_under_it(tmp_path):
+    """A stand-in for `localllm serve` that has a child of its own, started the way Backend.ensure starts it."""
+    marker = tmp_path / "grandchild.pid"
+    kw = {"creationflags": 0x08000000} if os.name == "nt" else {"start_new_session": True}
+    proc = subprocess.Popen([sys.executable, "-c", GRANDCHILD, str(marker)], **kw)
+    grandchild = None
+    try:
+        assert _wait_for(lambda: marker.exists() and marker.read_text()), "the stand-in never started its child"
+        grandchild = int(marker.read_text())
+        assert _pid_alive(grandchild)
+        be = mcp_server.Backend("http://127.0.0.1:1")
+        be.proc = proc
+        be.close()
+        assert proc.poll() is not None
+        assert _wait_for(lambda: not _pid_alive(grandchild)), "llama-server was left running"
+    finally:
+        _force_kill(proc.pid)
+        if grandchild:
+            _force_kill(grandchild)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="job objects are a Windows mechanism; elsewhere start_new_session + killpg")
+def test_a_client_that_kills_the_mcp_server_outright_leaves_no_llama_server_either(tmp_path):
+    """The MCP process dies without running any cleanup (a client that kills it): Windows kills the job's processes."""
+    marker, pidfile = tmp_path / "grandchild.pid", tmp_path / "child.pid"
+    middle = ("import os, subprocess, sys\n"
+              f"sys.path.insert(0, {str(ROOT)!r})\n"
+              "from localllm import runtime\n"
+              f"p = subprocess.Popen([sys.executable, '-c', {GRANDCHILD!r}, {str(marker)!r}], creationflags=0x08000000)\n"
+              "job = runtime.kill_with_parent(p)\n"
+              "assert job, 'no job object'\n"
+              f"open({str(pidfile)!r}, 'w').write(str(p.pid))\n"
+              f"while not os.path.exists({str(marker)!r}) or not open({str(marker)!r}).read(): pass\n"
+              "os._exit(0)\n")                       # no finally, no atexit: nothing of ours runs
+    subprocess.run([sys.executable, "-c", middle], check=True, timeout=60)
+    child, grandchild = int(pidfile.read_text()), int(marker.read_text())
+    try:
+        assert _wait_for(lambda: not _pid_alive(grandchild)), "the child of `localllm serve` was left running"
+        assert not _pid_alive(child)
+    finally:
+        _force_kill(child)
+        _force_kill(grandchild)
+
+
+def test_llama_server_is_started_inside_the_kill_with_parent_job(monkeypatch):
+    """`localllm serve` killed outright (Stop-Process, a client closing) must not leave llama-server holding VRAM."""
+    from localllm import runtime
+    jobbed = []
+
+    class P:
+        pid = 1
+
+        def poll(self):
+            return None
+    monkeypatch.setattr(cli, "_model_path", lambda k: cli.Path("m.gguf"))
+    monkeypatch.setattr(runtime, "ram_gb", lambda: 32.0)
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda args, **k: P())
+    monkeypatch.setattr(runtime, "kill_with_parent", lambda proc: jobbed.append(type(proc)))
+    monkeypatch.setattr(cli, "_free_port", lambda: 1)
+    monkeypatch.setattr(cli.urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(SystemExit("stop")))
+    with pytest.raises(SystemExit):
+        cli._launch("qwen3.5-4b-q4", cli.Path("llama-server"), {"id": "Vulkan0", "total_gb": 16.0, "name": "x"}, 8192, 20.0)
+    assert jobbed == [P]

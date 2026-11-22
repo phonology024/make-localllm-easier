@@ -23,6 +23,51 @@ HOME = Path(os.environ.get("LOCALLLM_HOME", Path.home() / ".localllm"))
 EXE = "llama-server.exe" if os.name == "nt" else "llama-server"
 
 
+_JOBS: list = []      # job handles stay open until this process ends
+
+
+def kill_with_parent(proc):
+    """Windows: put `proc` (and so its children) in a job object that kills them when this process ends, however it
+    ends: a `localllm serve` that is killed outright (TerminateProcess runs no cleanup) does not leave llama-server
+    running and holding VRAM, nor does an MCP server its client kills. Returns the job handle (kept open for the
+    life of this process, so Windows closes it when we die), or None: other systems, or the call failed."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateJobObjectW.restype = wintypes.HANDLE
+        k.OpenProcess.restype = wintypes.HANDLE
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in "abcdef"]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("Basic", Basic), ("Io", IoCounters), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        job = k.CreateJobObjectW(None, None)
+        info = Extended()
+        info.Basic.LimitFlags = 0x2000                      # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = k.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))   # ExtendedLimitInformation
+        h = k.OpenProcess(0x0100 | 0x0001, False, proc.pid)                            # SET_QUOTA | TERMINATE
+        if not (job and ok and h and k.AssignProcessToJobObject(job, h)):
+            return None
+        k.CloseHandle(h)
+        _JOBS.append(job)
+        return job
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
 def _asset() -> str:
     system = {"Windows": "win", "Linux": "ubuntu", "Darwin": "macos"}[platform.system()]
     arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"

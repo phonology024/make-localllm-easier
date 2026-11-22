@@ -472,6 +472,7 @@ def _launch(key: str, server, dev, ctx: int | None, ram_free: float, vision: boo
     runtime.HOME.mkdir(parents=True, exist_ok=True)
     log = open(runtime.HOME / "llama-server.log", "ab")
     proc = subprocess.Popen([str(server), *args], env=runtime.server_env(tuned, catalog.MODELS[key].get("vk_fix", True)), stdout=log, stderr=subprocess.STDOUT)
+    runtime.kill_with_parent(proc)       # Windows: if this process is killed outright, llama-server goes with it
     _say(f"loading {key} on {dev['name'] if dev else 'CPU'} ...")
     url = f"http://127.0.0.1:{inner}"
     for _ in range(3000):
