@@ -7,7 +7,7 @@ name = "localllm-harness"
 version = "0.0.1"
 description = "Experimental add-on for make-localllm-easier: a plan / tool / verify / retry loop for small local models (#88)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = ["make-localllm-easier>=0.7.1"]
 

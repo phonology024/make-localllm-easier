@@ -59,9 +59,13 @@ def kill_with_parent(proc):
         info.Basic.LimitFlags = 0x2000                      # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         ok = k.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))   # ExtendedLimitInformation
         h = k.OpenProcess(0x0100 | 0x0001, False, proc.pid)                            # SET_QUOTA | TERMINATE
-        if not (job and ok and h and k.AssignProcessToJobObject(job, h)):
+        assigned = bool(job and ok and h and k.AssignProcessToJobObject(job, h))
+        if h:
+            k.CloseHandle(h)                    # also when assigning failed: nothing may leak
+        if not assigned:
+            if job:
+                k.CloseHandle(job)
             return None
-        k.CloseHandle(h)
         _JOBS.append(job)
         return job
     except (OSError, AttributeError, ValueError):

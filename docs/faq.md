@@ -99,7 +99,7 @@ attach the zip to a [bug report](https://github.com/phonology024/make-localllm-e
 
 **Do I need Python?** No. Every release since 0.7.1 has a single `localllm` file for Windows (x64), macOS (Apple
 Silicon and Intel) and Linux (x64), plus an AppImage, with `SHA256SUMS` to check them: [latest release](https://github.com/phonology024/make-localllm-easier/releases/latest). They
-are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.9+,
+are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. With Python 3.10+,
 `pip install make-localllm-easier` does the same.
 
 **Can it answer questions about my documents?** Yes: `/attach FILE` (or a folder) in `localllm chat`, or drop the
