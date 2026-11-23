@@ -3,14 +3,14 @@
   "name": "io.github.phonology024/make-localllm-easier",
   "title": "localllm",
   "description": "Private or bulk work on the AI model on your own computer: ask, translate, summarize.",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "websiteUrl": "https://phonology024.github.io/make-localllm-easier/",
   "repository": { "url": "https://github.com/phonology024/make-localllm-easier", "source": "github" },
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "make-localllm-easier",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "runtimeHint": "uvx",
       "runtimeArguments": [ { "type": "named", "name": "--from", "value": "make-localllm-easier[mcp]" } ],
       "transport": { "type": "stdio" },
