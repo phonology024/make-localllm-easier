@@ -129,3 +129,47 @@ def test_the_host_guard_covers_page_files_without_a_key(upstream):
         assert _status(port, "/_app/immutable/bundle.x.js", host=f"localhost:{port}") == 200
     finally:
         g.shutdown()
+
+
+# --- #188: our own page is the default; --no-ui gives llama-server's -------------------------------------------------
+
+from localllm import cli                                                      # noqa: E402
+
+
+class _Proc:
+    def wait(self):
+        pass
+
+
+def _ui_seen(monkeypatch, argv):
+    """Parse argv like the command line does, run cmd_run with a stubbed _start, return the ui= it was given."""
+    seen = []
+    monkeypatch.setattr(cli, "first_run", lambda: False)
+    monkeypatch.setattr(cli, "_starter_plan", lambda a: ("small", None))
+    monkeypatch.setattr(cli, "_start", lambda key, *a, **k: (seen.append(k.get("ui")), (_Proc(), "http://x"))[1])
+    args = cli.build_parser().parse_args(argv)
+    args.no_browser = True
+    args.fn(args)
+    return seen
+
+
+@pytest.mark.parametrize("argv,want", [([], True), (["--ui"], True), (["--no-ui"], False),
+                                       (["serve"], True), (["serve", "--ui"], True), (["serve", "--no-ui"], False)])
+def test_our_page_is_on_by_default_and_no_ui_turns_it_off(monkeypatch, argv, want):
+    assert _ui_seen(monkeypatch, argv) == [want]
+
+
+def test_the_other_commands_that_start_a_server_do_not_get_the_page():
+    import inspect
+    assert inspect.signature(cli._start).parameters["ui"].default is False     # chat, route, launch, eval: no workspace
+
+
+def test_a_default_gateway_serves_our_page_and_no_ui_serves_llama_servers(upstream, tmp_path):
+    ui = {"sessions": workspace.Sessions(tmp_path / "s"), "catalog": workspace.catalog_info([], "en", False)}
+    ours, theirs = gateway.serve(upstream, port=0, model_name="m", ui=ui), gateway.serve(upstream, port=0, model_name="m")
+    try:
+        assert _get(ours.server_address[1], "/").read() != INDEX
+        assert _get(theirs.server_address[1], "/").read() == INDEX
+        assert _get(theirs.server_address[1], "/_app/immutable/bundle.x.js").status == 200
+    finally:
+        ours.shutdown(); theirs.shutdown()

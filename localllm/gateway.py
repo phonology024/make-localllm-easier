@@ -6,7 +6,7 @@
   Ollama     /api/chat /api/generate /api/tags /api/version                  -> translated to/from OpenAI chat
   Gemini     /v1beta/models/{m}:generateContent and :streamGenerateContent   -> translated to/from OpenAI chat
   localllm   /localllm/status: the model's VRAM, RAM and spill (for `/status` in `localllm chat`)
-             with --ui: the chat workspace at / and /localllm/catalog, /localllm/models, /localllm/sessions[/<id>]
+             the chat workspace (on by default; not with --no-ui) at / and /localllm/catalog, /localllm/models, /localllm/sessions[/<id>]
              (see workspace.py)
 
 Chat requests go through `router.decide()` first: local by default; forwarded to the user's own cloud key only when the
@@ -41,7 +41,7 @@ HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-en
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
 PUBLIC_UI = ("/manifest.webmanifest", "/sw.js", "/icon.svg")   # the app files (#122): public like the page
-# llama-server's own web page (shown on "/" without --ui) loads split files: the bundle under /_app/, icons, the
+# llama-server's own web page (shown on "/" with --no-ui) loads split files: the bundle under /_app/, icons, the
 # PWA manifest and service worker. They are proxied by name, not "every unknown GET": the gateway keeps answering 404
 # for paths it does not know, and llama-server's other GET routes (/cors-proxy, /tools, /metrics, /models) stay shut.
 # The names come from llama.cpp's embedded UI asset table (tools/ui, same files on every platform).

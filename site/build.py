@@ -368,7 +368,7 @@ free VRAM (about 78k tokens on a 16 GB card) and a larger prompt cache, for long
 <code>localllm doctor</code> shows both for your PC. Same model, same answers; only memory changes.</p>
 
 <h2>A chat page with saved chats</h2>
-<p><code>localllm --ui</code> opens our own chat page instead of llama-server's: chats saved as plain files on your
+<p><code>localllm</code> opens our own chat page instead of llama-server's: chats saved as plain files on your
 disk, a model picker when you run several models, the speed of each answer, and live VRAM and RAM with a warning
 when the model spills out of the GPU. The page loads nothing from the internet. Shared on your network, it asks for
 the key printed in the terminal.</p>
@@ -451,7 +451,7 @@ the four APIs on port 8080. Your browser opens the chat page.</p>
 Ctrl+C stops an answer).</li>
 <li>Point an app at <code>http://127.0.0.1:8080/v1</code> with any API key.</li>
 <li>Run <code>localllm tune</code> once to measure the speed settings on your PC.</li>
-<li>Want saved chats? <code>localllm --ui</code>. Long documents or an agent? <code>--profile max</code>.</li>
+<li>Chats are saved in the page that <code>localllm</code> opens. Long documents or an agent? <code>--profile max</code>.</li>
 </ul>
 
 <h2>What you don't have to do</h2>
@@ -546,7 +546,7 @@ def compare() -> None:
          "Ollama's defaults", "Settings in the app", "Settings in the app", "Every flag is yours"),
         ("System RAM in a long chat", f"~{RAM_G['localllm_gb']:.1f} GB (measured)", "Not measured by us",
          "Not measured by us", "Not measured by us", f"~{RAM_G['default_gb']:.1f} GB with defaults (measured)"),
-        ("Interface", "Browser chat page in 7 languages (<code>--ui</code>), terminal chat, API",
+        ("Interface", "Browser chat page in 7 languages, terminal chat, API",
          "CLI, API, desktop app", "Desktop app", "Desktop app", "CLI, server, simple web page"),
         ("APIs", "OpenAI, Anthropic, Ollama, Gemini on one port", "Its own, OpenAI-compatible, Anthropic Messages "
          "(a subset)", "Its own REST, OpenAI-compatible, Anthropic-compatible", "OpenAI-compatible",
@@ -627,7 +627,7 @@ def start() -> None:
                 "localllm eval       <span class=\"p\"># score a running server in your language</span>\n"
                 "localllm report     <span class=\"p\"># share your results (anonymous)</span>\n"
                 "localllm connect hermes   <span class=\"p\"># point an agent at it</span>\n"
-                "localllm --ui       <span class=\"p\"># chat page with saved chats</span>\n"
+                "localllm            <span class=\"p\"># chat page with saved chats</span>\n"
                 "localllm savings    <span class=\"p\"># tokens answered locally this month</span>")
     faq = [
         ("<code>pip</code> is not found", "Install Python 3.10 or newer from python.org (on Windows, tick \"Add python.exe "
@@ -1211,7 +1211,7 @@ macOS และ Linux ดาวน์โหลดแล้วรันจาก 
 <div class="prose">
 <h2>คำสั่งที่ใช้บ่อย</h2>
 <pre class="block">localllm chat        # แชทใน terminal (พิมพ์ไทยได้)
-localllm --ui        # หน้าแชทที่บันทึกบทสนทนาไว้ในเครื่อง
+localllm             # หน้าแชทที่บันทึกบทสนทนาไว้ในเครื่อง
 localllm doctor      # การ์ดจอนี้รันโมเดลขนาดไหนได้ เร็วแค่ไหน ใช้ RAM เท่าไร
 localllm list        # โมเดลทั้งหมดที่วัดแล้ว พร้อมคะแนนแต่ละภาษา
 localllm tune        # วัดค่าที่เร็วที่สุดสำหรับเครื่องนี้ (ครั้งเดียว ไม่กี่นาที)

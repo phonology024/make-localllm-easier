@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- Plain `localllm` (no `--ui`) no longer opens a blank page at http://127.0.0.1:8080. The gateway proxied only `/` to
-  llama-server's web page and answered 404 for the files that page loads (`/_app/immutable/bundle.*.js` and `.css`,
-  icons, `manifest.webmanifest`, `sw.js`). Those files are now proxied, by name; every other path is still a 404, and the
-  key and Host checks apply as before (#188)
+- Plain `localllm` opened a blank page at http://127.0.0.1:8080: it showed llama-server's web page, the gateway proxied
+  only `/` and answered 404 for the files that page loads (`/_app/immutable/bundle.*.js`, icons, manifest). **Our own
+  chat page is now the default** for `localllm` and `localllm serve` (saved chats, model picker, live VRAM/RAM; it does
+  not depend on llama.cpp's web UI, which changes between builds). `--ui` still works and does nothing new;
+  `--no-ui` serves llama-server's page as before, and its files are now proxied (by name: `/_app/`, icons, manifest,
+  `sw.js`; every other path is still a 404), so that mode is not blank either. Key and Host checks are unchanged. The
+  server `localllm mcp --model KEY` starts runs with `--no-ui` (#188)
 
 ## 0.8.0 (2026-11-23)
 

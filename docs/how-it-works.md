@@ -12,8 +12,8 @@ get an OpenAI-compatible API at `http://127.0.0.1:8080/v1` for any app that spea
 localllm chat       # chat right here in the terminal (Thai, Japanese, any language)
 localllm doctor     # what this GPU is good for: model sizes, speed, how much text it can hold
 localllm list       # every model we have measured, with scores per language
-localllm serve      # API only (OpenAI, Anthropic, Ollama and Gemini formats), no browser
-localllm --ui       # our chat page: saved chats, model picker, live VRAM/RAM
+localllm serve      # no browser: the API (OpenAI, Anthropic, Ollama and Gemini formats) and the chat page
+localllm            # opens our chat page: saved chats, model picker, live VRAM/RAM (--no-ui: llama-server's page)
 localllm savings    # tokens answered locally this month (and $ at the prices you set)
 localllm route      # optional: mix in your own cloud key, compare local vs cloud
 localllm eval       # score any running server in English + your language
