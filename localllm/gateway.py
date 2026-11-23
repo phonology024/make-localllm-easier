@@ -41,6 +41,8 @@ HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-en
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
 PUBLIC_UI = ("/manifest.webmanifest", "/sw.js", "/icon.svg")   # the app files (#122): public like the page
+# the page's font (Poppins, SIL OFL 1.1, in localllm/fonts/): these fixed names only, public like the page
+FONTS = {f"/fonts/poppins-{w}.woff2": f"poppins-{w}.woff2" for w in (400, 500, 600)}
 # llama-server's own web page (shown on "/" with --no-ui) loads split files: the bundle under /_app/, icons, the
 # PWA manifest and service worker. They are proxied by name, not "every unknown GET": the gateway keeps answering 404
 # for paths it does not know, and llama-server's other GET routes (/cors-proxy, /tools, /metrics, /models) stay shut.
@@ -584,7 +586,7 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self.send_header("Content-Length", str(len(html)))
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; "
                              "style-src 'unsafe-inline'; img-src 'self' data:; worker-src 'self'; "
-                             "manifest-src 'self'")                                  # nothing loads from elsewhere
+                             "manifest-src 'self'; font-src 'self'")                                  # nothing loads from elsewhere
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(html)
@@ -598,6 +600,16 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             self.send_header("Content-Type", f"{ctype}; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _font(self, path: str):
+            from pathlib import Path
+            body = (Path(__file__).with_name("fonts") / FONTS[path]).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "font/woff2")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
             self.end_headers()
             self.wfile.write(body)
 
@@ -654,7 +666,7 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
             return self._json(405, {"error": "no"})
 
         def do_GET(self):
-            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n", *PUBLIC_UI)   # the page, its words, the app
+            public = self.path.split("?", 1)[0] in ("/", "/localllm/i18n", *PUBLIC_UI, *FONTS)   # the page, its words, the app
             if not self._authorized() and (not public or getattr(self, "bad_host", False)):
                 return self._deny()                             # ... but still the Host check (DNS rebinding)
             if ui and self.path.split("?", 1)[0] == "/localllm/i18n":
@@ -666,6 +678,8 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._page()
             if ui and self.path in PUBLIC_UI:
                 return self._static(self.path)
+            if ui and self.path in FONTS:
+                return self._font(self.path)
             if ui and self.path == "/localllm/catalog":
                 return self._json(200, ui["catalog"])
             if ui and self.path == "/localllm/models" and "models" in ui:

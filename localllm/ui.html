@@ -12,7 +12,10 @@
 <style>
 /* Black + gold. Light: white/ivory, gold text #85692F (AA); dark: #0B0B0C / #141416, gold #C9A75D, focus #E6CF97.
    Gold only on the primary button, the switch and progress bars; selected states use the foreground colour.
-   Font: Poppins when it is installed on this device, else the system font. Nothing is downloaded. */
+   Font: Poppins (SIL OFL 1.1, latin subset) served by localllm itself from /fonts/; Thai and the rest use the system font. */
+@font-face{font-family:Poppins;font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/poppins-400.woff2) format("woff2")}
+@font-face{font-family:Poppins;font-style:normal;font-weight:500;font-display:swap;src:url(/fonts/poppins-500.woff2) format("woff2")}
+@font-face{font-family:Poppins;font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/poppins-600.woff2) format("woff2")}
 :root{
   --background:0 0% 100%; --foreground:240 5% 8%;
   --card:0 0% 100%;
