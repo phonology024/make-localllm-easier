@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 (2026-11-23)
 
 - Plain `localllm` opened a blank page at http://127.0.0.1:8080: it showed llama-server's web page, the gateway proxied
   only `/` and answered 404 for the files that page loads (`/_app/immutable/bundle.*.js`, icons, manifest). **Our own

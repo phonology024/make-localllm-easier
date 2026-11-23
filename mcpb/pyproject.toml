@@ -1,5 +1,5 @@
 [project]
 name = "localllm-mcpb"
-version = "0.8.0"
+version = "0.8.1"
 requires-python = ">=3.10"
-dependencies = ["make-localllm-easier[mcp]>=0.8.0"]
+dependencies = ["make-localllm-easier[mcp]>=0.8.1"]
