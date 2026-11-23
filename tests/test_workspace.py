@@ -199,3 +199,13 @@ def test_page_accessibility_basics():
     assert 'role="dialog" aria-modal="true" aria-labelledby="login-title"' in page
     assert "prefers-reduced-motion:reduce" in page and 'aria-label="Message"' in page
     assert 'class="sess-open"' in page and ".sess-del:focus-visible" in page            # chats open with the keyboard
+
+
+def test_page_fonts_need_no_network():
+    """The page is opened offline or over the LAN, and its CSP allows no font from elsewhere: no web fonts or CSS
+    imports. Poppins when the device has it, else the system font, with a Thai fallback."""
+    page = workspace.PAGE.read_text(encoding="utf-8")
+    assert "//" not in page.split("<style>", 1)[1].split("</style>", 1)[0].replace("/*", "").replace("*/", "")
+    assert "@import" not in page and "@font-face" not in page and "<link rel=\"stylesheet\"" not in page
+    assert '"Leelawadee UI","Noto Sans Thai",sans-serif' in page
+    assert "prefers-color-scheme:dark" in page and ":focus-visible{outline:2px solid" in page

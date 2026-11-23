@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The chat page has a new look: black and gold in dark mode, white and gold in light mode (follows the system setting),
+  Poppins when the device has it installed, otherwise the system font (Thai falls back to Leelawadee UI / Noto Sans
+  Thai). Gold marks only the Send/Unlock buttons, the thinking switch and download progress; fewer borders and
+  colours elsewhere. Nothing is downloaded: no web fonts or CDNs. Same features, ids, requests and keyboard behaviour.
+
 ## 0.8.0 (2026-11-23)
 
 - **Python 3.10 or newer is required** (`requires-python = ">=3.10"`). 0.7.1 already did not run on 3.9: importing
