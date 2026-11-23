@@ -551,7 +551,7 @@ def cmd_run(a) -> None:
     proc, url = _start(key, a.port, a.ctx, getattr(a, "models", None), a.host, a.api_key,
                        getattr(a, "require_key_local", False), idle_min=getattr(a, "idle_unload", None),
                        vision=getattr(a, "vision", False), profile=getattr(a, "profile", "lean"),
-                       ui=getattr(a, "ui", False), qr_key=getattr(a, "qr_key", False), swappable=bool(later),
+                       ui=getattr(a, "ui", True), qr_key=getattr(a, "qr_key", False), swappable=bool(later),
                        embeddings=getattr(a, "embeddings", False))
     _say(i18n.t("cli_ready", url=url) + f"   API: {url}/v1 (OpenAI), {url}/v1/messages (Anthropic), {url}/api (Ollama), "
          f"{url}/v1beta (Gemini)   Ctrl+C to stop")
@@ -942,8 +942,8 @@ def cmd_eval(a) -> None:
     bench.run(a.url, a.name, langs, a.limit, tuple(a.suites.split(",")))
 
 
-UI_HELP = ("our chat workspace at / instead of llama-server's page: saved chats (plain files in ~/.localllm/sessions), "
-           "a model picker with --models, live VRAM/RAM; on the LAN it asks for the key")
+UI_HELP = ("our chat workspace at / (on by default): saved chats (plain files in ~/.localllm/sessions), a model picker "
+           "with --models, live VRAM/RAM; on the LAN it asks for the key. --no-ui serves llama-server's own page instead")
 PROFILE_HELP = ("lean (default): least RAM and VRAM, 8k context. max: use what this PC has - a context that fills the "
                 "GPU and a bigger prompt cache for agents (`localllm doctor` shows both)")
 EMBED_HELP = ("also answer /v1/embeddings (OpenAI format) with multilingual-e5-small on the CPU, for Obsidian "
@@ -981,7 +981,7 @@ def build_parser() -> argparse.ArgumentParser:
     for flags, kw in lan:
         ap.add_argument(*flags, **kw)
     ap.add_argument("--vision", action="store_true", help=VISION_HELP)
-    ap.add_argument("--ui", action="store_true", help=UI_HELP)
+    ap.add_argument("--ui", action=argparse.BooleanOptionalAction, default=True, help=UI_HELP)
     ap.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     ap.set_defaults(fn=cmd_run)
     sub = ap.add_subparsers(dest="cmd")
@@ -1021,7 +1021,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--profile", choices=runtime.PROFILES, default="lean", help=PROFILE_HELP)
     s.add_argument("--models", metavar="auto|A,B"); s.add_argument("--idle-unload", **idle)
     s.add_argument("--vision", action="store_true", help=VISION_HELP)
-    s.add_argument("--ui", action="store_true", help=UI_HELP)
+    s.add_argument("--ui", action=argparse.BooleanOptionalAction, default=True, help=UI_HELP)
     s.add_argument("--embeddings", action="store_true", help=EMBED_HELP)
     for flags, kw in lan:
         s.add_argument(*flags, **kw)

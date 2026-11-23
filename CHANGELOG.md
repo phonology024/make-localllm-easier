@@ -2,10 +2,18 @@
 
 ## Unreleased
 
+- Plain `localllm` opened a blank page at http://127.0.0.1:8080: it showed llama-server's web page, the gateway proxied
+  only `/` and answered 404 for the files that page loads (`/_app/immutable/bundle.*.js`, icons, manifest). **Our own
+  chat page is now the default** for `localllm` and `localllm serve` (saved chats, model picker, live VRAM/RAM; it does
+  not depend on llama.cpp's web UI, which changes between builds). `--ui` still works and does nothing new;
+  `--no-ui` serves llama-server's page as before, and its files are now proxied (by name: `/_app/`, icons, manifest,
+  `sw.js`; every other path is still a 404), so that mode is not blank either. Key and Host checks are unchanged. The
+  server `localllm mcp --model KEY` starts runs with `--no-ui` (#188)
 - The chat page has a new look: black and gold in dark mode, white and gold in light mode (follows the system setting),
   Poppins when the device has it installed, otherwise the system font (Thai falls back to Leelawadee UI / Noto Sans
   Thai). Gold marks only the Send/Unlock buttons, the thinking switch and download progress; fewer borders and
   colours elsewhere. Nothing is downloaded: no web fonts or CDNs. Same features, ids, requests and keyboard behaviour.
+  The Models tab now says `localllm --model KEY` (no `--ui`: the page is the default)
 
 ## 0.8.0 (2026-11-23)
 

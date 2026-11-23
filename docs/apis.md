@@ -76,7 +76,7 @@ localllm savings                      # this month: answers, tokens, % of the pr
 ```
 
 Every local answer is counted from the token numbers llama-server reports (`~/.localllm/savings.json`); `/status` in
-`localllm chat`, the `--ui` page and `doctor` show the same line. The dollar figure is only an estimate at the prices
+`localllm chat`, the chat page and `doctor` show the same line. The dollar figure is only an estimate at the prices
 you entered: localllm ships none, because they change. "% from the cache" is the share of prompt tokens the server
 re-used instead of reading again; for an agent that resends the same instructions every call it should be high, and
 if it is low, the agent's prefix changes between calls.

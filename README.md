@@ -37,13 +37,13 @@ It checks your PC first without changing anything, and asks before each install 
 localllm            # pick, download and start the best model, open the chat page
 localllm chat       # chat in the terminal, any language
 localllm doctor     # what this GPU can run: model sizes, speed, RAM
-localllm serve      # just the API: OpenAI, Anthropic, Ollama and Gemini formats at http://127.0.0.1:8080
+localllm serve      # no browser: the API (OpenAI, Anthropic, Ollama and Gemini formats) and the chat page at http://127.0.0.1:8080
 ```
 
 More: `localllm list` (every measured model), `localllm connect hermes` (point an agent or Obsidian at it),
 `localllm eval` (score any server in your language). All commands: `localllm --help`.
 
-**Chat with your files.** In `localllm chat` type `/attach report.pdf` (or a folder); in the `--ui` page, drop a file on
+**Chat with your files.** In `localllm chat` type `/attach report.pdf` (or a folder); in the chat page, drop a file on
 the chat. Each answer comes from the passages that match your question and lists them as sources (file and page),
 all on this PC. PDF, DOCX, TXT and MD.
 

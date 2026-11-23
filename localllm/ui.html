@@ -512,7 +512,7 @@ function modelCard(m, info) {
   else if (m.download && m.download.state === "downloading")
     act = `<progress max="100" value="${m.download.pct}" aria-label="${esc(T("downloading", {key: m.key}))}"></progress> ${m.download.pct}%`;
   else if (m.downloaded || (m.download && m.download.state === "done"))
-    act = `${esc(T("downloaded"))}<br>${esc(T("run_it"))} <code class="cmd">localllm --ui --model ${esc(m.key)}</code>`;
+    act = `${esc(T("downloaded"))}<br>${esc(T("run_it"))} <code class="cmd">localllm --model ${esc(m.key)}</code>`;
   else if (m.fit === "no") act = "";
   else act = `<button class="btn" type="button" data-dl="${esc(m.key)}">${esc(T("download_btn", {gb: m.gb}))}</button>`
     + (m.download && m.download.state === "error" ? `<br><span class="warn">${esc(m.download.error)}</span>` : "");

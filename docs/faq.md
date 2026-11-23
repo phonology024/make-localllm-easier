@@ -44,12 +44,12 @@ YOUR_VAULT` makes the local model its default and tells you anything that would 
 ([docs/apis.md](apis.md#obsidian)). A harness and our own Obsidian plugin are planned as optional add-ons that never
 touch the base install ([docs/addons.md](addons.md)).
 
-**Is there a chat window with saved chats?** `localllm --ui` (or `localllm serve --ui`) opens our own chat page
-instead of llama-server's: chats saved as plain files in `~/.localllm/sessions/`, a model picker when you run several
+**Is there a chat window with saved chats?** Plain `localllm` opens our own chat page (`localllm serve` serves it at
+the same address without opening a browser; `--no-ui` gives llama-server's own page instead): chats saved as plain files in `~/.localllm/sessions/`, a model picker when you run several
 models (`--models auto`), live VRAM/RAM and a warning when the model spills out of the GPU. Nothing is loaded from the
 internet. On your network (`--host 0.0.0.0`) the page asks for the key printed in the terminal.
 
-**Which model should I download?** Open the **Models** tab in `localllm --ui`: every model we have measured, marked
+**Which model should I download?** Open the **Models** tab in the chat page (`localllm`): every model we have measured, marked
 *fits on your GPU*, *fits, some of it in RAM (slower)* or *too big for this PC*, with its exam scores in your language,
 the expected speed and a download button (checked against its SHA-256). The best one for your PC and language is
 marked.
@@ -103,7 +103,7 @@ are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper ask once. W
 `pip install make-localllm-easier` does the same.
 
 **Can it answer questions about my documents?** Yes: `/attach FILE` (or a folder) in `localllm chat`, or drop the
-file on the chat in `localllm --ui`. PDF, DOCX, TXT and MD. The text is split into passages and indexed on this PC by a
+file on the chat page (`localllm`). PDF, DOCX, TXT and MD. The text is split into passages and indexed on this PC by a
 small multilingual embedding model that runs on the CPU (multilingual-e5-small, about 0.2 GB of RAM, no VRAM), in
 `~/.localllm/docs/`. For each question the five closest passages go to the model, and the answer lists them as sources
 (file and page or line); click one in the page to read it. The same file attached again is not indexed again.
