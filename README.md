@@ -93,4 +93,6 @@ prefilled issue (no names, paths or keys) that adds it to the leaderboard.
 
 ## License
 
-MIT. Models keep their own licenses; benchmark data keeps its own (Apache-2.0).
+MIT. Models keep their own licenses; benchmark data keeps its own (Apache-2.0). The chat page's font is
+[Poppins](https://github.com/itfoundry/Poppins) by the Poppins Project Authors, SIL Open Font License 1.1
+([localllm/fonts/OFL.txt](localllm/fonts/OFL.txt)).

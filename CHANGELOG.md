@@ -9,6 +9,13 @@
   `--no-ui` serves llama-server's page as before, and its files are now proxied (by name: `/_app/`, icons, manifest,
   `sw.js`; every other path is still a 404), so that mode is not blank either. Key and Host checks are unchanged. The
   server `localllm mcp --model KEY` starts runs with `--no-ui` (#188)
+- The chat page has a new look: black and gold in dark mode, white and gold in light mode (follows the system setting),
+  in Poppins (SIL OFL 1.1, latin subset, 400/500/600, about 26 KB) that ships in the package and is served by localllm
+  itself at `/fonts/poppins-*.woff2` (public like the page, Host check applies; CSP adds `font-src 'self'`). Thai and
+  other scripts use the system font (Leelawadee UI / Noto Sans Thai). Gold marks only the Send/Unlock buttons, the
+  thinking switch and download progress; fewer borders and colours elsewhere. Nothing loads from the internet. Same
+  features, ids, requests and keyboard behaviour.
+  The Models tab now says `localllm --model KEY` (no `--ui`: the page is the default)
 
 ## 0.8.0 (2026-11-23)
 

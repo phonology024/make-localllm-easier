@@ -14,15 +14,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEP = ";" if os.name == "nt" else ":"
-DATA = ["localllm/ui.html", "localllm/platforms.json"]
+DATA = [("localllm/ui.html", "localllm"), ("localllm/platforms.json", "localllm"), ("localllm/fonts", "localllm/fonts")]
 
 
 def main() -> None:
     args = [sys.executable, "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm", "--name", "localllm",
             "--distpath", str(ROOT / "dist"), "--workpath", str(ROOT / "build" / "pyinstaller"),
             "--specpath", str(ROOT / "build"), "--paths", str(ROOT)]
-    for d in DATA:
-        args += ["--add-data", f"{ROOT / d}{SEP}localllm"]
+    for d, dest in DATA:
+        args += ["--add-data", f"{ROOT / d}{SEP}{dest}"]
     sys.path.insert(0, str(ROOT))
     from localllm.docs import PYPDF_STDLIB      # pypdf is imported from its wheel at run time (#113): bundle what it needs
     for mod in PYPDF_STDLIB:

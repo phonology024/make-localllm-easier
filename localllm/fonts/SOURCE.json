@@ -1,0 +1,19 @@
+{
+  "font": "Poppins by the Poppins Project Authors (Indian Type Foundry), SIL Open Font License 1.1 (OFL.txt)",
+  "upstream": "https://github.com/google/fonts/tree/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/poppins",
+  "made_with": "fontTools 4.63.0: pyftsubset IN.ttf --unicodes=U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD --layout-features=* --flavor=woff2",
+  "files": {
+    "poppins-400.woff2": {"from": "Poppins-Regular.ttf",
+      "from_sha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba",
+      "sha256": "55bacd3a2c3ecfac2b9920531baea6d44062fbe28af991aff29af97f2f6f9515"},
+    "poppins-500.woff2": {"from": "Poppins-Medium.ttf",
+      "from_sha256": "90373e7d838d32468438fc3e152dca0bdb12edcab99ea639f158790b1ba1fd05",
+      "sha256": "06f18d79f5b064f4dce06f6a5aa53e6e6bf92526fc7c461a794c81d2a02bf9bf"},
+    "poppins-600.woff2": {"from": "Poppins-SemiBold.ttf",
+      "from_sha256": "d3bf1bdaf0550e83da9ac0b1d1d9fe6db086835a83aa28578e609a394b9a0286",
+      "sha256": "8d9572963218d2fbfb9d756e85bb1d6f3a304ac6f5c13846e949ce7619d6c59f"},
+    "OFL.txt": {"from": "OFL.txt",
+      "from_sha256": "6be04893d770899a015649c7aa3b582f871b272f8747a92b78b17c3e5c8b2573",
+      "sha256": "6be04893d770899a015649c7aa3b582f871b272f8747a92b78b17c3e5c8b2573"}
+  }
+}
