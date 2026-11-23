@@ -1,4 +1,4 @@
-"""`localllm serve --ui`: the local chat workspace (#76).
+"""`localllm` / `localllm serve`: the local chat workspace (#76; on by default, `--no-ui` turns it off).
 
 The page (ui.html, no external assets, no telemetry) is served by the gateway at `/`. Chats are plain JSON files in
 ~/.localllm/sessions/<id>.json, one per chat, readable and deletable by hand. Endpoints (same key rules as the API):

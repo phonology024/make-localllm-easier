@@ -155,7 +155,7 @@ class Backend:
             from . import runtime
             if self.proc is None or self.proc.poll() is not None:
                 kw = {"creationflags": 0x08000000} if os.name == "nt" else {"start_new_session": True}   # NO_WINDOW
-                self.proc = self._spawn([sys.executable, "-m", "localllm", "serve", self.model, "--port",
+                self.proc = self._spawn([sys.executable, "-m", "localllm", "serve", self.model, "--no-ui", "--port",
                                          str(self.port)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                         stderr=subprocess.DEVNULL, **kw)
                 self._job = runtime.kill_with_parent(self.proc)

@@ -213,7 +213,7 @@ def test_model_flag_on_disk_starts_serve_with_no_stdin_and_stops_it_with_the_ser
     be = mcp_server.Backend(stub, model="qwen3.5-4b-q4", port=8123, spawn=spawn)
     be.ensure()
     cmd, kw = calls[0]
-    assert cmd[1:] == ["-m", "localllm", "serve", "qwen3.5-4b-q4", "--port", "8123"]
+    assert cmd[1:] == ["-m", "localllm", "serve", "qwen3.5-4b-q4", "--no-ui", "--port", "8123"]
     assert kw["stdin"] == subprocess.DEVNULL and kw["stdout"] == subprocess.DEVNULL
     be.close()
     assert killed == [4242]            # the whole tree, not just `localllm serve` (see the orphan tests below)

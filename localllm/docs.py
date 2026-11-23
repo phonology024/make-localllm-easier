@@ -2,7 +2,7 @@
 the question, and localllm lists those passages as sources under the answer.
 
   localllm chat      /attach PATH (a file or a folder)   /docs   /detach N|all
-  localllm --ui      drag a file onto the chat, or the paperclip button
+  localllm           drag a file onto the chat, or the paperclip button
 
 How: the text is split into chunks of at most CHUNK_CHARS characters (paragraphs, then sentences, then spaces), each
 chunk is embedded by the same CPU-only multilingual-e5-small server the task router uses (taskclf.py: no VRAM, so it
