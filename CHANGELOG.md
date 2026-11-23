@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Plain `localllm` (no `--ui`) no longer opens a blank page at http://127.0.0.1:8080. The gateway proxied only `/` to
+  llama-server's web page and answered 404 for the files that page loads (`/_app/immutable/bundle.*.js` and `.css`,
+  icons, `manifest.webmanifest`, `sw.js`). Those files are now proxied, by name; every other path is still a 404, and the
+  key and Host checks apply as before (#188)
+
 ## 0.8.0 (2026-11-23)
 
 - **Python 3.10 or newer is required** (`requires-python = ">=3.10"`). 0.7.1 already did not run on 3.9: importing

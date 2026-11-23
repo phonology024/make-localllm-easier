@@ -41,6 +41,12 @@ HOP_BY_HOP = {"host", "content-length", "connection", "keep-alive", "transfer-en
               "proxy-authorization", "proxy-connection"}
 GEMINI = re.compile(r"^/v1beta/models/([^/:]+):(generateContent|streamGenerateContent)")
 PUBLIC_UI = ("/manifest.webmanifest", "/sw.js", "/icon.svg")   # the app files (#122): public like the page
+# llama-server's own web page (shown on "/" without --ui) loads split files: the bundle under /_app/, icons, the
+# PWA manifest and service worker. They are proxied by name, not "every unknown GET": the gateway keeps answering 404
+# for paths it does not know, and llama-server's other GET routes (/cors-proxy, /tools, /metrics, /models) stay shut.
+# The names come from llama.cpp's embedded UI asset table (tools/ui, same files on every platform).
+LLAMA_PAGE_FILES = ("/index.html", "/favicon.ico", "/favicon.svg", "/manifest.webmanifest", "/sw.js", "/build.json")
+LLAMA_PAGE_DIRS = ("/_app/", "/recommended-mcp/", "/apple-", "/pwa-", "/maskable-")   # /apple-touch-icon-*, /apple-splash-*
 UI_HEADER = "X-Localllm-UI"        # sent by ui.html on requests that change something (cross-site request guard)
 MODEL_DOWNLOAD = re.compile(r"^/localllm/models/([a-z0-9][a-z0-9.-]{0,63})/download$")   # Models tab (#107)
 KEY_HEADERS = ("authorization", "x-api-key", "x-goog-api-key")   # where clients put the gateway's key
@@ -682,6 +688,9 @@ def make_handler(upstream, model_name: str, api_key: str | None = None, trust_lo
                 return self._json(200, {"version": "0.14.0-localllm"})
             if self.path.startswith(PASSTHROUGH) or self.path == "/":
                 return self._proxy("GET")
+            bare = self.path.split("?", 1)[0]
+            if not ui and (bare in LLAMA_PAGE_FILES or bare.startswith(LLAMA_PAGE_DIRS)):
+                return self._proxy("GET")                       # llama-server's page, so "/" is not blank (#188)
             self._json(404, {"error": f"not supported: {self.path}"})
 
         def do_PUT(self):
