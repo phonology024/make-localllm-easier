@@ -47,6 +47,8 @@ More: `localllm list` (every measured model), `localllm connect hermes` (point a
 the chat. Each answer comes from the passages that match your question and lists them as sources (file and page),
 all on this PC. PDF, DOCX, TXT and MD.
 
+[![localllm MCP server](https://mcprush.com/badge/localllm-mcp/card.svg)](https://mcprush.com/to/localllm-mcp?ref=badge)
+
 **Use it from Claude, Cursor or Codex.** `localllm mcp` is an [MCP](https://modelcontextprotocol.io) server: the app
 hands private or bulk work (translate, summarize, ask) to the model on your PC, and the text never leaves it. One line
 per app in [docs/mcp.md](docs/mcp.md).
